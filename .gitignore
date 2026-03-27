@@ -1,3 +1,9 @@
+*.sqlite
+*.db
+/cookies_export.json
+/data
+/src/config/accounts.json
+
 # Logs
 logs
 *.log

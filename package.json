@@ -1,0 +1,39 @@
+{
+  "name": "eanyra",
+  "version": "1.0.0",
+  "description": "Twitter monitoring tool for AI agent data pipeline",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "scrape": "node src/index.js scrape",
+    "login": "node src/login.js",
+    "db:migrate": "node src/database/migrate.js",
+    "import-cookies": "node src/import-cookies.js cookies_export.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SamuiRo/EANyra.git"
+  },
+  "keywords": [],
+  "author": "StarLith",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/SamuiRo/EANyra/issues"
+  },
+  "homepage": "https://github.com/SamuiRo/EANyra#readme",
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "dotenv": "^16.4.5",
+    "gradient-string": "^2.0.2",
+    "node-cron": "^3.0.3",
+    "playwright": "^1.44.1",
+    "sequelize": "^6.37.3",
+    "sharp": "^0.33.4",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "sequelize-cli": "^6.6.2"
+  }
+}
