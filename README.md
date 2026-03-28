@@ -1,7 +1,27 @@
 # EANyra
 
-Twitter/X monitoring pipeline for AI agents.
-Scrapes selected accounts using Playwright, stores posts in SQLite via Sequelize, and exposes structured data for downstream consumption (e.g. an AI agent reading the DB directly instead of browsing Twitter).
+Twitter/X monitoring pipeline designed primarily for AI agents.
+
+EANyra scrapes selected accounts using Playwright, stores posts in SQLite, and exposes the data through an MCP server — so an AI agent can query posts, stats, and scraper health directly from the database without browsing Twitter itself. This eliminates token waste on live web scraping and gives the agent structured, reliable data on demand.
+
+The pipeline is equally useful outside of AI contexts: as a data source for scripts, dashboards, or any automation that needs a local feed of Twitter activity.
+
+---
+
+## How it works
+
+```
+Twitter/X  ──►  EANyra Scraper  ──►  pot.sqlite
+                (runs daily)
+                                          │
+                                   MCP Server
+                              (src/mcp/server.js)
+                                          │
+                                   AI Agent
+                             (OpenClaw / Claude Desktop)
+```
+
+The scraper runs on a schedule and keeps the database fresh. The MCP server is a lightweight read-only layer on top — it exposes typed tools that the agent calls directly, with no browser, no live scraping, and no wasted tokens.
 
 ---
 
@@ -21,6 +41,12 @@ EANyra/
     ├── config/
     │   ├── app.config.js       # All configuration with documented defaults
     │   └── accounts.json       # Monitored accounts list
+    ├── mcp/                    # MCP server — agent interface
+    │   ├── server.js           # Entry point, tool registration
+    │   ├── db.js               # Read-only SQLite query layer
+    │   └── tools/
+    │       ├── twitter.js      # Post/account query tools
+    │       └── status.js       # Scraper health tool
     ├── module/
     │   ├── browser/
     │   │   └── Browser.js      # Playwright persistent context + anti-detection
@@ -50,6 +76,7 @@ EANyra/
 
 | Path | Purpose |
 |------|---------|
+| `src/mcp/` | MCP server exposing DB data to AI agents via typed tools. |
 | `src/config/` | Environment config and exported constants. Single source of truth for all tuneable values. |
 | `src/module/browser/` | Playwright context management and anti-detection patches. |
 | `src/module/scraper/` | Tweet extraction and human-behaviour simulation. |
@@ -78,6 +105,59 @@ npm run scrape
 # 5. Start the daily daemon
 npm start
 ```
+
+---
+
+## MCP server — agent integration
+
+The MCP server lets an AI agent query EANyra's database directly using structured tools. The agent never touches Twitter — it reads from SQLite, getting clean structured data instantly.
+
+### Setup
+
+```bash
+# Install MCP dependencies (one-time)
+npm install @modelcontextprotocol/sdk zod
+```
+
+Add to your OpenClaw / Claude Desktop config (replace paths with absolute paths on your machine):
+
+```json
+{
+  "mcpServers": {
+    "eanyra": {
+      "command": "node",
+      "args": ["/absolute/path/to/EANyra/src/mcp/server.js"],
+      "env": {
+        "DB_PATH": "/absolute/path/to/EANyra/data/pot.sqlite"
+      }
+    }
+  }
+}
+```
+
+Restart the gateway — the agent discovers all tools automatically. No additional prompting or explanation needed.
+
+### Available tools
+
+| Tool | Description |
+|------|-------------|
+| `twitter_get_recent_posts` | Latest posts, optionally filtered by account, time window, type |
+| `twitter_search_posts` | Full-text search across post content |
+| `twitter_get_trending_posts` | Top posts ranked by likes / retweets / views |
+| `twitter_get_account_stats` | Aggregated engagement stats per account |
+| `twitter_list_accounts` | All monitored accounts with last scrape time |
+| `twitter_get_scraper_status` | Scraper health, last run result, data freshness |
+
+### Extending with new skills
+
+To add a new skill to the same MCP server, create `src/mcp/tools/yourskill.js` following the same pattern as `twitter.js`, then register it in `server.js`:
+
+```js
+import { yourSkillTools } from './tools/yourskill.js';
+const allTools = [...twitterTools, ...statusTools, ...yourSkillTools];
+```
+
+Restart the gateway — new tools appear automatically.
 
 ---
 
@@ -228,6 +308,10 @@ MAX_SCROLL_ATTEMPTS=30                 # Max scroll passes before giving up on a
 ---
 
 ## Roadmap
+
+### Done: MCP server
+
+Read-only MCP server (`src/mcp/`) exposing all scraped data to AI agents via structured tools. See [MCP server — agent integration](#mcp-server--agent-integration) above.
 
 ### Next: network interception module
 
