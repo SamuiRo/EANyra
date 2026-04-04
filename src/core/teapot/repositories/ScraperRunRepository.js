@@ -6,7 +6,7 @@
  * stays focused on coordination logic.
  */
 
-import { print } from '../../shared/utils.js';
+import { print } from '../../../shared/utils.js';
 
 export class ScraperRunRepository {
   /** @param {import('sequelize').ModelStatic} ScraperRunModel */

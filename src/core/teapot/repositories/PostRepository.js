@@ -6,7 +6,7 @@
  * via upsert so re-running the scraper never pollutes the table.
  */
 
-import { print } from '../../shared/utils.js';
+import { print } from '../../../shared/utils.js';
 
 export class PostRepository {
   /** @param {import('sequelize').ModelStatic} PostModel */

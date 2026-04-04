@@ -1,5 +1,5 @@
 /**
- * src/module/scraper/humanBehavior.js
+ * src/platforms/twitter/humanBehavior.js
  *
  * Human-like page interaction helpers for TwitterScraper.
  *

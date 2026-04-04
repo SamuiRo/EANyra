@@ -15,7 +15,7 @@ Twitter/X  ──►  EANyra Scraper  ──►  pot.sqlite
                 (runs daily)
                                           │
                                    MCP Server
-                              (src/mcp/server.js)
+                              (src/core/mcp/server.js)
                                           │
                                    AI Agent
                              (OpenClaw / Claude Desktop)
@@ -37,53 +37,57 @@ EANyra/
 │   ├── nyra/                   # Playwright persistent context (cookies, session)
 │   └── pot.sqlite              # SQLite database
 └── src/
-    ├── index.js                # Entry point — daemon or single-run mode
-    ├── config/
-    │   ├── app.config.js       # All configuration with documented defaults
-    │   └── accounts.json       # Monitored accounts list
-    ├── mcp/                    # MCP server — agent interface
-    │   ├── server.js           # Entry point, tool registration
-    │   ├── db.js               # Read-only SQLite query layer
-    │   └── tools/
-    │       ├── twitter.js      # Post/account query tools
-    │       └── status.js       # Scraper health tool
-    ├── module/
-    │   ├── browser/
-    │   │   └── Browser.js      # Playwright persistent context + anti-detection
-    │   ├── scraper/
-    │   │   ├── TwitterScraper.js   # DOM-based tweet extractor
-    │   │   └── humanBehavior.js    # Realistic mouse/scroll helpers
+    ├── core/
+    │   ├── cli/
+    │   │   └── index.js                # Entry point — daemon or single-run mode
     │   ├── orchestrator/
     │   │   └── ScraperOrchestrator.js  # Coordinates a full scrape run
-    │   └── scheduler/
-    │       └── Scheduler.js    # node-cron wrapper
-    ├── shared/
-    │   └── utils.js            # Logging, sleep, jitter, file helpers
-    └── teapot/
-        ├── database.js         # Sequelize singleton
-        ├── models/
-        │   ├── index.js        # registerModels() — associations live here
-        │   ├── Account.js
-        │   ├── Post.js
-        │   └── ScraperRun.js
-        └── repositories/
-            ├── AccountRepository.js    # accounts.json sync + DB queries
-            ├── PostRepository.js       # Batch upsert, oldest-post lookup
-            └── ScraperRunRepository.js # Run lifecycle (start/finish/fail)
+    │   ├── scheduler/
+    │   │   └── Scheduler.js            # node-cron wrapper
+    │   ├── browser/
+    │   │   └── Browser.js              # Playwright persistent context + anti-detection
+    │   ├── teapot/                     # Database layer (kept as "teapot")
+    │   │   ├── database.js             # Sequelize singleton
+    │   │   ├── models/
+    │   │   │   ├── index.js            # registerModels() — associations live here
+    │   │   │   ├── Account.js
+    │   │   │   ├── Post.js
+    │   │   │   └── ScraperRun.js
+    │   │   └── repositories/
+    │   │       ├── AccountRepository.js    # accounts.json sync + DB queries
+    │   │       ├── PostRepository.js       # Batch upsert, oldest-post lookup
+    │   │       └── ScraperRunRepository.js # Run lifecycle (start/finish/fail)
+    │   └── mcp/
+    │       ├── server.js               # Entry point, tool registration
+    │       ├── db.js                   # SQLite query layer for MCP tools
+    │       └── tools/
+    │           ├── twitter.js          # Post/account query tools
+    │           └── status.js           # Scraper health tool
+    ├── platforms/
+    │   └── twitter/
+    │       ├── TwitterScraper.js       # DOM-based tweet extractor
+    │       └── humanBehavior.js        # Realistic mouse/scroll helpers
+    ├── config/
+    │   ├── app.config.js               # All configuration with documented defaults
+    │   └── accounts.json               # Monitored accounts list
+    └── shared/
+        ├── utils.js                    # Logging, sleep, jitter, file helpers
+        └── message.js                  # CLI/MCP user-facing messages
 ```
 
 ### Directory purposes
 
 | Path | Purpose |
 |------|---------|
-| `src/mcp/` | MCP server exposing DB data to AI agents via typed tools. |
+| `src/core/mcp/` | MCP server exposing DB data to AI agents via typed tools. |
 | `src/config/` | Environment config and exported constants. Single source of truth for all tuneable values. |
-| `src/module/browser/` | Playwright context management and anti-detection patches. |
-| `src/module/scraper/` | Tweet extraction and human-behaviour simulation. |
-| `src/module/orchestrator/` | Coordinates browser, scraper, and repositories for a full run. |
-| `src/module/scheduler/` | Cron-based daemon scheduling. |
+| `src/core/browser/` | Playwright persistent context management and anti-detection patches. |
+| `src/platforms/twitter/` | Twitter/X extraction logic (scraper + human-behaviour helpers). |
+| `src/core/cli/` | CLI entry point for scrape runs (daemon or single-run mode). |
+| `src/core/orchestrator/` | Orchestrator for full scrape runs per schedule. |
+| `src/core/scheduler/` | `node-cron` wrapper for scheduled execution. |
 | `src/shared/` | Reusable utilities shared across the project. |
-| `src/teapot/` | Database layer: Sequelize wrapper, model definitions, repository classes. |
+| `src/core/teapot/` | Database layer: Sequelize wrapper, model definitions, repository classes. |
 
 ---
 
@@ -114,11 +118,6 @@ The MCP server lets an AI agent query EANyra's database directly using structure
 
 ### Setup
 
-```bash
-# Install MCP dependencies (one-time)
-npm install @modelcontextprotocol/sdk zod
-```
-
 Add to your OpenClaw / Claude Desktop config (replace paths with absolute paths on your machine):
 
 ```json
@@ -126,7 +125,7 @@ Add to your OpenClaw / Claude Desktop config (replace paths with absolute paths 
   "mcpServers": {
     "eanyra": {
       "command": "node",
-      "args": ["/absolute/path/to/EANyra/src/mcp/server.js"],
+      "args": ["/absolute/path/to/EANyra/src/core/mcp/server.js"],
       "env": {
         "DB_PATH": "/absolute/path/to/EANyra/data/pot.sqlite"
       }
@@ -150,7 +149,7 @@ Restart the gateway — the agent discovers all tools automatically. No addition
 
 ### Extending with new skills
 
-To add a new skill to the same MCP server, create `src/mcp/tools/yourskill.js` following the same pattern as `twitter.js`, then register it in `server.js`:
+To add a new skill to the same MCP server, create `src/core/mcp/tools/yourskill.js` following the same pattern as `twitter.js`, then register it in `server.js`:
 
 ```js
 import { yourSkillTools } from './tools/yourskill.js';
@@ -311,7 +310,7 @@ MAX_SCROLL_ATTEMPTS=30                 # Max scroll passes before giving up on a
 
 ### Done: MCP server
 
-Read-only MCP server (`src/mcp/`) exposing all scraped data to AI agents via structured tools. See [MCP server — agent integration](#mcp-server--agent-integration) above.
+Read-only MCP server (`src/core/mcp/`) exposing all scraped data to AI agents via structured tools. See [MCP server — agent integration](#mcp-server--agent-integration) above.
 
 ### Next: network interception module
 
@@ -340,7 +339,7 @@ Read-only MCP server (`src/mcp/`) exposing all scraped data to AI agents via str
 **Planned files:**
 
 ```
-src/module/scraper/
+src/platforms/twitter/
 ├── TwitterScraper.js         # Existing — becomes coordinator + DOM fallback
 ├── NetworkInterceptor.js     # New — registers response listener, parses GraphQL JSON
 ├── tweetMapper.js            # New — maps raw GraphQL shape → RawPost (shared type)

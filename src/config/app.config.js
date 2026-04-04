@@ -32,6 +32,10 @@ function envBoolean(name, fallback = false) {
 export const NODE_ENV = process.env.NODE_ENV ?? 'production';
 export const PKG = pkg;
 
+export const MCP_PORT = envNumber('MCP_PORT', 3001);
+export const MCP_HOST = process.env.MCP_HOST ?? '127.0.0.1';
+export const MCP_TRANSPORT = process.env.MCP_TRANSPORT ?? 'stdio';
+
 export const SCHEDULER = {
   cronSchedule: process.env.CRON_SCHEDULE ?? '0 8 * * *',
   runOnStartup: envBoolean('RUN_ON_STARTUP', false),

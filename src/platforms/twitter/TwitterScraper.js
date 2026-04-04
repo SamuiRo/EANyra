@@ -1,5 +1,5 @@
 /**
- * src/module/scraper/TwitterScraper.js
+ * src/platforms/twitter/TwitterScraper.js
  *
  * Scrapes tweets from a single Twitter/X profile page using Playwright.
  *

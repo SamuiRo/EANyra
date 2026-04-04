@@ -1,5 +1,5 @@
 /**
- * src/teapot/repositories/AccountRepository.js
+ * src/core/teapot/repositories/AccountRepository.js
  *
  * Responsible for:
  *   - Loading the monitored-accounts list from src/config/accounts.json
@@ -10,11 +10,11 @@
 import fs   from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { print } from '../../shared/utils.js';
+import { print } from '../../../shared/utils.js';
 
 const __filename     = fileURLToPath(import.meta.url);
 const __dirname      = path.dirname(__filename);
-const ACCOUNTS_JSON  = path.resolve(__dirname, '../../config/accounts.json');
+const ACCOUNTS_JSON  = path.resolve(__dirname, '../../../config/accounts.json');
 
 export class AccountRepository {
   /** @param {import('sequelize').ModelStatic} AccountModel */

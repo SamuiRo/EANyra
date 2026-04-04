@@ -1,18 +1,18 @@
 /**
- * src/index.js — EANyra entry point
+ * src/core/cli/index.js — EANyra entry point
  *
  * Modes:
- *   node src/index.js          → daemon mode (runs on cron schedule)
- *   node src/index.js scrape   → single run then exit
+ *   node src/core/cli/index.js          → daemon mode (runs on cron schedule)
+ *   node src/core/cli/index.js scrape   → single run then exit
  */
 
-import database                  from './teapot/database.js';
-import { registerModels }        from './teapot/models/index.js';
-import { ScraperOrchestrator }   from './module/orchestrator/ScraperOrchestrator.js';
-import { Scheduler }             from './module/scheduler/Scheduler.js';
-import { PKG, NODE_ENV, SCHEDULER } from './config/app.config.js';
-import { banner, print }         from './shared/utils.js';
-import { WELCOME_MESSAGE, SUB_TITLE } from './shared/message.js';
+import database                  from '../teapot/database.js';
+import { registerModels }        from '../teapot/models/index.js';
+import { ScraperOrchestrator }   from '../orchestrator/ScraperOrchestrator.js';
+import { Scheduler }             from '../scheduler/Scheduler.js';
+import { PKG, NODE_ENV, SCHEDULER } from '../../config/app.config.js';
+import { banner, print }         from '../../shared/utils.js';
+import { WELCOME_MESSAGE, SUB_TITLE } from '../../shared/message.js';
 
 class Nyra {
   /** @type {{ Account, Post, ScraperRun }} */
@@ -34,8 +34,50 @@ class Nyra {
     print('Registering Sequelize models…', 'system');
     this.#models = registerModels(database.sequelize);
 
+    await this.#syncSchema();
+  }
+
+  /**
+   * SQLite + Sequelize alter mode can rebuild tables via DROP/CREATE.
+   * If FK checks are enabled, ALTER may fail with SQLITE_CONSTRAINT.
+   * We temporarily disable FK checks only for schema sync and re-enable them.
+   */
+  async #syncSchema() {
+    const isSqlite = database.sequelize.getDialect() === 'sqlite';
+
     print('Synchronising schema (ALTER)…', 'system');
-    await database.sequelize.sync({ alter: true });
+    if (isSqlite) {
+      print('SQLite detected: temporarily disabling FK checks for ALTER sync.', 'system');
+      await database.sequelize.query('PRAGMA foreign_keys = OFF;');
+    }
+
+    try {
+      await database.sequelize.sync({ alter: true });
+    } catch (error) {
+      const isSqliteConstraint =
+        isSqlite &&
+        (
+          error?.name?.includes('ConstraintError') ||
+          error?.name?.includes('ValidationError') ||
+          String(error?.message ?? '').includes('SQLITE_CONSTRAINT') ||
+          String(error?.original?.code ?? '').includes('SQLITE_CONSTRAINT') ||
+          String(error?.parent?.code ?? '').includes('SQLITE_CONSTRAINT')
+        );
+
+      if (!isSqliteConstraint) {
+        throw error;
+      }
+
+      print(
+        'SQLite ALTER sync failed on constraints. Falling back to safe sync without ALTER.',
+        'warning',
+      );
+      await database.sequelize.sync();
+    } finally {
+      if (isSqlite) {
+        await database.sequelize.query('PRAGMA foreign_keys = ON;');
+      }
+    }
   }
 
   // ── Run modes ─────────────────────────────────────────────────────────────
@@ -59,11 +101,6 @@ class Nyra {
   }
 
   async runDaemon() {
-    // Normalise runOnStartup to boolean (env vars arrive as strings)
-    if (typeof SCHEDULER.runOnStartup === 'string') {
-      SCHEDULER.runOnStartup = SCHEDULER.runOnStartup.toLowerCase() === 'true';
-    }
-
     print('Mode: scheduler daemon', 'system');
     const scheduler = new Scheduler(() => this.#scrapeOnce());
     await scheduler.start();

@@ -1,5 +1,5 @@
 /**
- * src/teapot/database.js
+ * src/core/teapot/database.js
  *
  * Sequelize singleton wrapper.
  * Storage path is now read from app.config.js (DB.storagePath) so the
@@ -7,8 +7,8 @@
  */
 
 import { Sequelize } from 'sequelize';
-import { DB }        from '../config/app.config.js';
-import { print }     from '../shared/utils.js';
+import { DB }        from '../../config/app.config.js';
+import { print }     from '../../shared/utils.js';
 
 export class Database {
   /** @type {import('sequelize').Sequelize} */

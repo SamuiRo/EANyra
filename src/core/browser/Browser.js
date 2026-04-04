@@ -1,5 +1,5 @@
 /**
- * src/module/browser/Browser.js
+ * src/core/browser/Browser.js
  *
  * Playwright persistent browser context wrapper with anti-detection.
  *

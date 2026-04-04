@@ -1,5 +1,5 @@
 /**
- * src/module/orchestrator/ScraperOrchestrator.js
+ * src/core/orchestrator/ScraperOrchestrator.js
  *
  * Coordinates a complete scrape run:
  *   1. Open a ScraperRun record (status: running)
@@ -29,10 +29,10 @@
  */
 
 import { Browser }               from '../browser/Browser.js';
-import { TwitterScraper }        from '../scraper/TwitterScraper.js';
-import { AccountRepository }     from '../../teapot/repositories/AccountRepository.js';
-import { PostRepository }        from '../../teapot/repositories/PostRepository.js';
-import { ScraperRunRepository }  from '../../teapot/repositories/ScraperRunRepository.js';
+import { TwitterScraper }        from '../../platforms/twitter/TwitterScraper.js';
+import { AccountRepository }     from '../teapot/repositories/AccountRepository.js';
+import { PostRepository }        from '../teapot/repositories/PostRepository.js';
+import { ScraperRunRepository }  from '../teapot/repositories/ScraperRunRepository.js';
 import { SCRAPER }               from '../../config/app.config.js';
 import { print, sleep }          from '../../shared/utils.js';
 
@@ -170,6 +170,11 @@ export class ScraperOrchestrator {
   /**
    * An account is considered "initial" if it has never been scraped
    * (no posts in the DB yet, or last_scraped_at is null).
+   *
+   * NOTE:
+   * If last_scraped_at exists but all posts were removed from DB,
+   * this still returns true and triggers an "initial" deep harvest.
+   * This is intentional to allow automatic backfill after data loss/cleanup.
    *
    * @param {import('sequelize').Model} account
    * @returns {Promise<boolean>}
