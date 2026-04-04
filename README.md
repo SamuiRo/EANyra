@@ -39,7 +39,7 @@ EANyra/
 └── src/
     ├── core/
     │   ├── cli/
-    │   │   └── index.js                # Entry point — daemon or single-run mode
+    │   │   └── index.js                # Entry point — Commander CLI (daemon or single-run)
     │   ├── orchestrator/
     │   │   └── ScraperOrchestrator.js  # Coordinates a full scrape run
     │   ├── scheduler/
@@ -65,8 +65,9 @@ EANyra/
     │           └── status.js           # Scraper health tool
     ├── platforms/
     │   └── twitter/
-    │       ├── TwitterScraper.js       # DOM-based tweet extractor
-    │       └── humanBehavior.js        # Realistic mouse/scroll helpers
+    │       ├── index.js            # Platform module interface (factory + re-exports)
+    │       ├── TwitterScraper.js   # DOM-based tweet extractor
+    │       └── humanBehavior.js    # Realistic mouse/scroll helpers
     ├── config/
     │   ├── app.config.js               # All configuration with documented defaults
     │   └── accounts.json               # Monitored accounts list
@@ -82,8 +83,8 @@ EANyra/
 | `src/core/mcp/` | MCP server exposing DB data to AI agents via typed tools. |
 | `src/config/` | Environment config and exported constants. Single source of truth for all tuneable values. |
 | `src/core/browser/` | Playwright persistent context management and anti-detection patches. |
-| `src/platforms/twitter/` | Twitter/X extraction logic (scraper + human-behaviour helpers). |
-| `src/core/cli/` | CLI entry point for scrape runs (daemon or single-run mode). |
+| `src/platforms/twitter/` | Twitter/X extraction logic. `index.js` exposes the standard platform interface; `TwitterScraper.js` handles DOM extraction; `humanBehavior.js` handles mouse/scroll simulation. |
+| `src/core/cli/` | Commander-based CLI entry point (`eanyra start`, `eanyra scrape [platform]`). |
 | `src/core/orchestrator/` | Orchestrator for full scrape runs per schedule. |
 | `src/core/scheduler/` | `node-cron` wrapper for scheduled execution. |
 | `src/shared/` | Reusable utilities shared across the project. |
@@ -109,6 +110,74 @@ npm run scrape
 # 5. Start the daily daemon
 npm start
 ```
+
+---
+
+## CLI
+
+EANyra ships a `eanyra` binary (registered in `package.json` → `bin`).  
+After `npm install` you can run it directly via `npx eanyra` or, after `npm link`, globally as `eanyra`.
+
+```
+Usage: eanyra [command]
+
+Commands:
+  start                 Start the daemon — scrapes on the configured cron schedule (default: 08:00 UTC daily)
+  scrape [platform]     Run a single scrape then exit
+
+Options:
+  -v, --version         Print version and exit
+  -h, --help            Display help
+```
+
+### Examples
+
+```bash
+# Daemon mode (same as npm start)
+eanyra start
+
+# Scrape all platforms once and exit (same as npm run scrape)
+eanyra scrape
+
+# Scrape only Twitter/X and exit
+eanyra scrape twitter
+
+# Legacy invocation — still works, resolves to daemon mode
+node src/core/cli/index.js
+```
+
+### npm scripts (convenience wrappers)
+
+| Script | Equivalent | Description |
+|--------|-----------|-------------|
+| `npm start` | `eanyra start` | Start the cron daemon |
+| `npm run dev` | `node --watch … start` | Daemon with auto-restart on file change |
+| `npm run scrape` | `eanyra scrape` | Single run, all platforms |
+| `npm run scrape:twitter` | `eanyra scrape twitter` | Single run, Twitter/X only |
+| `npm run login` | — | Open browser for manual login |
+
+---
+
+## Platform module interface
+
+Each platform lives under `src/platforms/<name>/` and exposes a standard interface via its `index.js`:
+
+```js
+// Stable string key — used in CLI commands and DB records
+export const PLATFORM_ID = 'twitter';
+
+// Human-readable label for logs and help text
+export const displayName = 'Twitter / X';
+
+// Factory — creates a scraper instance without exposing the constructor
+export function createScraper(page, postsTarget) { … }
+
+// Re-exports of public classes and helpers
+export { TwitterScraper }           from './TwitterScraper.js';
+export { humanScroll, … }           from './humanBehavior.js';
+```
+
+`ScraperOrchestrator` imports platforms through this interface, so adding a new platform means dropping a new folder under `src/platforms/` with a matching `index.js` — no changes required in the orchestrator.
 
 ---
 
@@ -308,9 +377,38 @@ MAX_SCROLL_ATTEMPTS=30                 # Max scroll passes before giving up on a
 
 ## Roadmap
 
-### Done: MCP server
+### Done
 
+#### MCP server
 Read-only MCP server (`src/core/mcp/`) exposing all scraped data to AI agents via structured tools. See [MCP server — agent integration](#mcp-server--agent-integration) above.
+
+#### CLI foundation
+Commander-based CLI (`src/core/cli/index.js`) with `eanyra start` and `eanyra scrape [platform]` commands. Binary registered in `package.json → bin`. See [CLI](#cli) above.
+
+#### Platform module interface
+`src/platforms/twitter/index.js` exposes a stable `createScraper()` factory, `PLATFORM_ID`, `displayName`, and re-exports of all public classes. `ScraperOrchestrator` imports platforms through this interface.
+
+---
+
+### In progress
+
+#### Platform filtering in orchestrator
+**Status:** CLI accepts `eanyra scrape twitter` but `ScraperOrchestrator.run()` does not yet consume the `{ platform }` argument — all active accounts are scraped regardless.
+
+**What needs to be done:**
+1. `ScraperOrchestrator.run({ platform })` — add `platform` param to the signature
+2. After `syncFromConfig()`, filter `accounts` by platform if a filter is provided:  
+   ```js
+   const accounts = (await this.accountRepo.findAllActive())
+     .filter(a => !platform || a.platform === platform);
+   ```
+3. The `accounts` table currently has no `platform` column — add it to `Account.js` (default: `'twitter'`)
+4. `AccountRepository.syncFromConfig()` must write the `platform` field when upserting from `accounts.json`
+5. Add `platform` field to `accounts.json` entries (optional — defaults to `'twitter'` if absent)
+
+**Files to touch:** `Account.js`, `AccountRepository.js`, `ScraperOrchestrator.js`, `accounts.json`
+
+---
 
 ### Next: network interception module
 
