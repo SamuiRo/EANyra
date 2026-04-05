@@ -6,6 +6,7 @@ import http                       from 'node:http';
 
 import { twitterTools } from './tools/twitter.js';
 import { statusTools }  from './tools/status.js';
+import { buildContextTools } from './tools/context.js';
 import {MCP_PORT, MCP_HOST, MCP_TRANSPORT, PKG} from "../../config/app.config.js"
 
 // ── Config ────────────────────────────────────────────────────────────────
@@ -34,7 +35,7 @@ const server = new McpServer({
 
 // ── Register all tools ────────────────────────────────────────────────────
 
-const allTools = [...twitterTools, ...statusTools];
+const allTools = [...twitterTools, ...statusTools, ...contextTools];
 
 for (const tool of allTools) {
   const zodShape = jsonSchemaToZod(tool.inputSchema);

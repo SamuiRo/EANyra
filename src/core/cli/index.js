@@ -5,26 +5,30 @@
  * Commands:
  *   eanyra start                → daemon mode (runs on cron schedule)
  *   eanyra scrape               → single run across all platforms, then exit
- *   eanyra scrape twitter       → single run for Twitter/X only, then exit
- *
- * The old `node src/core/cli/index.js scrape` invocation still works
- * because `scrape` without a sub-argument defaults to all platforms.
+ *   eanyra scrape twitter       → Twitter/X only
+ *   eanyra scrape github        → GitHub only
  */
 
-import { Command }               from 'commander';
-import database                  from '../teapot/database.js';
-import { registerModels }        from '../teapot/models/index.js';
-import { ScraperOrchestrator }   from '../orchestrator/ScraperOrchestrator.js';
-import { Scheduler }             from '../scheduler/Scheduler.js';
-import { PKG, NODE_ENV }         from '../../config/app.config.js';
-import { banner, print }         from '../../shared/utils.js';
+import { Command }                   from 'commander';
+import database                      from '../teapot/database.js';
+import { registerContextCommands }   from './contextCommands.js';
+import { registerModels }            from '../teapot/models/index.js';
+import { ScraperOrchestrator }       from '../orchestrator/ScraperOrchestrator.js';
+import { Scheduler }                 from '../scheduler/Scheduler.js';
+import { PKG, NODE_ENV }             from '../../config/app.config.js';
+import { banner, print }             from '../../shared/utils.js';
 import { WELCOME_MESSAGE, SUB_TITLE } from '../../shared/message.js';
+
+/** All recognised platform identifiers. Add new platforms here. */
+const VALID_PLATFORMS = ['twitter', 'github'];
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 
 class Nyra {
-  /** @type {{ Account, Post, ScraperRun }} */
+  /** @type {{ Account, Post, ScraperRun, UserContext, Project, GithubEvent }} */
   #models = null;
+
+  get models() { return this.#models; }
 
   async #bootstrap() {
     banner(WELCOME_MESSAGE, SUB_TITLE);
@@ -43,10 +47,6 @@ class Nyra {
     await this.#syncSchema();
   }
 
-  /**
-   * SQLite + Sequelize alter mode can rebuild tables via DROP/CREATE.
-   * Temporarily disable FK checks only for schema sync.
-   */
   async #syncSchema() {
     const isSqlite = database.sequelize.getDialect() === 'sqlite';
 
@@ -86,9 +86,6 @@ class Nyra {
   // ── Run modes ─────────────────────────────────────────────────────────────
 
   /**
-   * Single scrape run. If `platformId` is provided, only that platform runs.
-   * Currently only 'twitter' exists; the param is reserved for future platforms.
-   *
    * @param {{ platform?: string }} [opts]
    */
   async #scrapeOnce({ platform } = {}) {
@@ -110,7 +107,6 @@ class Nyra {
     const scheduler = new Scheduler(() => this.#scrapeOnce());
     await scheduler.start();
 
-    // ── Graceful shutdown ──────────────────────────────────────────────────
     const shutdown = async signal => {
       print(`Received ${signal} — shutting down…`, 'system');
       scheduler.stop();
@@ -127,10 +123,8 @@ class Nyra {
   async main() {
     try {
       await this.#bootstrap();
-
       const program = buildCLI(this);
       await program.parseAsync(process.argv);
-
     } catch (error) {
       print(`Startup failed: ${error.message}`, 'error');
       console.error(error);
@@ -143,9 +137,6 @@ class Nyra {
 // ─── Commander setup ──────────────────────────────────────────────────────────
 
 /**
- * Build the Commander program.
- * Separated from Nyra so it's easy to unit-test without a real DB.
- *
  * @param {Nyra} nyra
  * @returns {import('commander').Command}
  */
@@ -154,7 +145,7 @@ function buildCLI(nyra) {
 
   program
     .name('eanyra')
-    .description('Twitter/X monitoring pipeline for AI agent data pipelines')
+    .description('Social media monitoring pipeline for AI agent data pipelines')
     .version(PKG.version, '-v, --version', 'Print version and exit');
 
   // ── eanyra start ─────────────────────────────────────────────────────────
@@ -166,33 +157,32 @@ function buildCLI(nyra) {
     });
 
   // ── eanyra scrape [platform] ──────────────────────────────────────────────
-  const scrapeCmd = program
+  program
     .command('scrape [platform]')
     .description(
       'Run a single scrape then exit.\n' +
       '  eanyra scrape            → all platforms\n' +
-      '  eanyra scrape twitter    → Twitter/X only',
+      '  eanyra scrape twitter    → Twitter/X only\n' +
+      '  eanyra scrape github     → GitHub only',
     )
     .action(async (platform) => {
-      const validPlatforms = ['twitter'];
-
-      if (platform && !validPlatforms.includes(platform)) {
+      if (platform && !VALID_PLATFORMS.includes(platform)) {
         print(
-          `Unknown platform "${platform}". Valid options: ${validPlatforms.join(', ')}`,
+          `Unknown platform "${platform}". Valid options: ${VALID_PLATFORMS.join(', ')}`,
           'error',
         );
         process.exit(1);
       }
-
       await nyra.runOnce({ platform });
     });
 
-  // ── Default: no command provided → start daemon (backwards-compat) ────────
-  // When users run `node src/core/cli/index.js` with no args, act as daemon.
-  program
-    .action(async () => {
-      await nyra.runDaemon();
-    });
+  // ── eanyra context ────────────────────────────────────────────────────────
+  registerContextCommands(program, nyra.models);
+
+  // ── Default: no command → daemon (backwards-compat) ──────────────────────
+  program.action(async () => {
+    await nyra.runDaemon();
+  });
 
   return program;
 }

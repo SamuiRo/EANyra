@@ -54,7 +54,6 @@ export const BROWSER = {
   cookiesPath: process.env.BROWSER_COOKIES_PATH
     ? path.resolve(process.cwd(), process.env.BROWSER_COOKIES_PATH)
     : path.join(DATA_DIR, 'cookies.json'),
-  // Default true — headful mode only for debugging or manual login
   headless: envBoolean('BROWSER_HEADLESS', true),
   navigationTimeoutMs: envNumber('BROWSER_NAV_TIMEOUT_MS', 30_000),
   selectorTimeoutMs: envNumber('BROWSER_SEL_TIMEOUT_MS', 15_000),
@@ -90,33 +89,48 @@ export const BROWSER = {
 
 export const TWITTER = {
   loginUrl: process.env.TWITTER_LOGIN_URL ?? 'https://x.com',
-  // loginUrl: process.env.TWITTER_LOGIN_URL ?? 'https://x.com/login',
-  homeUrl: process.env.TWITTER_HOME_URL ?? 'https://x.com/home',
+  homeUrl:  process.env.TWITTER_HOME_URL  ?? 'https://x.com/home',
 };
 
 export const SCRAPER = {
-  /** How many posts to collect per account on a regular (daily) run. */
-  postsPerAccount: envNumber('POSTS_PER_ACCOUNT', 20),
+  postsPerAccount:          envNumber('POSTS_PER_ACCOUNT', 20),
+  initialPostsPerAccount:   envNumber('INITIAL_POSTS_PER_ACCOUNT', 200),
+  scrollDelayMs:            envNumber('SCROLL_DELAY_MS', 2_500),
+  minDelayBetweenAccountsMs: envNumber('MIN_DELAY_BETWEEN_ACCOUNTS_MS', 5 * 60 * 1_000),
+  maxDelayBetweenAccountsMs: envNumber('MAX_DELAY_BETWEEN_ACCOUNTS_MS', 15 * 60 * 1_000),
+  maxScrollAttempts:        envNumber('MAX_SCROLL_ATTEMPTS', 30),
+  navigationTimeoutMs:      envNumber('SCRAPER_NAV_TIMEOUT_MS', envNumber('BROWSER_NAV_TIMEOUT_MS', 30_000)),
+  selectorTimeoutMs:        envNumber('SCRAPER_SELECTOR_TIMEOUT_MS', envNumber('BROWSER_SEL_TIMEOUT_MS', 15_000)),
+};
 
-  /** Maximum posts to collect during the initial harvest of a new account. */
-  initialPostsPerAccount: envNumber('INITIAL_POSTS_PER_ACCOUNT', 200),
+// ─── GitHub ───────────────────────────────────────────────────────────────────
+
+export const GITHUB = {
+  /**
+   * Personal Access Token — required scopes: read:user, public_repo.
+   * Generate at: https://github.com/settings/tokens
+   */
+  token: process.env.GITHUB_TOKEN ?? '',
 
   /**
-   * Base delay (ms) between scroll steps on a single profile page.
-   * Actual delay = scrollDelayMs + random jitter up to +800 ms (see humanBehavior).
+   * How many days back to look for events on each run.
+   * Default: 8 days — covers a full week with a 1-day buffer so
+   * weekly commit batches are never missed if the run is slightly late.
    */
-  scrollDelayMs: envNumber('SCROLL_DELAY_MS', 2_500),
+  lookbackDays: envNumber('GITHUB_LOOKBACK_DAYS', 8),
 
-  /** Minimum pause (ms) between scraping two consecutive accounts. Default: 5 min. */
-  minDelayBetweenAccountsMs: envNumber('MIN_DELAY_BETWEEN_ACCOUNTS_MS', 5 * 60 * 1_000),
+  /** Max public repos to inspect per account (GitHub API sort: pushed desc). */
+  reposPerAccount: envNumber('GITHUB_REPOS_PER_ACCOUNT', 30),
 
-  /** Maximum pause (ms) between accounts. Default: 15 min. */
-  maxDelayBetweenAccountsMs: envNumber('MAX_DELAY_BETWEEN_ACCOUNTS_MS', 15 * 60 * 1_000),
+  /** Max releases to fetch per repo per run. */
+  releasesPerRepo: envNumber('GITHUB_RELEASES_PER_REPO', 10),
 
-  /** Maximum scroll attempts before giving up on a single profile. */
-  maxScrollAttempts: envNumber('MAX_SCROLL_ATTEMPTS', 30),
+  /** Max commits to fetch per repo per run (within the lookback window). */
+  commitsPerRepo: envNumber('GITHUB_COMMITS_PER_REPO', 100),
 
-  // Prefer SCRAPER_NAV_TIMEOUT_MS; fall back to the shared BROWSER value.
-  navigationTimeoutMs: envNumber('SCRAPER_NAV_TIMEOUT_MS', envNumber('BROWSER_NAV_TIMEOUT_MS', 30_000)),
-  selectorTimeoutMs: envNumber('SCRAPER_SELECTOR_TIMEOUT_MS', envNumber('BROWSER_SEL_TIMEOUT_MS', 15_000)),
+  /**
+   * Max individual commit messages to store in a commit_batch body.
+   * Keeps DB rows from ballooning for highly active repos.
+   */
+  commitMessagesPerBatch: envNumber('GITHUB_COMMIT_MESSAGES_PER_BATCH', 10),
 };

@@ -1,0 +1,32 @@
+slug: "eanyra"
+name: "EANyra"
+status: "active"
+
+description: |
+  Socials monitoring pipeline для AI-агентів.
+  Scraper на Playwright збирає пости в SQLite, MCP server віддає
+  структуровані дані агенту — без live-скрейпінгу і без витрат токенів.
+
+tech_stack:
+  - "Node.js (ESM)"
+  - "Playwright"
+  - "SQLite + Sequelize"
+  - "MCP (Model Context Protocol)"
+  - "Commander (CLI)"
+
+links:
+  github: null   
+  website: null
+
+content_angles:
+  - "Anti-detection: canvas fingerprint, не UA"
+  - "MCP як шар між агентом і даними"
+  - "Чому SQLite а не PostgreSQL для цього кейсу"
+  - "Playwright persistent context — як зберегти сесію"
+  - "GraphQL interception замість DOM парсингу"
+  - "YAML + DB sync для user context агента"
+
+posting_rules:
+  - "На кожен реліз — 3-4 пости, не всі одразу, розтягнути на тиждень"
+  - "Технічні інсайти > анонси фіч"
+  - "Показувати код або конкретні числа де можливо"

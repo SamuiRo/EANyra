@@ -12,16 +12,22 @@ The pipeline is equally useful outside of AI contexts: as a data source for scri
 
 ```
 Twitter/X  ──►  EANyra Scraper  ──►  pot.sqlite
-                (runs daily)
-                                          │
-                                   MCP Server
-                              (src/core/mcp/server.js)
-                                          │
-                                   AI Agent
-                             (OpenClaw / Claude Desktop)
+                (runs daily)               │
+                                    MCP Server
+                               (src/core/mcp/server.js)
+                                           │
+                                    AI Agent
+                              (OpenClaw / Claude Desktop)
+
+src/context/*.yaml  ──►  eanyra context sync  ──►  pot.sqlite
+  (edited by hand)                                       │
+                                                  context_get()
+                                                  (MCP tool)
 ```
 
 The scraper runs on a schedule and keeps the database fresh. The MCP server is a lightweight read-only layer on top — it exposes typed tools that the agent calls directly, with no browser, no live scraping, and no wasted tokens.
+
+User context (voice, bio, platform rules, projects) is stored as YAML files and synced into the DB on demand. The agent always reads context from DB — never from files directly.
 
 ---
 
@@ -37,9 +43,17 @@ EANyra/
 │   ├── nyra/                   # Playwright persistent context (cookies, session)
 │   └── pot.sqlite              # SQLite database
 └── src/
+    ├── context/                        # User context — YAML source of truth
+    │   ├── voice.yaml                  # Tone, style, likes/dislikes, taboo
+    │   ├── bio.yaml                    # Bio per platform
+    │   ├── platforms.yaml              # Content rules per platform
+    │   └── projects/
+    │       ├── eanyra.yaml             # Project description, angles, posting rules
+    │       └── _template.yaml          # Copy this to add a new project
     ├── core/
     │   ├── cli/
-    │   │   └── index.js                # Entry point — Commander CLI (daemon or single-run)
+    │   │   ├── index.js                # Entry point — Commander CLI
+    │   │   └── contextCommands.js      # `eanyra context` sub-commands
     │   ├── orchestrator/
     │   │   └── ScraperOrchestrator.js  # Coordinates a full scrape run
     │   ├── scheduler/
@@ -52,17 +66,21 @@ EANyra/
     │   │   │   ├── index.js            # registerModels() — associations live here
     │   │   │   ├── Account.js
     │   │   │   ├── Post.js
-    │   │   │   └── ScraperRun.js
+    │   │   │   ├── ScraperRun.js
+    │   │   │   ├── UserContext.js      # Key/value store for YAML context
+    │   │   │   └── Project.js          # Project metadata from projects/*.yaml
     │   │   └── repositories/
-    │   │       ├── AccountRepository.js    # accounts.json sync + DB queries
-    │   │       ├── PostRepository.js       # Batch upsert, oldest-post lookup
-    │   │       └── ScraperRunRepository.js # Run lifecycle (start/finish/fail)
+    │   │       ├── AccountRepository.js
+    │   │       ├── PostRepository.js
+    │   │       ├── ScraperRunRepository.js
+    │   │       └── UserContextRepository.js  # YAML → DB sync logic
     │   └── mcp/
     │       ├── server.js               # Entry point, tool registration
     │       ├── db.js                   # SQLite query layer for MCP tools
     │       └── tools/
     │           ├── twitter.js          # Post/account query tools
-    │           └── status.js           # Scraper health tool
+    │           ├── status.js           # Scraper health tool
+    │           └── context.js          # context_get() tool
     ├── platforms/
     │   └── twitter/
     │       ├── index.js            # Platform module interface (factory + re-exports)
@@ -80,11 +98,12 @@ EANyra/
 
 | Path | Purpose |
 |------|---------|
+| `src/context/` | YAML source of truth for user context. Edit these by hand; sync to DB via `eanyra context sync`. Versioned in git. |
 | `src/core/mcp/` | MCP server exposing DB data to AI agents via typed tools. |
 | `src/config/` | Environment config and exported constants. Single source of truth for all tuneable values. |
 | `src/core/browser/` | Playwright persistent context management and anti-detection patches. |
 | `src/platforms/twitter/` | Twitter/X extraction logic. `index.js` exposes the standard platform interface; `TwitterScraper.js` handles DOM extraction; `humanBehavior.js` handles mouse/scroll simulation. |
-| `src/core/cli/` | Commander-based CLI entry point (`eanyra start`, `eanyra scrape [platform]`). |
+| `src/core/cli/` | Commander-based CLI entry point (`eanyra start`, `eanyra scrape [platform]`, `eanyra context`). |
 | `src/core/orchestrator/` | Orchestrator for full scrape runs per schedule. |
 | `src/core/scheduler/` | `node-cron` wrapper for scheduled execution. |
 | `src/shared/` | Reusable utilities shared across the project. |
@@ -107,7 +126,10 @@ npm run login
 # 4. Run a single scrape to verify everything works
 npm run scrape
 
-# 5. Start the daily daemon
+# 5. Sync user context into the database
+eanyra context sync
+
+# 6. Start the daily daemon
 npm start
 ```
 
@@ -122,12 +144,15 @@ After `npm install` you can run it directly via `npx eanyra` or, after `npm link
 Usage: eanyra [command]
 
 Commands:
-  start                 Start the daemon — scrapes on the configured cron schedule (default: 08:00 UTC daily)
-  scrape [platform]     Run a single scrape then exit
+  start                   Start the daemon — scrapes on the configured cron schedule
+  scrape [platform]       Run a single scrape then exit
+  context sync            Read src/context/ YAML files and sync into the database
+  context show            Print current context from the database (what the agent sees)
+  context show -k <key>   Print a single context key (voice, bio, platforms, project.eanyra)
 
 Options:
-  -v, --version         Print version and exit
-  -h, --help            Display help
+  -v, --version           Print version and exit
+  -h, --help              Display help
 ```
 
 ### Examples
@@ -136,14 +161,19 @@ Options:
 # Daemon mode (same as npm start)
 eanyra start
 
-# Scrape all platforms once and exit (same as npm run scrape)
+# Scrape all platforms once and exit
 eanyra scrape
 
 # Scrape only Twitter/X and exit
 eanyra scrape twitter
 
-# Legacy invocation — still works, resolves to daemon mode
-node src/core/cli/index.js
+# Sync context after editing any YAML file
+eanyra context sync
+
+# Inspect what the agent currently sees
+eanyra context show
+eanyra context show -k voice
+eanyra context show -k project.eanyra
 ```
 
 ### npm scripts (convenience wrappers)
@@ -160,7 +190,7 @@ node src/core/cli/index.js
 
 ## Platform module interface
 
-Each platform lives under `src/platforms/<name>/` and exposes a standard interface via its `index.js`:
+Each platform lives under `src/platforms/<n>/` and exposes a standard interface via its `index.js`:
 
 ```js
 // Stable string key — used in CLI commands and DB records
@@ -178,6 +208,123 @@ export { humanScroll, … }           from './humanBehavior.js';
 ```
 
 `ScraperOrchestrator` imports platforms through this interface, so adding a new platform means dropping a new folder under `src/platforms/` with a matching `index.js` — no changes required in the orchestrator.
+
+---
+
+## User context
+
+User context is the information the AI agent needs to generate content that sounds like you — not generic AI output. It covers tone, platform rules, bio, and active projects.
+
+### Design
+
+YAML files in `src/context/` are the source of truth. They are:
+- Edited by hand like a config file, not like code
+- Versioned in git — changes are visible in diffs
+- Never read directly by the agent
+
+On `eanyra context sync` (or `eanyra start`), `UserContextRepository` reads all YAML files and upserts them into two SQLite tables: `user_context` (flat key/value) and `projects` (one row per project). The MCP tool `context_get()` reads exclusively from the DB.
+
+```
+src/context/*.yaml  →  UserContextRepository.sync()  →  user_context + projects tables
+                                                                    ↑
+                                                           context_get() MCP tool
+```
+
+### YAML files
+
+#### `voice.yaml`
+
+Tone, style preferences, and taboos. The most important file — the agent uses this to calibrate the writing style of every post.
+
+```yaml
+tone: "Технічний але без снобізму. Практик, не теоретик."
+likes:
+  - "Конкретні числа (5 хвилин, 200 постів)"
+  - "Behind the scenes думки"
+dislikes:
+  - "Корпоративні кліше"
+  - 'Зайва скромність ("просто маленький проект")'
+example_post: |
+  Витратив 3 дні на anti-detection браузер і з'ясував що Twitter
+  банить не по UA, а по canvas fingerprint...
+taboo:
+  - "Не публікувати непідтверджені факти як факти"
+```
+
+#### `bio.yaml`
+
+Short and full bio per platform. Used when the agent drafts profile descriptions or intro posts.
+
+```yaml
+twitter:
+  short: "Будую інструменти для медійки."
+  full: null
+linkedin:
+  short: "..."
+  full: |
+    Multi-line full bio here.
+```
+
+#### `platforms.yaml`
+
+Content rules per platform: max length, language, style, allowed formats, things to avoid, posting frequency.
+
+```yaml
+twitter:
+  max_length: 280
+  language: "uk"
+  style: "Короткий удар. Одна думка — один твіт."
+  formats:
+    - "Інсайт з конкретним числом"
+    - "Thread: реліз → 3-4 твіти з різних кутів"
+  avoid:
+    - "Твіти без конкретики"
+  posting_frequency: "3-5 разів на тиждень"
+```
+
+#### `projects/<slug>.yaml`
+
+One file per project. The `slug` field (or filename if omitted) becomes the DB key `project.<slug>`. Each file contains description, tech stack, links, content angles, and posting rules.
+
+```yaml
+slug: "eanyra"
+name: "EANyra"
+status: "active"          # active | paused | archived
+description: |
+  Twitter/X monitoring pipeline для AI-агентів.
+tech_stack:
+  - "Node.js (ESM)"
+  - "Playwright"
+content_angles:
+  - "Anti-detection: canvas fingerprint, не UA"
+  - "MCP як шар між агентом і даними"
+posting_rules:
+  - "На реліз — 3-4 пости, не всі одразу"
+  - "Технічні інсайти > анонси фіч"
+```
+
+To add a new project — copy `projects/_template.yaml`, rename to `<slug>.yaml`, fill in the fields, run `eanyra context sync`.
+
+### Workflow
+
+```bash
+# Edit any YAML file, then:
+eanyra context sync
+
+# Verify what the agent will see:
+eanyra context show
+eanyra context show -k voice
+eanyra context show -k project.eanyra
+```
+
+### Implementation notes
+
+- `UserContextRepository` (`src/core/teapot/repositories/UserContextRepository.js`) handles all YAML reading and DB upserts. It is used only by the CLI — never by the MCP server directly.
+- `UserContext` model (`src/core/teapot/models/UserContext.js`) — table `user_context`, columns: `key` (unique string), `value` (JSON TEXT), `synced_at`.
+- `Project` model (`src/core/teapot/models/Project.js`) — table `projects`, columns: `slug`, `name`, `status`, `description`, `tech_stack`, `links`, `content_angles`, `posting_rules`, `synced_at`. JSON columns are stored as TEXT and deserialized automatically via Sequelize getters/setters.
+- Both models are registered in `src/core/teapot/models/index.js` alongside existing models and are created automatically by `sequelize.sync()` on first run.
+- The MCP `context_get()` tool (`src/core/mcp/tools/context.js`) uses raw SQL via `db.js` — consistent with other MCP tools, no Sequelize dependency in the MCP process.
+- `project.*` keys in `user_context` are written as a convenience but skipped by `context_get()` — the authoritative project data comes from the `projects` table which has proper typed columns.
 
 ---
 
@@ -215,14 +362,15 @@ Restart the gateway — the agent discovers all tools automatically. No addition
 | `twitter_get_account_stats` | Aggregated engagement stats per account |
 | `twitter_list_accounts` | All monitored accounts with last scrape time |
 | `twitter_get_scraper_status` | Scraper health, last run result, data freshness |
+| `context_get` | Full user context: voice, bio, platform rules, active projects. Always call before generating content. |
 
-### Extending with new skills
+### Extending with new tools
 
-To add a new skill to the same MCP server, create `src/core/mcp/tools/yourskill.js` following the same pattern as `twitter.js`, then register it in `server.js`:
+To add a new tool to the same MCP server, create `src/core/mcp/tools/yourskill.js` following the same pattern as `twitter.js` (export a named array, each item has `name`, `description`, `inputSchema`, `handler`), then register it in `server.js`:
 
 ```js
 import { yourSkillTools } from './tools/yourskill.js';
-const allTools = [...twitterTools, ...statusTools, ...yourSkillTools];
+const allTools = [...twitterTools, ...statusTools, ...contextTools, ...yourSkillTools];
 ```
 
 Restart the gateway — new tools appear automatically.
@@ -355,6 +503,30 @@ Beyond human behaviour, the browser context patches several fingerprint vectors:
 | posts_saved | INTEGER | Newly inserted posts |
 | error_message | TEXT | Top-level error if failed or partial |
 
+### `user_context`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | INTEGER | Primary key |
+| key | STRING(128) | Unique identifier: `voice`, `bio`, `platforms`, `project.<slug>` |
+| value | TEXT | JSON-serialised content of the corresponding YAML section |
+| synced_at | DATE | Timestamp of last sync from YAML |
+
+### `projects`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | INTEGER | Primary key |
+| slug | STRING(64) | Unique identifier (from `slug` field in YAML or filename) |
+| name | STRING | Human-readable project name |
+| status | ENUM | `active` / `paused` / `archived` |
+| description | TEXT | Full project description |
+| tech_stack | TEXT | JSON array of tech stack items |
+| links | TEXT | JSON object `{ github, website, ... }` |
+| content_angles | TEXT | JSON array of content angle strings |
+| posting_rules | TEXT | JSON array of posting rule strings |
+| synced_at | DATE | Timestamp of last sync from YAML |
+
 ---
 
 ## Environment variables
@@ -383,10 +555,13 @@ MAX_SCROLL_ATTEMPTS=30                 # Max scroll passes before giving up on a
 Read-only MCP server (`src/core/mcp/`) exposing all scraped data to AI agents via structured tools. See [MCP server — agent integration](#mcp-server--agent-integration) above.
 
 #### CLI foundation
-Commander-based CLI (`src/core/cli/index.js`) with `eanyra start` and `eanyra scrape [platform]` commands. Binary registered in `package.json → bin`. See [CLI](#cli) above.
+Commander-based CLI (`src/core/cli/index.js`) with `eanyra start`, `eanyra scrape [platform]`, and `eanyra context` commands. Binary registered in `package.json → bin`. See [CLI](#cli) above.
 
 #### Platform module interface
 `src/platforms/twitter/index.js` exposes a stable `createScraper()` factory, `PLATFORM_ID`, `displayName`, and re-exports of all public classes. `ScraperOrchestrator` imports platforms through this interface.
+
+#### User context system
+YAML files in `src/context/` synced into SQLite via `eanyra context sync`. The agent reads context via the `context_get()` MCP tool. See [User context](#user-context) above.
 
 ---
 

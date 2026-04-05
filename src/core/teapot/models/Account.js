@@ -1,15 +1,12 @@
 import { DataTypes } from 'sequelize';
 
 /**
- * Account — a Twitter/X account to monitor.
+ * Account — a monitored social media account.
  *
- * Fields:
- *   id          – auto-increment PK
- *   username    – Twitter handle without "@" (unique)
- *   display_name – human-readable label (optional)
- *   is_active   – soft-toggle; false = skipped during scrape runs
- *   last_scraped_at – timestamp of the most recent successful scrape
- *   created_at / updated_at – managed by Sequelize
+ * The `platform` field was added to support multi-platform scraping.
+ * Existing rows default to 'twitter' (set in migration / sync fallback).
+ *
+ * platform values: 'twitter' | 'github'
  */
 export function defineAccountModel(sequelize) {
   return sequelize.define('Account', {
@@ -19,18 +16,21 @@ export function defineAccountModel(sequelize) {
       autoIncrement: true,
     },
     username: {
-      type:      DataTypes.STRING(64),
+      type:      DataTypes.STRING(128),
       allowNull: false,
       unique:    true,
-      set(value) {
-        // Normalize: strip leading "@", lowercase
-        this.setDataValue('username', value.replace(/^@/, '').toLowerCase().trim());
-      },
     },
     display_name: {
-      type:      DataTypes.STRING(128),
+      type:      DataTypes.STRING(256),
       allowNull: true,
     },
+    // ── NEW ──────────────────────────────────────────────────────────────────
+    platform: {
+      type:         DataTypes.STRING(32),
+      allowNull:    false,
+      defaultValue: 'twitter',
+    },
+    // ─────────────────────────────────────────────────────────────────────────
     is_active: {
       type:         DataTypes.BOOLEAN,
       allowNull:    false,
@@ -41,8 +41,12 @@ export function defineAccountModel(sequelize) {
       allowNull: true,
     },
   }, {
-    tableName:  'accounts',
-    timestamps: true,
+    tableName:   'accounts',
+    timestamps:  true,
     underscored: true,
+    indexes: [
+      { fields: ['platform'] },
+      { fields: ['is_active'] },
+    ],
   });
 }

@@ -1,0 +1,12 @@
+twitter:
+  short: ""
+  full: null  # Twitter не підтримує довге bio
+
+linkedin:
+  short: ""
+  full: ""
+    
+
+telegram:
+  short: ""
+  full: null

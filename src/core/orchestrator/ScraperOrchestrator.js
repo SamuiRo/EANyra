@@ -1,183 +1,235 @@
 /**
  * src/core/orchestrator/ScraperOrchestrator.js
  *
- * Coordinates a complete scrape run:
+ * Coordinates a complete scrape run across all active platforms
+ * (or a single platform when called from `eanyra scrape <platform>`).
+ *
+ * Flow:
  *   1. Open a ScraperRun record (status: running)
  *   2. Sync accounts.json → DB
- *   3. For each active account (sequentially, with human-like delays):
- *        a. Determine scrape depth (initial harvest vs. daily top-up)
- *        b. Launch a fresh browser page
- *        c. Scrape posts
- *        d. Persist posts
- *        e. Update account.last_scraped_at
- *        f. Close the page
- *   4. Close the browser
- *   5. Finalise the ScraperRun record (success / partial / failed)
+ *   3. Filter accounts by platform (if provided)
+ *   4. Run the appropriate scraper per platform:
+ *        twitter → Browser + TwitterScraper (Playwright, human-behaviour delays)
+ *        github  → GithubScraper (REST API, no browser, no delays needed)
+ *   5. Close the browser (if opened)
+ *   6. Finalise the ScraperRun record (success / partial / failed)
  *
- * Human-behaviour strategy
- * ─────────────────────────
- * Twitter/X watches for robotic request patterns (uniform timing, high RPS).
- * Because we only scrape once a day with a small account list, we can afford
- * generous, randomised pauses that make the session indistinguishable from
- * a person casually browsing several profiles.
- *
- *  • 5–15 minute random gap between consecutive accounts
- *  • Random extra delay before the first account (0–3 min "wake-up" pause)
- *  • Scroll delays jittered inside humanBehavior.js (humanScroll)
- *  • simulatePageLanding() called per account inside TwitterScraper
- *  • A single persistent browser context reuses the real cookie jar
+ * Adding a new platform:
+ *   1. Create src/platforms/<name>/index.js with createScraper() + PLATFORM_ID
+ *   2. Add a case in #scrapeAccount() below
+ *   3. Register the platform string in VALID_PLATFORMS in cli/index.js
  */
 
-import { Browser }               from '../browser/Browser.js';
-import { TwitterScraper }        from '../../platforms/twitter/TwitterScraper.js';
-import { AccountRepository }     from '../teapot/repositories/AccountRepository.js';
-import { PostRepository }        from '../teapot/repositories/PostRepository.js';
-import { ScraperRunRepository }  from '../teapot/repositories/ScraperRunRepository.js';
-import { SCRAPER }               from '../../config/app.config.js';
-import { print, sleep }          from '../../shared/utils.js';
+import { Browser }                   from '../browser/Browser.js';
+import { TwitterScraper }            from '../../platforms/twitter/TwitterScraper.js';
+import { createScraper as createGithubScraper } from '../../platforms/github/index.js';
+import { AccountRepository }         from '../teapot/repositories/AccountRepository.js';
+import { PostRepository }            from '../teapot/repositories/PostRepository.js';
+import { GithubEventRepository }     from '../teapot/repositories/GithubEventRepository.js';
+import { ScraperRunRepository }      from '../teapot/repositories/ScraperRunRepository.js';
+import { SCRAPER, GITHUB }           from '../../config/app.config.js';
+import { print, sleep }              from '../../shared/utils.js';
 
 export class ScraperOrchestrator {
   /**
    * @param {{
-   *   Account:    import('sequelize').ModelStatic,
-   *   Post:       import('sequelize').ModelStatic,
-   *   ScraperRun: import('sequelize').ModelStatic,
+   *   Account:     import('sequelize').ModelStatic,
+   *   Post:        import('sequelize').ModelStatic,
+   *   ScraperRun:  import('sequelize').ModelStatic,
+   *   GithubEvent: import('sequelize').ModelStatic,
    * }} models
    */
   constructor(models) {
-    this.accountRepo    = new AccountRepository(models.Account);
-    this.postRepo       = new PostRepository(models.Post);
-    this.scraperRunRepo = new ScraperRunRepository(models.ScraperRun);
+    this.accountRepo     = new AccountRepository(models.Account);
+    this.postRepo        = new PostRepository(models.Post);
+    this.githubEventRepo = new GithubEventRepository(models.GithubEvent);
+    this.scraperRunRepo  = new ScraperRunRepository(models.ScraperRun);
   }
 
   // ── Public API ────────────────────────────────────────────────────────────
 
   /**
-   * Execute a full scrape run.
-   * Safe to call from both daemon (scheduler tick) and CLI (scrape mode).
+   * Execute a full scrape run, optionally filtered to one platform.
+   *
+   * @param {{ platform?: string }} [opts]
    */
-  async run() {
+  async run({ platform } = {}) {
     // ── 1. Open run record ─────────────────────────────────────────────────
     const scraperRun = await this.scraperRunRepo.start();
 
     // ── 2. Sync accounts config → DB ──────────────────────────────────────
     await this.accountRepo.syncFromConfig();
-    const accounts = await this.accountRepo.findAllActive();
+    const allActive = await this.accountRepo.findAllActive();
+
+    // ── 3. Filter by platform ─────────────────────────────────────────────
+    const accounts = platform
+      ? allActive.filter(a => a.platform === platform)
+      : allActive;
 
     if (!accounts.length) {
-      print('No active accounts found — nothing to scrape.', 'warning');
-      await this.scraperRunRepo.finish(scraperRun, {
-        accountsProcessed: 0,
-        postsSaved:        0,
-      });
+      const reason = platform
+        ? `No active accounts for platform "${platform}".`
+        : 'No active accounts found — nothing to scrape.';
+      print(reason, 'warning');
+      await this.scraperRunRepo.finish(scraperRun, { accountsProcessed: 0, postsSaved: 0 });
       return;
     }
 
-    print(`Starting scrape for ${accounts.length} account(s).`, 'info');
+    print(
+      `Starting scrape for ${accounts.length} account(s)` +
+      (platform ? ` [platform: ${platform}]` : '') + '.',
+      'info',
+    );
 
-    // ── 3. Launch browser (single persistent context for the whole run) ────
-    const browser = new Browser();
-    await browser.launch();
+    // ── 4. Scrape ──────────────────────────────────────────────────────────
+    let totalSaved    = 0;
+    let accountsDone  = 0;
+    const failed      = [];
 
-    // Tracking state
-    let totalPostsSaved   = 0;
-    let accountsProcessed = 0;
-    const failedAccounts  = [];
+    // Browser is opened lazily — only when a twitter account is encountered.
+    let browser = null;
+
+    // GitHub scraper is stateful (carries readme shas) — one instance per run.
+    // Initialised lazily per-user below.
+    const githubToken = GITHUB.token;
 
     try {
-      // Small random "wake-up" pause before the first account (0–3 min)
-      const wakeUpMs = Math.floor(Math.random() * 3 * 60 * 1_000);
-      if (wakeUpMs > 0) {
-        print(
-          `Wake-up pause: ${Math.round(wakeUpMs / 1_000)}s before first account…`,
-          'system',
-        );
-        await sleep(wakeUpMs);
+      // Small random "wake-up" pause before the first twitter account (0–3 min).
+      // Skip if this is a github-only run.
+      const hasTwitter = accounts.some(a => a.platform === 'twitter');
+      if (hasTwitter) {
+        const wakeUpMs = Math.floor(Math.random() * 3 * 60 * 1_000);
+        if (wakeUpMs > 0) {
+          print(`Wake-up pause: ${Math.round(wakeUpMs / 1_000)}s…`, 'system');
+          await sleep(wakeUpMs);
+        }
       }
 
       for (let i = 0; i < accounts.length; i++) {
         const account = accounts[i];
 
-        // ── 3a. Determine scrape depth ───────────────────────────────────
-        const isInitialRun = await this.#isInitialRun(account);
-        const postsTarget  = isInitialRun
-          ? SCRAPER.initialPostsPerAccount
-          : SCRAPER.postsPerAccount;
-
         print(
-          `[${i + 1}/${accounts.length}] @${account.username} — ` +
-          `${isInitialRun ? 'INITIAL harvest' : 'daily top-up'} (target: ${postsTarget} posts)`,
+          `[${i + 1}/${accounts.length}] @${account.username} (${account.platform})`,
           'info',
         );
 
-        // ── 3b–3e. Scrape + persist ──────────────────────────────────────
-        const page = await browser.newPage();
         try {
-          const scraper  = new TwitterScraper(page, postsTarget);
-          const rawPosts = await scraper.scrapeAccount(account.username);
+          const saved = await this.#scrapeAccount(account, { browser: () => this.#ensureBrowser(browser) });
 
-          const saved = await this.postRepo.saveBatch(account.id, rawPosts);
-          await this.accountRepo.markScraped(account.id);
+          // Capture browser reference if it was opened inside #ensureBrowser
+          if (!browser && account.platform === 'twitter') {
+            browser = this.#activeBrowser;
+          }
 
-          totalPostsSaved   += saved;
-          accountsProcessed += 1;
-
-          print(
-            `@${account.username}: scraped ${rawPosts.length} posts, ${saved} new saved.`,
-            'data',
-          );
-        } catch (accountError) {
-          // Log failure and continue — do NOT abort the whole run
-          const msg = `@${account.username} failed: ${accountError.message}`;
+          totalSaved   += saved;
+          accountsDone += 1;
+        } catch (err) {
+          const msg = `@${account.username} (${account.platform}) failed: ${err.message}`;
           print(msg, 'error');
-          failedAccounts.push(msg);
-        } finally {
-          await page.close();
+          failed.push(msg);
         }
 
-        // ── 3f. Inter-account human delay (skip after the last account) ──
-        if (i < accounts.length - 1) {
+        // Inter-account delay only for twitter accounts (github has no rate pressure at daily cadence)
+        if (i < accounts.length - 1 && account.platform === 'twitter') {
           await this.#humanPause();
         }
       }
     } finally {
-      // ── 4. Always close the browser ─────────────────────────────────────
-      await browser.close();
+      if (browser) await browser.close();
     }
 
-    // ── 5. Finalise the run record ─────────────────────────────────────────
-    if (failedAccounts.length === 0) {
+    // ── 5. Finalise run ────────────────────────────────────────────────────
+    if (failed.length === 0) {
       await this.scraperRunRepo.finish(scraperRun, {
-        accountsProcessed,
-        postsSaved: totalPostsSaved,
+        accountsProcessed: accountsDone,
+        postsSaved:        totalSaved,
       });
-    } else if (accountsProcessed > 0) {
+    } else if (accountsDone > 0) {
       await this.scraperRunRepo.partialFinish(scraperRun, {
-        accountsProcessed,
-        postsSaved:   totalPostsSaved,
-        errorMessage: failedAccounts.join(' | '),
+        accountsProcessed: accountsDone,
+        postsSaved:        totalSaved,
+        errorMessage:      failed.join(' | '),
       });
     } else {
-      await this.scraperRunRepo.fail(
-        scraperRun,
-        `All accounts failed: ${failedAccounts.join(' | ')}`,
-      );
+      await this.scraperRunRepo.fail(scraperRun, `All accounts failed: ${failed.join(' | ')}`);
     }
   }
 
   // ── Private ───────────────────────────────────────────────────────────────
 
+  /** Holds the active Browser instance so we can reuse it across twitter accounts. */
+  #activeBrowser = null;
+
   /**
-   * An account is considered "initial" if it has never been scraped
-   * (no posts in the DB yet, or last_scraped_at is null).
-   *
-   * NOTE:
-   * If last_scraped_at exists but all posts were removed from DB,
-   * this still returns true and triggers an "initial" deep harvest.
-   * This is intentional to allow automatic backfill after data loss/cleanup.
+   * Lazily launch the Playwright browser and cache it.
+   * @returns {Promise<Browser>}
+   */
+  async #ensureBrowser() {
+    if (!this.#activeBrowser) {
+      this.#activeBrowser = new Browser();
+      await this.#activeBrowser.launch();
+    }
+    return this.#activeBrowser;
+  }
+
+  /**
+   * Scrape a single account using the correct platform scraper.
+   * Returns the number of newly saved records.
    *
    * @param {import('sequelize').Model} account
-   * @returns {Promise<boolean>}
+   * @returns {Promise<number>}
+   */
+  async #scrapeAccount(account) {
+    switch (account.platform) {
+
+      case 'twitter': {
+        const isInitial   = await this.#isInitialRun(account);
+        const postsTarget = isInitial ? SCRAPER.initialPostsPerAccount : SCRAPER.postsPerAccount;
+
+        print(
+          `  → twitter ${isInitial ? 'INITIAL harvest' : 'daily top-up'} (target: ${postsTarget})`,
+          'system',
+        );
+
+        const browser  = await this.#ensureBrowser();
+        const page     = await browser.newPage();
+        try {
+          const scraper  = new TwitterScraper(page, postsTarget);
+          const rawPosts = await scraper.scrapeAccount(account.username);
+          const saved    = await this.postRepo.saveBatch(account.id, rawPosts);
+          await this.accountRepo.markScraped(account.id);
+          print(`  → @${account.username}: ${rawPosts.length} scraped, ${saved} new.`, 'data');
+          return saved;
+        } finally {
+          await page.close();
+        }
+      }
+
+      case 'github': {
+        if (!GITHUB.token) {
+          throw new Error(
+            'GITHUB_TOKEN is not set. Add it to .env — see .env.example for details.'
+          );
+        }
+
+        // Load readme shas from last run so we can detect changes
+        const readmeShas = await this.githubEventRepo.getReadmeShas(account.username);
+        const scraper    = createGithubScraper(GITHUB.token, readmeShas);
+        const rawEvents  = await scraper.scrapeAccount(account.username);
+        const saved      = await this.githubEventRepo.saveBatch(account.id, rawEvents);
+        await this.accountRepo.markScraped(account.id);
+        print(`  → @${account.username}: ${rawEvents.length} events, ${saved} new.`, 'data');
+        return saved;
+      }
+
+      default:
+        throw new Error(`Unknown platform: "${account.platform}"`);
+    }
+  }
+
+  /**
+   * Twitter only: an account is "initial" if it has never been scraped
+   * or all its posts were cleared from the DB.
    */
   async #isInitialRun(account) {
     if (!account.last_scraped_at) return true;
@@ -186,19 +238,14 @@ export class ScraperOrchestrator {
   }
 
   /**
-   * Random pause between accounts — mimics a human taking a break
-   * between browsing different profiles.
-   *
-   * NOTE: jitter() from utils.js returns Promise<void>, not a number.
-   * We compute the delay manually so we can log it before sleeping.
+   * Random pause between consecutive twitter accounts (5–15 min).
    */
   async #humanPause() {
     const delayMs = Math.floor(
       Math.random() * (SCRAPER.maxDelayBetweenAccountsMs - SCRAPER.minDelayBetweenAccountsMs + 1)
     ) + SCRAPER.minDelayBetweenAccountsMs;
 
-    const minutes = (delayMs / 60_000).toFixed(1);
-    print(`Waiting ${minutes} min before next account…`, 'system');
+    print(`Waiting ${(delayMs / 60_000).toFixed(1)} min before next account…`, 'system');
     await sleep(delayMs);
   }
 }

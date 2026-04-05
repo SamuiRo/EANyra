@@ -1,6 +1,6 @@
 {
   "name": "eanyra",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "Twitter monitoring tool for AI agent data pipeline",
   "main": "src/core/cli/index.js",
   "bin": {
@@ -38,6 +38,7 @@
     "sequelize": "^6.37.3",
     "sharp": "^0.33.4",
     "sqlite3": "^5.1.7",
+    "yaml": "^2.8.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {

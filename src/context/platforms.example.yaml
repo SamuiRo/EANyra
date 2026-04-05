@@ -1,0 +1,35 @@
+twitter:
+  max_length: 280
+  language: "uk"
+  style: ""
+  formats:
+    - "insight"
+    - "error"
+    - "before / after"
+    - "release"
+  avoid:
+    - "no specifics"
+    - "questioning"
+  posting_frequency: "weekly"
+
+linkedin:
+  max_length: 3000
+  language: "uk"
+  style: ""
+  formats:
+    - "lesson"
+    - "technical insight"
+    - "release"
+  avoid:
+    - "bait"
+    - "shitposting"
+  posting_frequency: "weekly"
+
+telegram:
+  language: "uk"
+  style: ""
+  formats:
+    - "short"
+    - ""
+    - ""
+  posting_frequency: ""

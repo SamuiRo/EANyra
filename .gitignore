@@ -4,6 +4,11 @@
 /data
 /src/config/accounts.json
 /test
+/PLAN.md
+/src/context/eanyra.yaml
+/src/context/platforms.yaml
+/src/context/voice.yaml
+/src/context/bio.yaml
 
 # Logs
 logs
