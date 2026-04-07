@@ -8,5 +8,6 @@
       "username": "elonmask",
       "display_name": "Elon Mask",
       "active": true
-    }
+    },
+    { "username": "torvalds", "display_name": "Linus Torvalds", "platform": "github","active": true }
   ]

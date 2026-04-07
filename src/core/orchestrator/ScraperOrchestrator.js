@@ -8,42 +8,47 @@
  *   1. Open a ScraperRun record (status: running)
  *   2. Sync accounts.json → DB
  *   3. Filter accounts by platform (if provided)
- *   4. Run the appropriate scraper per platform:
- *        twitter → Browser + TwitterScraper (Playwright, human-behaviour delays)
- *        github  → GithubScraper (REST API, no browser, no delays needed)
+ *   4. Dispatch each account to the correct platform scraper:
+ *        twitter  → Browser + TwitterScraper (Playwright, human-behaviour delays)
+ *        github   → GithubScraper (REST API, no browser)
+ *        linkedin → LinkedinImporter (CSV import from data/imports/, no network)
  *   5. Close the browser (if opened)
  *   6. Finalise the ScraperRun record (success / partial / failed)
  *
  * Adding a new platform:
- *   1. Create src/platforms/<name>/index.js with createScraper() + PLATFORM_ID
+ *   1. Create src/platforms/<n>/index.js with createScraper() + PLATFORM_ID
  *   2. Add a case in #scrapeAccount() below
- *   3. Register the platform string in VALID_PLATFORMS in cli/index.js
+ *   3. Add the platform string to VALID_PLATFORMS in cli/index.js
  */
 
 import { Browser }                   from '../browser/Browser.js';
 import { TwitterScraper }            from '../../platforms/twitter/TwitterScraper.js';
-import { createScraper as createGithubScraper } from '../../platforms/github/index.js';
+import { createScraper as createGithubScraper }   from '../../platforms/github/index.js';
+import { createScraper as createLinkedinImporter } from '../../platforms/linkedin/index.js';
 import { AccountRepository }         from '../teapot/repositories/AccountRepository.js';
 import { PostRepository }            from '../teapot/repositories/PostRepository.js';
 import { GithubEventRepository }     from '../teapot/repositories/GithubEventRepository.js';
+import { LinkedinPostRepository }    from '../teapot/repositories/LinkedinPostRepository.js';
 import { ScraperRunRepository }      from '../teapot/repositories/ScraperRunRepository.js';
-import { SCRAPER, GITHUB }           from '../../config/app.config.js';
+import { SCRAPER, GITHUB, LINKEDIN } from '../../config/app.config.js';
 import { print, sleep }              from '../../shared/utils.js';
 
 export class ScraperOrchestrator {
   /**
    * @param {{
-   *   Account:     import('sequelize').ModelStatic,
-   *   Post:        import('sequelize').ModelStatic,
-   *   ScraperRun:  import('sequelize').ModelStatic,
-   *   GithubEvent: import('sequelize').ModelStatic,
+   *   Account:      import('sequelize').ModelStatic,
+   *   Post:         import('sequelize').ModelStatic,
+   *   ScraperRun:   import('sequelize').ModelStatic,
+   *   GithubEvent:  import('sequelize').ModelStatic,
+   *   LinkedinPost: import('sequelize').ModelStatic,
    * }} models
    */
   constructor(models) {
-    this.accountRepo     = new AccountRepository(models.Account);
-    this.postRepo        = new PostRepository(models.Post);
-    this.githubEventRepo = new GithubEventRepository(models.GithubEvent);
-    this.scraperRunRepo  = new ScraperRunRepository(models.ScraperRun);
+    this.accountRepo      = new AccountRepository(models.Account);
+    this.postRepo         = new PostRepository(models.Post);
+    this.githubEventRepo  = new GithubEventRepository(models.GithubEvent);
+    this.linkedinPostRepo = new LinkedinPostRepository(models.LinkedinPost);
+    this.scraperRunRepo   = new ScraperRunRepository(models.ScraperRun);
   }
 
   // ── Public API ────────────────────────────────────────────────────────────
@@ -82,20 +87,17 @@ export class ScraperOrchestrator {
     );
 
     // ── 4. Scrape ──────────────────────────────────────────────────────────
-    let totalSaved    = 0;
-    let accountsDone  = 0;
-    const failed      = [];
+    let totalSaved   = 0;
+    let accountsDone = 0;
+    const failed     = [];
 
-    // Browser is opened lazily — only when a twitter account is encountered.
-    let browser = null;
-
-    // GitHub scraper is stateful (carries readme shas) — one instance per run.
-    // Initialised lazily per-user below.
-    const githubToken = GITHUB.token;
+    // Browser opened lazily — only when a twitter account is encountered.
+    // LinkedIn and GitHub need no browser.
+    this.#activeBrowser = null;
 
     try {
-      // Small random "wake-up" pause before the first twitter account (0–3 min).
-      // Skip if this is a github-only run.
+      // Small "wake-up" pause before the first twitter account (0–3 min).
+      // Skipped for github/linkedin-only runs.
       const hasTwitter = accounts.some(a => a.platform === 'twitter');
       if (hasTwitter) {
         const wakeUpMs = Math.floor(Math.random() * 3 * 60 * 1_000);
@@ -114,13 +116,7 @@ export class ScraperOrchestrator {
         );
 
         try {
-          const saved = await this.#scrapeAccount(account, { browser: () => this.#ensureBrowser(browser) });
-
-          // Capture browser reference if it was opened inside #ensureBrowser
-          if (!browser && account.platform === 'twitter') {
-            browser = this.#activeBrowser;
-          }
-
+          const saved = await this.#scrapeAccount(account);
           totalSaved   += saved;
           accountsDone += 1;
         } catch (err) {
@@ -129,13 +125,13 @@ export class ScraperOrchestrator {
           failed.push(msg);
         }
 
-        // Inter-account delay only for twitter accounts (github has no rate pressure at daily cadence)
+        // Inter-account delay only between consecutive twitter accounts
         if (i < accounts.length - 1 && account.platform === 'twitter') {
           await this.#humanPause();
         }
       }
     } finally {
-      if (browser) await browser.close();
+      if (this.#activeBrowser) await this.#activeBrowser.close();
     }
 
     // ── 5. Finalise run ────────────────────────────────────────────────────
@@ -157,11 +153,10 @@ export class ScraperOrchestrator {
 
   // ── Private ───────────────────────────────────────────────────────────────
 
-  /** Holds the active Browser instance so we can reuse it across twitter accounts. */
   #activeBrowser = null;
 
   /**
-   * Lazily launch the Playwright browser and cache it.
+   * Lazily launch the Playwright browser and cache it for the run.
    * @returns {Promise<Browser>}
    */
   async #ensureBrowser() {
@@ -182,43 +177,55 @@ export class ScraperOrchestrator {
   async #scrapeAccount(account) {
     switch (account.platform) {
 
+      // ── Twitter ─────────────────────────────────────────────────────────
       case 'twitter': {
-        const isInitial   = await this.#isInitialRun(account);
-        const postsTarget = isInitial ? SCRAPER.initialPostsPerAccount : SCRAPER.postsPerAccount;
+        const isInitial   = await this.#isInitialTwitterRun(account);
+        const postsTarget = isInitial
+          ? SCRAPER.initialPostsPerAccount
+          : SCRAPER.postsPerAccount;
 
         print(
-          `  → twitter ${isInitial ? 'INITIAL harvest' : 'daily top-up'} (target: ${postsTarget})`,
+          `  → ${isInitial ? 'INITIAL harvest' : 'daily top-up'} (target: ${postsTarget} posts)`,
           'system',
         );
 
-        const browser  = await this.#ensureBrowser();
-        const page     = await browser.newPage();
+        const browser = await this.#ensureBrowser();
+        const page    = await browser.newPage();
         try {
           const scraper  = new TwitterScraper(page, postsTarget);
           const rawPosts = await scraper.scrapeAccount(account.username);
           const saved    = await this.postRepo.saveBatch(account.id, rawPosts);
           await this.accountRepo.markScraped(account.id);
-          print(`  → @${account.username}: ${rawPosts.length} scraped, ${saved} new.`, 'data');
+          print(`  → ${rawPosts.length} scraped, ${saved} new saved.`, 'data');
           return saved;
         } finally {
           await page.close();
         }
       }
 
+      // ── GitHub ──────────────────────────────────────────────────────────
       case 'github': {
         if (!GITHUB.token) {
           throw new Error(
             'GITHUB_TOKEN is not set. Add it to .env — see .env.example for details.'
           );
         }
-
-        // Load readme shas from last run so we can detect changes
         const readmeShas = await this.githubEventRepo.getReadmeShas(account.username);
         const scraper    = createGithubScraper(GITHUB.token, readmeShas);
         const rawEvents  = await scraper.scrapeAccount(account.username);
         const saved      = await this.githubEventRepo.saveBatch(account.id, rawEvents);
         await this.accountRepo.markScraped(account.id);
-        print(`  → @${account.username}: ${rawEvents.length} events, ${saved} new.`, 'data');
+        print(`  → ${rawEvents.length} events, ${saved} new saved.`, 'data');
+        return saved;
+      }
+
+      // ── LinkedIn ─────────────────────────────────────────────────────────
+      case 'linkedin': {
+        const importer = createLinkedinImporter(LINKEDIN.importsDir);
+        const rawPosts = await importer.scrapeAccount(account.username);
+        const saved    = await this.linkedinPostRepo.saveBatch(account.id, rawPosts);
+        await this.accountRepo.markScraped(account.id);
+        print(`  → ${rawPosts.length} posts parsed, ${saved} new saved.`, 'data');
         return saved;
       }
 
@@ -228,10 +235,10 @@ export class ScraperOrchestrator {
   }
 
   /**
-   * Twitter only: an account is "initial" if it has never been scraped
-   * or all its posts were cleared from the DB.
+   * Twitter only: account is "initial" if it has never been scraped
+   * or all its posts were removed from the DB.
    */
-  async #isInitialRun(account) {
+  async #isInitialTwitterRun(account) {
     if (!account.last_scraped_at) return true;
     const oldest = await this.postRepo.oldestPostDate(account.id);
     return oldest === null;

@@ -7,25 +7,26 @@
  *   eanyra scrape               → single run across all platforms, then exit
  *   eanyra scrape twitter       → Twitter/X only
  *   eanyra scrape github        → GitHub only
+ *   eanyra scrape linkedin      → LinkedIn CSV import only
  */
 
-import { Command }                   from 'commander';
-import database                      from '../teapot/database.js';
-import { registerContextCommands }   from './contextCommands.js';
-import { registerModels }            from '../teapot/models/index.js';
-import { ScraperOrchestrator }       from '../orchestrator/ScraperOrchestrator.js';
-import { Scheduler }                 from '../scheduler/Scheduler.js';
-import { PKG, NODE_ENV }             from '../../config/app.config.js';
-import { banner, print }             from '../../shared/utils.js';
+import { Command }                    from 'commander';
+import database                       from '../teapot/database.js';
+import { registerContextCommands }    from './contextCommands.js';
+import { registerModels }             from '../teapot/models/index.js';
+import { ScraperOrchestrator }        from '../orchestrator/ScraperOrchestrator.js';
+import { Scheduler }                  from '../scheduler/Scheduler.js';
+import { PKG, NODE_ENV }              from '../../config/app.config.js';
+import { banner, print }              from '../../shared/utils.js';
 import { WELCOME_MESSAGE, SUB_TITLE } from '../../shared/message.js';
 
 /** All recognised platform identifiers. Add new platforms here. */
-const VALID_PLATFORMS = ['twitter', 'github'];
+const VALID_PLATFORMS = ['twitter', 'github', 'linkedin'];
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 
 class Nyra {
-  /** @type {{ Account, Post, ScraperRun, UserContext, Project, GithubEvent }} */
+  /** @type {{ Account, Post, ScraperRun, UserContext, Project, GithubEvent, LinkedinPost }} */
   #models = null;
 
   get models() { return this.#models; }
@@ -85,9 +86,6 @@ class Nyra {
 
   // ── Run modes ─────────────────────────────────────────────────────────────
 
-  /**
-   * @param {{ platform?: string }} [opts]
-   */
   async #scrapeOnce({ platform } = {}) {
     const orchestrator = new ScraperOrchestrator(this.#models);
     await orchestrator.run({ platform });
@@ -118,8 +116,6 @@ class Nyra {
     process.on('SIGTERM', () => shutdown('SIGTERM'));
   }
 
-  // ── Main ──────────────────────────────────────────────────────────────────
-
   async main() {
     try {
       await this.#bootstrap();
@@ -136,10 +132,6 @@ class Nyra {
 
 // ─── Commander setup ──────────────────────────────────────────────────────────
 
-/**
- * @param {Nyra} nyra
- * @returns {import('commander').Command}
- */
 function buildCLI(nyra) {
   const program = new Command();
 
@@ -148,7 +140,6 @@ function buildCLI(nyra) {
     .description('Social media monitoring pipeline for AI agent data pipelines')
     .version(PKG.version, '-v, --version', 'Print version and exit');
 
-  // ── eanyra start ─────────────────────────────────────────────────────────
   program
     .command('start')
     .description('Start the daemon — scrapes on the configured cron schedule (default: 08:00 UTC daily)')
@@ -156,14 +147,14 @@ function buildCLI(nyra) {
       await nyra.runDaemon();
     });
 
-  // ── eanyra scrape [platform] ──────────────────────────────────────────────
   program
     .command('scrape [platform]')
     .description(
       'Run a single scrape then exit.\n' +
       '  eanyra scrape            → all platforms\n' +
       '  eanyra scrape twitter    → Twitter/X only\n' +
-      '  eanyra scrape github     → GitHub only',
+      '  eanyra scrape github     → GitHub only\n' +
+      '  eanyra scrape linkedin   → LinkedIn CSV import only',
     )
     .action(async (platform) => {
       if (platform && !VALID_PLATFORMS.includes(platform)) {
@@ -176,10 +167,9 @@ function buildCLI(nyra) {
       await nyra.runOnce({ platform });
     });
 
-  // ── eanyra context ────────────────────────────────────────────────────────
   registerContextCommands(program, nyra.models);
 
-  // ── Default: no command → daemon (backwards-compat) ──────────────────────
+  // Default: no command → daemon (backwards-compat)
   program.action(async () => {
     await nyra.runDaemon();
   });

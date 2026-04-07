@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 import pkg from '../../package.json' with { type: 'json' };
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname  = path.dirname(__filename);
 
 /** Absolute path to the project root (two levels up from src/config/) */
 const PROJECT_ROOT = path.resolve(__dirname, '../../');
@@ -30,10 +30,10 @@ function envBoolean(name, fallback = false) {
 }
 
 export const NODE_ENV = process.env.NODE_ENV ?? 'production';
-export const PKG = pkg;
+export const PKG      = pkg;
 
-export const MCP_PORT = envNumber('MCP_PORT', 3001);
-export const MCP_HOST = process.env.MCP_HOST ?? '127.0.0.1';
+export const MCP_PORT      = envNumber('MCP_PORT', 3001);
+export const MCP_HOST      = process.env.MCP_HOST      ?? '127.0.0.1';
 export const MCP_TRANSPORT = process.env.MCP_TRANSPORT ?? 'stdio';
 
 export const SCHEDULER = {
@@ -54,15 +54,15 @@ export const BROWSER = {
   cookiesPath: process.env.BROWSER_COOKIES_PATH
     ? path.resolve(process.cwd(), process.env.BROWSER_COOKIES_PATH)
     : path.join(DATA_DIR, 'cookies.json'),
-  headless: envBoolean('BROWSER_HEADLESS', true),
+  headless:            envBoolean('BROWSER_HEADLESS', true),
   navigationTimeoutMs: envNumber('BROWSER_NAV_TIMEOUT_MS', 30_000),
-  selectorTimeoutMs: envNumber('BROWSER_SEL_TIMEOUT_MS', 15_000),
-  userAgent: process.env.BROWSER_USER_AGENT ?? DEFAULT_USER_AGENT,
+  selectorTimeoutMs:   envNumber('BROWSER_SEL_TIMEOUT_MS', 15_000),
+  userAgent:           process.env.BROWSER_USER_AGENT ?? DEFAULT_USER_AGENT,
   viewport: {
-    width: envNumber('BROWSER_VIEWPORT_WIDTH', 1280),
-    height: envNumber('BROWSER_VIEWPORT_HEIGHT', 900),
+    width:  envNumber('BROWSER_VIEWPORT_WIDTH',  1280),
+    height: envNumber('BROWSER_VIEWPORT_HEIGHT',  900),
   },
-  locale: process.env.BROWSER_LOCALE ?? 'en-US',
+  locale:     process.env.BROWSER_LOCALE   ?? 'en-US',
   timezoneId: process.env.BROWSER_TIMEZONE ?? 'America/New_York',
   launchArgs: [
     '--no-sandbox',
@@ -93,14 +93,14 @@ export const TWITTER = {
 };
 
 export const SCRAPER = {
-  postsPerAccount:          envNumber('POSTS_PER_ACCOUNT', 20),
-  initialPostsPerAccount:   envNumber('INITIAL_POSTS_PER_ACCOUNT', 200),
-  scrollDelayMs:            envNumber('SCROLL_DELAY_MS', 2_500),
+  postsPerAccount:           envNumber('POSTS_PER_ACCOUNT', 20),
+  initialPostsPerAccount:    envNumber('INITIAL_POSTS_PER_ACCOUNT', 200),
+  scrollDelayMs:             envNumber('SCROLL_DELAY_MS', 2_500),
   minDelayBetweenAccountsMs: envNumber('MIN_DELAY_BETWEEN_ACCOUNTS_MS', 5 * 60 * 1_000),
   maxDelayBetweenAccountsMs: envNumber('MAX_DELAY_BETWEEN_ACCOUNTS_MS', 15 * 60 * 1_000),
-  maxScrollAttempts:        envNumber('MAX_SCROLL_ATTEMPTS', 30),
-  navigationTimeoutMs:      envNumber('SCRAPER_NAV_TIMEOUT_MS', envNumber('BROWSER_NAV_TIMEOUT_MS', 30_000)),
-  selectorTimeoutMs:        envNumber('SCRAPER_SELECTOR_TIMEOUT_MS', envNumber('BROWSER_SEL_TIMEOUT_MS', 15_000)),
+  maxScrollAttempts:         envNumber('MAX_SCROLL_ATTEMPTS', 30),
+  navigationTimeoutMs:       envNumber('SCRAPER_NAV_TIMEOUT_MS', envNumber('BROWSER_NAV_TIMEOUT_MS', 30_000)),
+  selectorTimeoutMs:         envNumber('SCRAPER_SELECTOR_TIMEOUT_MS', envNumber('BROWSER_SEL_TIMEOUT_MS', 15_000)),
 };
 
 // ─── GitHub ───────────────────────────────────────────────────────────────────
@@ -112,25 +112,41 @@ export const GITHUB = {
    */
   token: process.env.GITHUB_TOKEN ?? '',
 
-  /**
-   * How many days back to look for events on each run.
-   * Default: 8 days — covers a full week with a 1-day buffer so
-   * weekly commit batches are never missed if the run is slightly late.
-   */
-  lookbackDays: envNumber('GITHUB_LOOKBACK_DAYS', 8),
+  /** How many days back to look for events on each run. */
+  lookbackDays:           envNumber('GITHUB_LOOKBACK_DAYS', 8),
 
-  /** Max public repos to inspect per account (GitHub API sort: pushed desc). */
-  reposPerAccount: envNumber('GITHUB_REPOS_PER_ACCOUNT', 30),
+  /** Max public repos to inspect per account (sorted by push date desc). */
+  reposPerAccount:        envNumber('GITHUB_REPOS_PER_ACCOUNT', 30),
 
   /** Max releases to fetch per repo per run. */
-  releasesPerRepo: envNumber('GITHUB_RELEASES_PER_REPO', 10),
+  releasesPerRepo:        envNumber('GITHUB_RELEASES_PER_REPO', 10),
 
   /** Max commits to fetch per repo per run (within the lookback window). */
-  commitsPerRepo: envNumber('GITHUB_COMMITS_PER_REPO', 100),
+  commitsPerRepo:         envNumber('GITHUB_COMMITS_PER_REPO', 100),
 
-  /**
-   * Max individual commit messages to store in a commit_batch body.
-   * Keeps DB rows from ballooning for highly active repos.
-   */
+  /** Max commit messages stored in a commit_batch body. */
   commitMessagesPerBatch: envNumber('GITHUB_COMMIT_MESSAGES_PER_BATCH', 10),
+};
+
+// ─── LinkedIn ─────────────────────────────────────────────────────────────────
+
+export const LINKEDIN = {
+  /**
+   * Directory where LinkedIn CSV export files are placed.
+   * Default: <project_root>/data/imports/
+   *
+   * How to get the files:
+   *   linkedin.com → Me → Settings & Privacy → Data Privacy
+   *   → "Get a copy of your data" → select Posts (+ Profile)
+   *   Unzip and drop Shares.csv (and Profile.csv) into this folder.
+   */
+  importsDir: process.env.LINKEDIN_IMPORTS_DIR
+    ? path.resolve(process.cwd(), process.env.LINKEDIN_IMPORTS_DIR)
+    : path.join(DATA_DIR, 'imports'),
+
+  /** Expected filename for the posts export inside importsDir. */
+  sharesFile:  process.env.LINKEDIN_SHARES_FILE  ?? 'Shares.csv',
+
+  /** Expected filename for the profile export inside importsDir. */
+  profileFile: process.env.LINKEDIN_PROFILE_FILE ?? 'Profile.csv',
 };
