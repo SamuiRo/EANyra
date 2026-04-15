@@ -27,7 +27,7 @@ export class AccountRepository {
   /**
    * Read accounts.json and upsert every entry into the DB.
    * New accounts are created with is_active = true.
-   * Existing accounts have their display_name and is_active refreshed.
+   * Existing accounts have their display_name, platform and is_active refreshed.
    *
    * @returns {Promise<void>}
    */
@@ -39,6 +39,7 @@ export class AccountRepository {
       await this.Account.upsert({
         username:     entry.username.toLowerCase().replace(/^@/, ''),
         display_name: entry.display_name ?? entry.username,
+        platform:     entry.platform ?? 'twitter',
         is_active:    entry.active ?? true,
       });
     }
@@ -73,7 +74,7 @@ export class AccountRepository {
 
   /**
    * Read and parse accounts.json; throw a clear error when missing.
-   * @returns {Promise<Array<{username: string, display_name?: string, active?: boolean}>>}
+   * @returns {Promise<Array<{username: string, display_name?: string, platform?: string, active?: boolean}>>}
    */
   async #loadJson() {
     try {

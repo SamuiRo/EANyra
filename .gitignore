@@ -5,10 +5,11 @@
 /src/config/accounts.json
 /test
 /PLAN.md
-/src/context/eanyra.yaml
+/src/context/projects/eanyra.yaml
 /src/context/platforms.yaml
 /src/context/voice.yaml
 /src/context/bio.yaml
+/nyra_test_docs
 
 # Logs
 logs

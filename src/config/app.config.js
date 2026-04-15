@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
 /** Absolute path to the project root (two levels up from src/config/) */
-const PROJECT_ROOT = path.resolve(__dirname, '../../');
+export const PROJECT_ROOT = path.resolve(__dirname, '../../');
 
 /** Default data directory: <project_root>/data */
 const DATA_DIR = path.join(PROJECT_ROOT, 'data');
@@ -51,9 +51,6 @@ export const BROWSER = {
   dataPath: process.env.BROWSER_DATA_PATH
     ? path.resolve(process.cwd(), process.env.BROWSER_DATA_PATH)
     : path.join(DATA_DIR, 'nyra'),
-  cookiesPath: process.env.BROWSER_COOKIES_PATH
-    ? path.resolve(process.cwd(), process.env.BROWSER_COOKIES_PATH)
-    : path.join(DATA_DIR, 'cookies.json'),
   headless:            envBoolean('BROWSER_HEADLESS', true),
   navigationTimeoutMs: envNumber('BROWSER_NAV_TIMEOUT_MS', 30_000),
   selectorTimeoutMs:   envNumber('BROWSER_SEL_TIMEOUT_MS', 15_000),

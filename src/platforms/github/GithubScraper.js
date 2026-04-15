@@ -183,7 +183,6 @@ export class GithubScraper {
       const readmeKey = `${username}/${repo.name}`;
       const prevSha   = this.readmeShas[readmeKey];
 
-      // Only check repos that have been pushed to recently
       const readme = await this.client.getReadme(username, repo.name);
       if (readme && prevSha && readme.sha !== prevSha) {
         events.push({

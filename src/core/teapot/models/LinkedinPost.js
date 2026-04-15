@@ -80,6 +80,11 @@ export function defineLinkedinPostModel(sequelize) {
       allowNull:    false,
       defaultValue: DataTypes.NOW,
     },
+    used_for_content: {
+    type:      DataTypes.DATE,
+    allowNull: true,
+    defaultValue: null,
+    },
   }, {
     tableName:   'linkedin_posts',
     timestamps:  true,

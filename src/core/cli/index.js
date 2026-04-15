@@ -13,6 +13,7 @@
 import { Command }                    from 'commander';
 import database                       from '../teapot/database.js';
 import { registerContextCommands }    from './contextCommands.js';
+import { registerExportCommands }     from './exportCommands.js';
 import { registerModels }             from '../teapot/models/index.js';
 import { ScraperOrchestrator }        from '../orchestrator/ScraperOrchestrator.js';
 import { Scheduler }                  from '../scheduler/Scheduler.js';
@@ -168,6 +169,7 @@ function buildCLI(nyra) {
     });
 
   registerContextCommands(program, nyra.models);
+  registerExportCommands(program, nyra.models);
 
   // Default: no command → daemon (backwards-compat)
   program.action(async () => {

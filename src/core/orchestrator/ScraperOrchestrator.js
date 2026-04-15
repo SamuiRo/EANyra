@@ -21,9 +21,9 @@
  *   3. Add the platform string to VALID_PLATFORMS in cli/index.js
  */
 
-import { Browser }                   from '../browser/Browser.js';
-import { TwitterScraper }            from '../../platforms/twitter/TwitterScraper.js';
-import { createScraper as createGithubScraper }   from '../../platforms/github/index.js';
+import { Browser }                                  from '../browser/Browser.js';
+import { createScraper as createTwitterScraper }   from '../../platforms/twitter/index.js';
+import { createScraper as createGithubScraper }    from '../../platforms/github/index.js';
 import { createScraper as createLinkedinImporter } from '../../platforms/linkedin/index.js';
 import { AccountRepository }         from '../teapot/repositories/AccountRepository.js';
 import { PostRepository }            from '../teapot/repositories/PostRepository.js';
@@ -192,7 +192,7 @@ export class ScraperOrchestrator {
         const browser = await this.#ensureBrowser();
         const page    = await browser.newPage();
         try {
-          const scraper  = new TwitterScraper(page, postsTarget);
+          const scraper  = createTwitterScraper(page, postsTarget);
           const rawPosts = await scraper.scrapeAccount(account.username);
           const saved    = await this.postRepo.saveBatch(account.id, rawPosts);
           await this.accountRepo.markScraped(account.id);

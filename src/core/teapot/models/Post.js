@@ -101,6 +101,11 @@ export function definePostModel(sequelize) {
       allowNull:    false,
       defaultValue: DataTypes.NOW,
     },
+    used_for_content: {
+      type:      DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null,
+      },
   }, {
     tableName:   'posts',
     timestamps:  true,

@@ -1,8 +1,8 @@
 import { chromium } from 'playwright';
 import fs from 'fs/promises';
 import path from 'path';
-import { BROWSER } from './config/app.config.js';
-import { ensureDir, print } from './shared/utils.js';
+import { BROWSER } from '../../config/app.config.js';
+import { ensureDir, print } from '../../shared/utils.js';
 
 const COOKIES_IMPORT_PATH = process.argv[2];
 if (!COOKIES_IMPORT_PATH) {

@@ -1,14 +1,11 @@
 import fs   from 'node:fs';
 import path  from 'node:path';
 import { parse as parseYaml } from 'yaml';
+import { PROJECT_ROOT }       from '../../../config/app.config.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-// Resolve relative to this file so it works regardless of cwd
-const CONTEXT_DIR = path.resolve(
-  path.dirname(new URL(import.meta.url).pathname),
-  '../../../../src/context',
-);
+const CONTEXT_DIR = path.join(PROJECT_ROOT, 'src', 'context');
 
 /**
  * UserContextRepository
