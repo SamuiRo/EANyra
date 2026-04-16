@@ -140,18 +140,25 @@ async function runExport(models, opts) {
   print(`Export saved: ${outPath}`, 'success');
 
   // ── Mark as used ───────────────────────────────────────────────────────────
+  //
+  // Only items that were NOT previously used get stamped — this preserves
+  // the original first-export timestamp for items that appear in multiple
+  // exports (e.g. when using --no-mark for dry runs and then exporting again).
+  //
+  // We capture the "new" counts BEFORE calling markAsUsed so the summary
+  // reflects what was actually new in this export run.
+
+  const newPostIds   = posts.filter(p => !p.used).map(p => p.id);
+  const newSignalIds = signals.filter(s => !s.used).map(s => s.id);
 
   if (mark) {
-    const unusedPostIds   = posts.filter(p => !p.used).map(p => p.id);
-    const unusedSignalIds = signals.filter(s => !s.used).map(s => s.id);
-
-    if (unusedPostIds.length || unusedSignalIds.length) {
+    if (newPostIds.length || newSignalIds.length) {
       await repo.markAsUsed({
-        postIds:   unusedPostIds,
-        signalIds: unusedSignalIds,
+        postIds:   newPostIds,
+        signalIds: newSignalIds,
       });
       print(
-        `Marked as used: ${unusedPostIds.length} posts · ${unusedSignalIds.length} signals`,
+        `Marked as used: ${newPostIds.length} posts · ${newSignalIds.length} signals`,
         'system',
       );
     }
@@ -161,7 +168,7 @@ async function runExport(models, opts) {
 
   // ── Summary ────────────────────────────────────────────────────────────────
 
-  printSummary({ posts, signals, outPath });
+  printSummary({ posts, signals, newPostIds, newSignalIds, outPath });
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -170,11 +177,11 @@ function isoDate(d) {
   return d.toISOString().slice(0, 10);
 }
 
-function printSummary({ posts, signals, outPath }) {
-  const pTotal  = posts.length;
-  const pNew    = posts.filter(p => !p.used).length;
-  const sTotal  = signals.length;
-  const sNew    = signals.filter(s => !s.used).length;
+function printSummary({ posts, signals, newPostIds, newSignalIds, outPath }) {
+  const pTotal = posts.length;
+  const pNew   = newPostIds.length;
+  const sTotal = signals.length;
+  const sNew   = newSignalIds.length;
 
   // Group posts by platform for the summary line
   const byPlatform = {};
@@ -189,8 +196,8 @@ function printSummary({ posts, signals, outPath }) {
   console.log('─────────────────────────────────────');
   console.log(' Export summary');
   console.log('─────────────────────────────────────');
-  console.log(` Posts:    ${pTotal} (${pNew} new)  [${platformLine}]`);
-  console.log(` Signals:  ${sTotal} (${sNew} new)`);
+  console.log(` Posts:    ${pTotal} total (${pNew} new)  [${platformLine}]`);
+  console.log(` Signals:  ${sTotal} total (${sNew} new)`);
   console.log(` File:     ${outPath}`);
   console.log('─────────────────────────────────────');
   console.log('');

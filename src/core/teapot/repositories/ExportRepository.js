@@ -8,6 +8,12 @@
 
 import { Op } from 'sequelize';
 
+// Top-level context keys that live in user_context table.
+// project.* keys are stored there too (for quick lookup) but we load
+// projects via the Project model to get structured data — so we exclude
+// them here to avoid double-loading.
+const TOP_LEVEL_CONTEXT_KEYS = ['voice', 'bio', 'platforms'];
+
 export class ExportRepository {
   /**
    * @param {{
@@ -30,14 +36,22 @@ export class ExportRepository {
 
   /**
    * Returns { voice, bio, platforms, projects[] } from the DB.
+   *
+   * Only reads top-level keys from user_context (voice, bio, platforms).
+   * project.* keys are intentionally excluded here — projects come from
+   * the Project model so we get proper structured objects with all fields.
    */
   async getContext() {
-    const rows = await this.UserContext.findAll();
-    const ctx  = {};
+    const rows = await this.UserContext.findAll({
+      where: { key: { [Op.in]: TOP_LEVEL_CONTEXT_KEYS } },
+    });
+
+    const ctx = {};
     for (const row of rows) {
       ctx[row.key] = row.value;
     }
 
+    // Active projects — full structured objects
     const projects = await this.Project.findAll({
       where: { status: 'active' },
       order: [['slug', 'ASC']],
@@ -61,8 +75,12 @@ export class ExportRepository {
   /**
    * Fetch posts for export, optionally filtered by platform.
    *
-   * Selection: unused posts OR posts within the last N days —
-   * whichever gives the most context for content creation.
+   * Selection strategy (matches PLAN.md §4.4):
+   *   - Always include unused posts (used_for_content IS NULL)
+   *   - Also include already-used posts that fall within the date window
+   *     (gives the AI context about recent voice even if already exported)
+   *   - Excludes reposts — original content only
+   *   - `unusedOnly` flag restricts to strictly unused posts only
    *
    * @param {{ days?: number, unusedOnly?: boolean, platform?: string }} opts
    * @returns {Promise<object[]>}
@@ -71,11 +89,12 @@ export class ExportRepository {
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1_000);
     const where  = { is_repost: false };
 
-    if (platform)    where.platform = platform;
+    if (platform) where.platform = platform;
 
     if (unusedOnly) {
       where.used_for_content = null;
     } else {
+      // Unused always included; used only if within the time window
       where[Op.or] = [
         { used_for_content: null },
         { posted_at: { [Op.gte]: cutoff } },
@@ -115,7 +134,16 @@ export class ExportRepository {
   // ── Signals ───────────────────────────────────────────────────────────────
 
   /**
-   * Fetch signals within the time window, optionally filtered by source.
+   * Fetch signals for export.
+   *
+   * Selection strategy (mirrors getPosts logic, matches PLAN.md §4.4):
+   *   - Always include unused signals (used_for_content IS NULL)
+   *   - Also include already-used signals within the date window
+   *   - `unusedOnly` flag restricts to strictly unused signals only
+   *
+   * Note: unlike posts, signals use `occurred_at` as the time anchor.
+   * Signals where occurred_at is NULL are included when unused — they
+   * should not be silently dropped just because the timestamp is missing.
    *
    * @param {{ days?: number, unusedOnly?: boolean, source?: string }} opts
    * @returns {Promise<object[]>}
@@ -129,7 +157,12 @@ export class ExportRepository {
     if (unusedOnly) {
       where.used_for_content = null;
     } else {
-      where.occurred_at = { [Op.gte]: cutoff };
+      // Unused always included (even if occurred_at is NULL);
+      // used only if within the time window
+      where[Op.or] = [
+        { used_for_content: null },
+        { occurred_at: { [Op.gte]: cutoff } },
+      ];
     }
 
     const rows = await this.Signal.findAll({
@@ -160,8 +193,11 @@ export class ExportRepository {
   // ── Mark as used ──────────────────────────────────────────────────────────
 
   /**
-   * Stamp used_for_content = now on all exported IDs.
+   * Stamp used_for_content = now on the given post and signal IDs.
    * Called after the Markdown file is written successfully.
+   *
+   * Only stamps items that are not yet marked (used_for_content IS NULL)
+   * so that the first-export timestamp is preserved on subsequent runs.
    *
    * @param {{ postIds?: number[], signalIds?: number[] }} ids
    */
@@ -171,14 +207,24 @@ export class ExportRepository {
     if (postIds.length) {
       await this.Post.update(
         { used_for_content: now },
-        { where: { id: { [Op.in]: postIds } } },
+        {
+          where: {
+            id:               { [Op.in]: postIds },
+            used_for_content: null,   // preserve original export timestamp
+          },
+        },
       );
     }
 
     if (signalIds.length) {
       await this.Signal.update(
         { used_for_content: now },
-        { where: { id: { [Op.in]: signalIds } } },
+        {
+          where: {
+            id:               { [Op.in]: signalIds },
+            used_for_content: null,   // preserve original export timestamp
+          },
+        },
       );
     }
   }
