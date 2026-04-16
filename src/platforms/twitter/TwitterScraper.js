@@ -2,6 +2,7 @@
  * src/platforms/twitter/TwitterScraper.js
  *
  * Scrapes tweets from a single Twitter/X profile page using Playwright.
+ * Returns RawPost[] compatible with the unified PostRepository.
  *
  * Human-behaviour:
  *   - simulatePageLanding() is called once after the first tweet appears
@@ -15,7 +16,6 @@ import { print }                                            from '../../shared/u
 import { humanScroll, simulatePageLanding }                 from './humanBehavior.js';
 
 // ─── Selectors ────────────────────────────────────────────────────────────────
-// Isolated here so a single-line change fixes a broken scraper after X redesigns.
 
 const SEL = {
   tweet:        'article[data-testid="tweet"]',
@@ -31,7 +31,7 @@ const SEL = {
   retweetLabel: '[data-testid="socialContext"]',
 };
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
  * Parse abbreviated metric strings like "1.2K", "45M", "3" → integer.
@@ -76,13 +76,12 @@ export class TwitterScraper {
    * Navigate to a Twitter profile and collect up to postsTarget posts.
    *
    * @param {string} username  Twitter handle without "@"
-   * @returns {Promise<RawPost[]>}
+   * @returns {Promise<import('../../core/teapot/repositories/PostRepository.js').RawPost[]>}
    */
   async scrapeAccount(username) {
     const url = `https://x.com/${username}`;
     print(`Navigating to ${url}`, 'info');
 
-    // ── Navigate ──────────────────────────────────────────────────────────
     try {
       await this.page.goto(url, {
         waitUntil: 'domcontentloaded',
@@ -93,7 +92,6 @@ export class TwitterScraper {
       return [];
     }
 
-    // ── Wait for first tweet ──────────────────────────────────────────────
     try {
       await this.page.waitForSelector(SEL.tweet, {
         timeout: SCRAPER.selectorTimeoutMs,
@@ -106,13 +104,9 @@ export class TwitterScraper {
       return [];
     }
 
-    // ── Simulate human landing on the page ───────────────────────────────
-    // Moves mouse, pauses as if reading the profile header, does a small
-    // initial scroll — makes the session look like a real visit from the start.
     await simulatePageLanding(this.page);
 
-    // ── Collect ───────────────────────────────────────────────────────────
-    // Map keyed on tweet_id guarantees deduplication across scroll passes.
+    // Map keyed on platform_id guarantees deduplication across scroll passes
     const collected      = new Map();
     let   scrollAttempts = 0;
 
@@ -126,8 +120,8 @@ export class TwitterScraper {
         if (collected.size >= this.postsTarget) break;
         try {
           const post = await this.#extractPost(article, username);
-          if (post && !collected.has(post.tweet_id)) {
-            collected.set(post.tweet_id, post);
+          if (post && !collected.has(post.platform_id)) {
+            collected.set(post.platform_id, post);
           }
         } catch (err) {
           print(`Skipped a tweet (parse error): ${err.message}`, 'debug');
@@ -136,8 +130,6 @@ export class TwitterScraper {
 
       if (collected.size >= this.postsTarget) break;
 
-      // Human-like scroll with reading pause, mouse movement, and jitter.
-      // Replaces the old primitive window.scrollBy() + fixed jitter call.
       await humanScroll(this.page, { scrollDelayMs: SCRAPER.scrollDelayMs });
       scrollAttempts++;
     }
@@ -155,33 +147,28 @@ export class TwitterScraper {
    *
    * @param {import('playwright').ElementHandle} article
    * @param {string}                             username
-   * @returns {Promise<RawPost|null>}
+   * @returns {Promise<import('../../core/teapot/repositories/PostRepository.js').RawPost|null>}
    */
   async #extractPost(article, username) {
-    // ── ID + URL ──────────────────────────────────────────────────────────
-    const linkEl   = await article.$(SEL.tweetLink);
-    const href     = await linkEl?.getAttribute('href');
-    const tweet_id = extractTweetId(href);
-    if (!tweet_id) return null;
+    const linkEl    = await article.$(SEL.tweetLink);
+    const href      = await linkEl?.getAttribute('href');
+    const tweetId   = extractTweetId(href);
+    if (!tweetId) return null;
 
     const raw_url = href ? `https://x.com${href}` : null;
 
-    // ── Text ──────────────────────────────────────────────────────────────
     const textEl = await article.$(SEL.tweetText);
     const text   = textEl ? (await textEl.innerText()).trim() : '';
 
-    // ── Timestamp ─────────────────────────────────────────────────────────
     const timeEl    = await article.$(SEL.time);
     const datetime  = await timeEl?.getAttribute('datetime');
     const posted_at = datetime ? new Date(datetime) : null;
 
-    // ── Metrics ───────────────────────────────────────────────────────────
-    const likes    = parseMetric(await this.#safeInnerText(article, SEL.likeCount));
-    const retweets = parseMetric(await this.#safeInnerText(article, SEL.retweetCount));
-    const replies  = parseMetric(await this.#safeInnerText(article, SEL.replyCount));
-    const views    = parseMetric(await this.#safeInnerText(article, SEL.viewCount));
+    const likes   = parseMetric(await this.#safeInnerText(article, SEL.likeCount));
+    const reposts = parseMetric(await this.#safeInnerText(article, SEL.retweetCount));
+    const replies = parseMetric(await this.#safeInnerText(article, SEL.replyCount));
+    const views   = parseMetric(await this.#safeInnerText(article, SEL.viewCount));
 
-    // ── Media ─────────────────────────────────────────────────────────────
     const imgEls     = await article.$$(SEL.mediaImg);
     const videoEls   = await article.$$(SEL.mediaVideo);
     const media_urls = [
@@ -189,42 +176,36 @@ export class TwitterScraper {
       ...await Promise.all(videoEls.map(el => el.getAttribute('src'))),
     ].filter(Boolean);
 
-    // ── Flags ─────────────────────────────────────────────────────────────
     const retweetLabelEl = await article.$(SEL.retweetLabel);
-    const retweetLabel   = retweetLabelEl
-      ? await retweetLabelEl.innerText()
-      : '';
-    const is_retweet = retweetLabel.toLowerCase().includes('retweet');
+    const retweetLabel   = retweetLabelEl ? await retweetLabelEl.innerText() : '';
+    const is_repost      = retweetLabel.toLowerCase().includes('retweet');
 
-    // A reply's status path contains an extra segment after the tweet ID
     const is_reply = href
       ? href.split('/status/').length > 2
       : false;
 
-    // ── Language (best-effort from DOM attribute) ──────────────────────
     const lang = await article.getAttribute('lang') ?? null;
 
     return {
-      tweet_id,
-      username,
+      platform:    'twitter',
+      platform_id: tweetId,
       text,
       lang,
       posted_at,
       likes,
-      retweets,
+      reposts,
       replies,
-      views:      views || null,
+      views:       views || null,
       media_urls,
-      is_retweet,
+      is_repost,
       is_reply,
       raw_url,
-      scraped_at: new Date(),
+      scraped_at:  new Date(),
     };
   }
 
   /**
    * Return trimmed innerText of a child selector, or null if absent.
-   * Never throws.
    *
    * @param {import('playwright').ElementHandle} parent
    * @param {string} selector
@@ -239,23 +220,3 @@ export class TwitterScraper {
     }
   }
 }
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-/**
- * @typedef {Object} RawPost
- * @property {string}      tweet_id
- * @property {string}      username
- * @property {string}      text
- * @property {string|null} lang
- * @property {Date|null}   posted_at
- * @property {number}      likes
- * @property {number}      retweets
- * @property {number}      replies
- * @property {number|null} views
- * @property {string[]}    media_urls
- * @property {boolean}     is_retweet
- * @property {boolean}     is_reply
- * @property {string|null} raw_url
- * @property {Date}        scraped_at
- */

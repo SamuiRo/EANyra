@@ -8,6 +8,9 @@
  *   eanyra scrape twitter       → Twitter/X only
  *   eanyra scrape github        → GitHub only
  *   eanyra scrape linkedin      → LinkedIn CSV import only
+ *   eanyra context sync         → sync YAML context files into DB
+ *   eanyra context show         → print current context from DB
+ *   eanyra export               → export data to Markdown for AI content creation
  */
 
 import { Command }                    from 'commander';
@@ -27,7 +30,7 @@ const VALID_PLATFORMS = ['twitter', 'github', 'linkedin'];
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 
 class Nyra {
-  /** @type {{ Account, Post, ScraperRun, UserContext, Project, GithubEvent, LinkedinPost }} */
+  /** @type {{ Account, Post, Signal, ScraperRun, UserContext, Project }} */
   #models = null;
 
   get models() { return this.#models; }

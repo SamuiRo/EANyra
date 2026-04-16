@@ -1,9 +1,9 @@
 /**
  * src/core/teapot/repositories/ExportRepository.js
  *
- * Aggregates data from all tables for the `eanyra export` command.
- * Each method returns plain objects (not Sequelize instances) so the
- * export formatter has no ORM dependency.
+ * Aggregates data from posts and signals tables for the `eanyra export` command.
+ * Returns plain objects (not Sequelize instances) so the export formatter
+ * has no ORM dependency.
  */
 
 import { Op } from 'sequelize';
@@ -11,34 +11,31 @@ import { Op } from 'sequelize';
 export class ExportRepository {
   /**
    * @param {{
-   *   Post:         import('sequelize').ModelStatic,
-   *   LinkedinPost: import('sequelize').ModelStatic,
-   *   GithubEvent:  import('sequelize').ModelStatic,
-   *   Account:      import('sequelize').ModelStatic,
-   *   UserContext:  import('sequelize').ModelStatic,
-   *   Project:      import('sequelize').ModelStatic,
+   *   Post:        import('sequelize').ModelStatic,
+   *   Signal:      import('sequelize').ModelStatic,
+   *   Account:     import('sequelize').ModelStatic,
+   *   UserContext: import('sequelize').ModelStatic,
+   *   Project:     import('sequelize').ModelStatic,
    * }} models
    */
   constructor(models) {
-    this.Post         = models.Post;
-    this.LinkedinPost = models.LinkedinPost;
-    this.GithubEvent  = models.GithubEvent;
-    this.Account      = models.Account;
-    this.UserContext  = models.UserContext;
-    this.Project      = models.Project;
+    this.Post        = models.Post;
+    this.Signal      = models.Signal;
+    this.Account     = models.Account;
+    this.UserContext = models.UserContext;
+    this.Project     = models.Project;
   }
 
   // ── User context ──────────────────────────────────────────────────────────
 
   /**
    * Returns { voice, bio, platforms, projects[] } from the DB.
-   * Mirrors UserContextRepository.getAll() but returns plain objects.
    */
   async getContext() {
     const rows = await this.UserContext.findAll();
     const ctx  = {};
     for (const row of rows) {
-      ctx[row.key] = row.value; // getter already JSON.parses
+      ctx[row.key] = row.value;
     }
 
     const projects = await this.Project.findAll({
@@ -59,27 +56,26 @@ export class ExportRepository {
     return ctx;
   }
 
-  // ── Twitter posts ─────────────────────────────────────────────────────────
+  // ── Posts ─────────────────────────────────────────────────────────────────
 
   /**
-   * Fetch Twitter posts for export.
+   * Fetch posts for export, optionally filtered by platform.
    *
-   * Selection priority (evaluated in order):
-   *   1. unused = true  → posts not yet exported (used_for_content IS NULL)
-   *   2. days window    → posted_at within the last N days
-   *   Both filters are applied together with OR so you always get something useful.
+   * Selection: unused posts OR posts within the last N days —
+   * whichever gives the most context for content creation.
    *
    * @param {{ days?: number, unusedOnly?: boolean, platform?: string }} opts
    * @returns {Promise<object[]>}
    */
-  async getTwitterPosts({ days = 7, unusedOnly = false } = {}) {
-    const cutoff  = new Date(Date.now() - days * 24 * 60 * 60 * 1_000);
-    const where   = { is_retweet: false };
+  async getPosts({ days = 7, unusedOnly = false, platform } = {}) {
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1_000);
+    const where  = { is_repost: false };
+
+    if (platform)    where.platform = platform;
 
     if (unusedOnly) {
       where.used_for_content = null;
     } else {
-      // Show unused OR recent — whichever gives the most context
       where[Op.or] = [
         { used_for_content: null },
         { posted_at: { [Op.gte]: cutoff } },
@@ -88,94 +84,8 @@ export class ExportRepository {
 
     const rows = await this.Post.findAll({
       where,
-      order:      [['posted_at', 'DESC']],
-      limit:      50,
-      include: [{
-        model:      this.Account,
-        as:         'account',
-        attributes: ['username', 'display_name'],
-      }],
-    });
-
-    return rows.map(r => ({
-      id:         r.id,
-      tweet_id:   r.tweet_id,
-      username:   r.account?.username ?? '?',
-      text:       r.text,
-      posted_at:  r.posted_at,
-      likes:      r.likes,
-      retweets:   r.retweets,
-      replies:    r.replies,
-      views:      r.views,
-      is_reply:   r.is_reply,
-      raw_url:    r.raw_url,
-      used:       !!r.used_for_content,
-    }));
-  }
-
-  // ── LinkedIn posts ────────────────────────────────────────────────────────
-
-  /**
-   * Same logic as getTwitterPosts() but for LinkedIn.
-   *
-   * @param {{ days?: number, unusedOnly?: boolean }} opts
-   * @returns {Promise<object[]>}
-   */
-  async getLinkedinPosts({ days = 7, unusedOnly = false } = {}) {
-    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1_000);
-    const where  = {};
-
-    if (unusedOnly) {
-      where.used_for_content = null;
-    } else {
-      where[Op.or] = [
-        { used_for_content: null },
-        { posted_at: { [Op.gte]: cutoff } },
-      ];
-    }
-
-    const rows = await this.LinkedinPost.findAll({
-      where,
-      order:      [['posted_at', 'DESC']],
-      limit:      30,
-      include: [{
-        model:      this.Account,
-        as:         'account',
-        attributes: ['username', 'display_name'],
-      }],
-    });
-
-    return rows.map(r => ({
-      id:         r.id,
-      post_id:    r.post_id,
-      username:   r.account?.username ?? r.username,
-      text:       r.text,
-      posted_at:  r.posted_at,
-      shared_url: r.shared_url,
-      visibility: r.visibility,
-      raw_url:    r.raw_url,
-      used:       !!r.used_for_content,
-    }));
-  }
-
-  // ── GitHub events ─────────────────────────────────────────────────────────
-
-  /**
-   * Fetch GitHub events within the time window.
-   * GitHub events are informational context — no "used" tracking needed.
-   *
-   * @param {{ days?: number }} opts
-   * @returns {Promise<object[]>}
-   */
-  async getGithubEvents({ days = 7 } = {}) {
-    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1_000);
-
-    const rows = await this.GithubEvent.findAll({
-      where: {
-        occurred_at: { [Op.gte]: cutoff },
-      },
-      order: [['occurred_at', 'DESC']],
-      limit: 40,
+      order:   [['posted_at', 'DESC']],
+      limit:   100,
       include: [{
         model:      this.Account,
         as:         'account',
@@ -185,39 +95,90 @@ export class ExportRepository {
 
     return rows.map(r => ({
       id:          r.id,
-      username:    r.account?.username ?? r.username,
-      repo:        r.repo,
-      event_type:  r.event_type,
+      platform:    r.platform,
+      platform_id: r.platform_id,
+      username:    r.account?.username ?? '?',
+      text:        r.text,
+      posted_at:   r.posted_at,
+      likes:       r.likes,
+      reposts:     r.reposts,
+      replies:     r.replies,
+      views:       r.views,
+      is_reply:    r.is_reply,
+      shared_url:  r.shared_url,
+      raw_url:     r.raw_url,
+      visibility:  r.visibility,
+      used:        !!r.used_for_content,
+    }));
+  }
+
+  // ── Signals ───────────────────────────────────────────────────────────────
+
+  /**
+   * Fetch signals within the time window, optionally filtered by source.
+   *
+   * @param {{ days?: number, unusedOnly?: boolean, source?: string }} opts
+   * @returns {Promise<object[]>}
+   */
+  async getSignals({ days = 7, unusedOnly = false, source } = {}) {
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1_000);
+    const where  = {};
+
+    if (source) where.source = source;
+
+    if (unusedOnly) {
+      where.used_for_content = null;
+    } else {
+      where.occurred_at = { [Op.gte]: cutoff };
+    }
+
+    const rows = await this.Signal.findAll({
+      where,
+      order:   [['occurred_at', 'DESC']],
+      limit:   100,
+      include: [{
+        model:      this.Account,
+        as:         'account',
+        attributes: ['username', 'display_name'],
+      }],
+    });
+
+    return rows.map(r => ({
+      id:          r.id,
+      source:      r.source,
+      signal_type: r.signal_type,
+      username:    r.account?.username ?? null,
       title:       r.title,
       body:        r.body,
       url:         r.url,
       occurred_at: r.occurred_at,
       metadata:    r.metadata,
+      used:        !!r.used_for_content,
     }));
   }
 
   // ── Mark as used ──────────────────────────────────────────────────────────
 
   /**
-   * Stamp used_for_content = now on all exported post IDs.
+   * Stamp used_for_content = now on all exported IDs.
    * Called after the Markdown file is written successfully.
    *
-   * @param {{ twitterIds: number[], linkedinIds: number[] }} ids
+   * @param {{ postIds?: number[], signalIds?: number[] }} ids
    */
-  async markAsUsed({ twitterIds = [], linkedinIds = [] }) {
+  async markAsUsed({ postIds = [], signalIds = [] }) {
     const now = new Date();
 
-    if (twitterIds.length) {
+    if (postIds.length) {
       await this.Post.update(
         { used_for_content: now },
-        { where: { id: { [Op.in]: twitterIds } } },
+        { where: { id: { [Op.in]: postIds } } },
       );
     }
 
-    if (linkedinIds.length) {
-      await this.LinkedinPost.update(
+    if (signalIds.length) {
+      await this.Signal.update(
         { used_for_content: now },
-        { where: { id: { [Op.in]: linkedinIds } } },
+        { where: { id: { [Op.in]: signalIds } } },
       );
     }
   }

@@ -1,6 +1,6 @@
 {
   "name": "eanyra",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "description": "Twitter monitoring tool for AI agent data pipeline",
   "main": "src/core/cli/index.js",
   "bin": {

@@ -1,24 +1,22 @@
 import { DataTypes } from 'sequelize';
 
 /**
- * Post — a scraped tweet.
+ * Post — a published post authored by a monitored account.
  *
- * Fields:
- *   id           – auto-increment PK
- *   tweet_id     – Twitter's own ID string (unique; prevents duplicates)
- *   account_id   – FK → Account
- *   text         – full post text
- *   lang         – detected language code (optional)
- *   posted_at    – original publication timestamp from Twitter
- *   likes        – like count at time of scrape
- *   retweets     – retweet count
- *   replies      – reply count
- *   views        – view/impression count (if available)
- *   media_urls   – JSON array of photo/video URLs (stringified)
- *   is_retweet   – true if this is a retweet (RT)
- *   is_reply     – true if this is a reply to another tweet
- *   raw_url      – direct URL to the tweet
- *   scraped_at   – when we captured this record
+ * Covers all publishing platforms: Twitter/X, LinkedIn, Telegram,
+ * Bluesky, and any future platforms — one table for all of them.
+ *
+ * platform values: 'twitter' | 'linkedin' | 'telegram' | 'bluesky' | ...
+ *
+ * Deduplication: (platform, platform_id) is unique — the same post
+ * imported twice (e.g. re-scraping Twitter or re-importing a LinkedIn CSV)
+ * will never create a duplicate row.
+ *
+ * Engagement columns use platform-agnostic names:
+ *   likes    — hearts, reactions, likes
+ *   reposts  — retweets, reshares, forwards
+ *   replies  — comments, replies
+ *   views    — impressions (when available)
  */
 export function definePostModel(sequelize) {
   return sequelize.define('Post', {
@@ -27,49 +25,56 @@ export function definePostModel(sequelize) {
       primaryKey:    true,
       autoIncrement: true,
     },
-    tweet_id: {
+
+    // ── Identity ────────────────────────────────────────────────────────────
+
+    /** Which platform this post came from. */
+    platform: {
       type:      DataTypes.STRING(32),
       allowNull: false,
-      unique:    true,
     },
-    account_id: {
-      type:      DataTypes.INTEGER,
+
+    /**
+     * The platform's own stable ID for this post.
+     * Twitter: tweet_id string
+     * LinkedIn: numeric ID extracted from URN
+     * Telegram: message_id
+     * Bluesky: AT-URI or CID
+     */
+    platform_id: {
+      type:      DataTypes.STRING(128),
       allowNull: false,
+    },
+
+    // FK → accounts
+    account_id: {
+      type:       DataTypes.INTEGER,
+      allowNull:  false,
       references: { model: 'accounts', key: 'id' },
       onDelete:   'CASCADE',
     },
+
+    // ── Content ─────────────────────────────────────────────────────────────
+
     text: {
-      type:      DataTypes.TEXT,
-      allowNull: false,
+      type:         DataTypes.TEXT,
+      allowNull:    false,
+      defaultValue: '',
     },
+
     lang: {
       type:      DataTypes.STRING(8),
       allowNull: true,
     },
+
     posted_at: {
       type:      DataTypes.DATE,
       allowNull: true,
     },
-    likes: {
-      type:         DataTypes.INTEGER,
-      allowNull:    false,
-      defaultValue: 0,
-    },
-    retweets: {
-      type:         DataTypes.INTEGER,
-      allowNull:    false,
-      defaultValue: 0,
-    },
-    replies: {
-      type:         DataTypes.INTEGER,
-      allowNull:    false,
-      defaultValue: 0,
-    },
-    views: {
-      type:         DataTypes.INTEGER,
-      allowNull:    true,
-    },
-    // Stored as JSON string: ["https://...", ...]
+
+    // ── Media ────────────────────────────────────────────────────────────────
+
+    /** JSON array of photo/video URLs: ["https://...", ...] */
     media_urls: {
       type:         DataTypes.TEXT,
       allowNull:    true,
@@ -82,38 +87,100 @@ export function definePostModel(sequelize) {
         this.setDataValue('media_urls', JSON.stringify(value ?? []));
       },
     },
-    is_retweet: {
+
+    /**
+     * For platforms that support sharing external URLs (LinkedIn SharedUrl,
+     * Bluesky embeds, etc.).
+     */
+    shared_url: {
+      type:      DataTypes.STRING(512),
+      allowNull: true,
+    },
+
+    /** Direct permalink to the post on the platform. */
+    raw_url: {
+      type:      DataTypes.STRING(512),
+      allowNull: true,
+    },
+
+    // ── Engagement ───────────────────────────────────────────────────────────
+
+    /** Likes / hearts / reactions at time of scrape. */
+    likes: {
+      type:         DataTypes.INTEGER,
+      allowNull:    false,
+      defaultValue: 0,
+    },
+
+    /** Retweets / reshares / forwards at time of scrape. */
+    reposts: {
+      type:         DataTypes.INTEGER,
+      allowNull:    false,
+      defaultValue: 0,
+    },
+
+    /** Replies / comments at time of scrape. */
+    replies: {
+      type:         DataTypes.INTEGER,
+      allowNull:    false,
+      defaultValue: 0,
+    },
+
+    /** Views / impressions (not available on all platforms). */
+    views: {
+      type:      DataTypes.INTEGER,
+      allowNull: true,
+    },
+
+    // ── Flags ────────────────────────────────────────────────────────────────
+
+    is_repost: {
       type:         DataTypes.BOOLEAN,
       allowNull:    false,
       defaultValue: false,
     },
+
     is_reply: {
       type:         DataTypes.BOOLEAN,
       allowNull:    false,
       defaultValue: false,
     },
-    raw_url: {
-      type:      DataTypes.STRING(256),
+
+    /** Visibility at time of export — e.g. "MEMBER_NETWORK" (LinkedIn). */
+    visibility: {
+      type:      DataTypes.STRING(64),
       allowNull: true,
     },
+
+    // ── Workflow ─────────────────────────────────────────────────────────────
+
+    /**
+     * Timestamp of when this post was first included in a content export.
+     * NULL = not yet used for content creation.
+     */
+    used_for_content: {
+      type:         DataTypes.DATE,
+      allowNull:    true,
+      defaultValue: null,
+    },
+
     scraped_at: {
       type:         DataTypes.DATE,
       allowNull:    false,
       defaultValue: DataTypes.NOW,
     },
-    used_for_content: {
-      type:      DataTypes.DATE,
-      allowNull: true,
-      defaultValue: null,
-      },
+
   }, {
     tableName:   'posts',
     timestamps:  true,
     underscored: true,
     indexes: [
+      // Primary deduplication constraint
+      { unique: true, fields: ['platform', 'platform_id'] },
       { fields: ['account_id'] },
+      { fields: ['platform'] },
       { fields: ['posted_at'] },
-      { fields: ['scraped_at'] },
+      { fields: ['used_for_content'] },
     ],
   });
 }

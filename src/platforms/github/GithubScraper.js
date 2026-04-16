@@ -2,21 +2,19 @@
  * src/platforms/github/GithubScraper.js
  *
  * Collects GitHub activity for a single user and returns a flat list
- * of RawGithubEvent objects ready for persistence.
+ * of RawSignal objects ready for persistence via SignalRepository.
  *
- * Event types collected:
- *
+ * Signal types emitted:
  *   release        — a new release/tag published on any repo
- *   commit_batch   — commits grouped by calendar week (one event per repo per week)
- *   new_repo       — a public repo that was created within the lookback window
- *   readme_change  — README sha changed since last scrape (detected via stored sha)
+ *   commit_batch   — commits grouped by calendar week (one signal per repo per week)
+ *   new_repo       — a public repo created within the lookback window
+ *   readme_change  — README sha changed since last scrape
+ *
+ * All signals use source = 'github'.
+ * source_id format: "<type>:<owner>/<repo>:<detail>"
  *
  * No browser — pure REST API via GithubClient.
  * Rate limiting: GitHub allows 5 000 requests/hour with a PAT.
- * For typical usage (10–20 accounts, daily runs) this is nowhere near the limit.
- *
- * Deduplication happens in GithubEventRepository.saveBatch() via the
- * unique (event_id) constraint — same as PostRepository for tweets.
  */
 
 import { GithubClient, GithubRateLimitError, GithubNotFoundError } from './client.js';
@@ -31,7 +29,7 @@ import { GITHUB } from '../../config/app.config.js';
  * @returns {string}
  */
 function isoWeekKey(date) {
-  const d  = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const d   = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const day = d.getUTCDay() || 7;
   d.setUTCDate(d.getUTCDate() + 4 - day);
   const year = d.getUTCFullYear();
@@ -56,8 +54,8 @@ function weekStart(date) {
 
 export class GithubScraper {
   /**
-   * @param {string} token                    GitHub PAT
-   * @param {Record<string,string>} readmeShas Map of "username/repo" → last known README sha
+   * @param {string}              token       GitHub PAT
+   * @param {Record<string,string>} readmeShas  Map of "username/repo" → last known README sha
    */
   constructor(token, readmeShas = {}) {
     this.client     = new GithubClient(token);
@@ -70,13 +68,13 @@ export class GithubScraper {
    * Collect all activity for a GitHub user within the lookback window.
    *
    * @param {string} username  GitHub login (without @)
-   * @returns {Promise<RawGithubEvent[]>}
+   * @returns {Promise<import('../../core/teapot/repositories/SignalRepository.js').RawSignal[]>}
    */
   async scrapeAccount(username) {
     print(`[GitHub] Fetching activity for @${username}`, 'info');
 
     const since  = this.#lookbackDate();
-    const events = [];
+    const signals = [];
 
     let repos;
     try {
@@ -90,18 +88,18 @@ export class GithubScraper {
     }
 
     for (const repo of repos) {
+
       // ── New repo ──────────────────────────────────────────────────────────
       if (repo.created_at && new Date(repo.created_at) >= since) {
-        events.push({
-          event_id:   `new_repo:${repo.full_name}`,
-          username,
-          repo:       repo.name,
-          event_type: 'new_repo',
-          title:      repo.name,
-          body:       repo.description ?? '',
-          url:        repo.html_url,
+        signals.push({
+          source:      'github',
+          source_id:   `new_repo:${repo.full_name}`,
+          signal_type: 'new_repo',
+          title:       repo.name,
+          body:        repo.description ?? '',
+          url:         repo.html_url,
           occurred_at: new Date(repo.created_at),
-          metadata:   null,
+          metadata:    { repo: repo.name, description: repo.description ?? '' },
           scraped_at:  new Date(),
         });
       }
@@ -118,34 +116,31 @@ export class GithubScraper {
         if (!rel.published_at || new Date(rel.published_at) < since) continue;
         if (rel.draft) continue;
 
-        events.push({
-          event_id:    `release:${repo.full_name}:${rel.id}`,
-          username,
-          repo:        repo.name,
-          event_type:  'release',
+        signals.push({
+          source:      'github',
+          source_id:   `release:${repo.full_name}:${rel.id}`,
+          signal_type: 'release',
           title:       rel.name || rel.tag_name,
           body:        rel.body ?? '',
           url:         rel.html_url,
           occurred_at: new Date(rel.published_at),
-          metadata:    JSON.stringify({ tag: rel.tag_name, prerelease: rel.prerelease }),
+          metadata:    { repo: repo.name, tag: rel.tag_name, prerelease: rel.prerelease },
           scraped_at:  new Date(),
         });
       }
 
       // ── Commits (grouped by week) ─────────────────────────────────────────
-      // Only collect if the repo had activity in our lookback window.
       if (!repo.pushed_at || new Date(repo.pushed_at) < since) continue;
 
       let commits = [];
       try {
         commits = await this.client.getCommitsSince(
-          username, repo.name, since, GITHUB.commitsPerRepo
+          username, repo.name, since, GITHUB.commitsPerRepo,
         );
       } catch (err) {
         if (!(err instanceof GithubNotFoundError)) throw err;
       }
 
-      // Group commits by ISO week
       /** @type {Map<string, { count: number, messages: string[], weekStart: Date }>} */
       const byWeek = new Map();
 
@@ -157,7 +152,6 @@ export class GithubScraper {
         }
         const bucket = byWeek.get(key);
         bucket.count++;
-        // Keep first line of each commit message (strip multiline noise)
         const firstLine = c.commit.message.split('\n')[0].trim();
         if (bucket.messages.length < GITHUB.commitMessagesPerBatch) {
           bucket.messages.push(firstLine);
@@ -165,16 +159,15 @@ export class GithubScraper {
       }
 
       for (const [weekKey, bucket] of byWeek) {
-        events.push({
-          event_id:    `commit_batch:${repo.full_name}:${weekKey}`,
-          username,
-          repo:        repo.name,
-          event_type:  'commit_batch',
+        signals.push({
+          source:      'github',
+          source_id:   `commit_batch:${repo.full_name}:${weekKey}`,
+          signal_type: 'commit_batch',
           title:       `${bucket.count} commit${bucket.count !== 1 ? 's' : ''} — week ${weekKey}`,
           body:        bucket.messages.join('\n'),
           url:         `https://github.com/${repo.full_name}/commits`,
           occurred_at: bucket.weekStart,
-          metadata:    JSON.stringify({ week: weekKey, count: bucket.count }),
+          metadata:    { repo: repo.name, week: weekKey, count: bucket.count },
           scraped_at:  new Date(),
         });
       }
@@ -185,28 +178,26 @@ export class GithubScraper {
 
       const readme = await this.client.getReadme(username, repo.name);
       if (readme && prevSha && readme.sha !== prevSha) {
-        events.push({
-          event_id:    `readme_change:${repo.full_name}:${readme.sha}`,
-          username,
-          repo:        repo.name,
-          event_type:  'readme_change',
-          title:       `README updated`,
+        signals.push({
+          source:      'github',
+          source_id:   `readme_change:${repo.full_name}:${readme.sha}`,
+          signal_type: 'readme_change',
+          title:       `README updated — ${repo.name}`,
           body:        '',
           url:         readme.html_url,
           occurred_at: new Date(),
-          metadata:    JSON.stringify({ prev_sha: prevSha, new_sha: readme.sha }),
+          metadata:    { repo: repo.name, prev_sha: prevSha, new_sha: readme.sha },
           scraped_at:  new Date(),
         });
       }
 
-      // Always update the stored sha for next run (handled by repository)
       if (readme) {
         this.readmeShas[readmeKey] = readme.sha;
       }
     }
 
-    print(`[GitHub] @${username}: ${events.length} event(s) collected.`, 'data');
-    return events;
+    print(`[GitHub] @${username}: ${signals.length} signal(s) collected.`, 'data');
+    return signals;
   }
 
   // ── Private ───────────────────────────────────────────────────────────────
@@ -221,19 +212,3 @@ export class GithubScraper {
     return d;
   }
 }
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-/**
- * @typedef {Object} RawGithubEvent
- * @property {string}      event_id     Stable unique key (type:full_name:detail)
- * @property {string}      username     GitHub login
- * @property {string}      repo         Repository name (short, no owner prefix)
- * @property {string}      event_type   'release' | 'commit_batch' | 'new_repo' | 'readme_change'
- * @property {string}      title        Human-readable summary
- * @property {string}      body         Extended content (release notes, commit messages, …)
- * @property {string}      url          Direct link to the event on GitHub
- * @property {Date}        occurred_at  When the event happened
- * @property {string|null} metadata     JSON string with event-type-specific extra fields
- * @property {Date}        scraped_at   When we captured this record
- */

@@ -4,14 +4,15 @@
  * Registers the `eanyra export` command on the Commander program.
  *
  * Usage:
- *   eanyra export                          # all sections, last 7 days
- *   eanyra export --days 14               # last 14 days
- *   eanyra export --sections twitter,github
- *   eanyra export --unused-only           # only posts not yet exported
- *   eanyra export --no-mark               # don't stamp used_for_content
- *   eanyra export --out ./my-export.md    # custom output path
+ *   eanyra export                           # all sections, last 7 days
+ *   eanyra export --days 14                 # last 14 days
+ *   eanyra export --sections posts,signals  # specific sections
+ *   eanyra export --platform twitter        # only twitter posts
+ *   eanyra export --unused-only             # only posts/signals not yet exported
+ *   eanyra export --no-mark                 # don't stamp used_for_content
+ *   eanyra export --out ./my-export.md      # custom output path
  *
- * Available sections: context, projects, twitter, linkedin, github
+ * Available sections: context, projects, posts, signals
  */
 
 import fs   from 'node:fs/promises';
@@ -22,7 +23,7 @@ import { buildMarkdown }    from '../export/MarkdownExporter.js';
 import { PROJECT_ROOT }     from '../../config/app.config.js';
 import { print }            from '../../shared/utils.js';
 
-const ALL_SECTIONS  = ['context', 'projects', 'twitter', 'linkedin', 'github'];
+const ALL_SECTIONS  = ['context', 'projects', 'posts', 'signals'];
 const DEFAULT_OUT   = path.join(PROJECT_ROOT, 'data', 'exports');
 
 /**
@@ -36,9 +37,10 @@ export function registerExportCommands(program, models) {
       'Export recent social data to a Markdown file for AI-assisted content creation.\n' +
       '  eanyra export                        → all sections, last 7 days\n' +
       '  eanyra export --days 14              → last 14 days\n' +
-      '  eanyra export --sections twitter,github\n' +
-      '  eanyra export --unused-only          → only posts not yet used\n' +
-      '  eanyra export --no-mark              → skip marking posts as used',
+      '  eanyra export --sections posts,signals\n' +
+      '  eanyra export --platform twitter     → only twitter posts\n' +
+      '  eanyra export --unused-only          → only posts/signals not yet used\n' +
+      '  eanyra export --no-mark              → skip marking as used',
     )
     .option(
       '--days <n>',
@@ -62,11 +64,15 @@ export function registerExportCommands(program, models) {
         return requested;
       },
     )
-    .option('--unused-only', 'Only include posts that have not been exported before', false)
-    .option('--no-mark',     'Do not mark exported posts as used (dry-run mode)', false)
+    .option(
+      '--platform <name>',
+      'Filter posts by platform (twitter, linkedin, telegram, …)',
+    )
+    .option('--unused-only', 'Only include posts/signals that have not been exported before', false)
+    .option('--no-mark',     'Do not mark exported items as used (dry-run mode)', false)
     .option(
       '--out <path>',
-      `Output file path. Defaults to data/exports/export-YYYY-MM-DD.md`,
+      'Output file path. Defaults to data/exports/export-YYYY-MM-DD.md',
     )
     .action(async (opts) => {
       await runExport(models, opts);
@@ -77,10 +83,11 @@ export function registerExportCommands(program, models) {
 
 async function runExport(models, opts) {
   const {
-    days        = 7,
-    sections    = ALL_SECTIONS,
-    unusedOnly  = false,
-    mark        = true,   // Commander maps --no-mark → mark: false
+    days       = 7,
+    sections   = ALL_SECTIONS,
+    platform,
+    unusedOnly = false,
+    mark       = true,
     out,
   } = opts;
 
@@ -91,26 +98,22 @@ async function runExport(models, opts) {
 
   // ── Gather data ────────────────────────────────────────────────────────────
 
-  const [context, twitterPosts, linkedinPosts, githubEvents] = await Promise.all([
+  const [context, posts, signals] = await Promise.all([
     (sections.includes('context') || sections.includes('projects'))
       ? repo.getContext()
       : Promise.resolve({}),
 
-    sections.includes('twitter')
-      ? repo.getTwitterPosts({ days, unusedOnly })
+    sections.includes('posts')
+      ? repo.getPosts({ days, unusedOnly, platform })
       : Promise.resolve([]),
 
-    sections.includes('linkedin')
-      ? repo.getLinkedinPosts({ days, unusedOnly })
-      : Promise.resolve([]),
-
-    sections.includes('github')
-      ? repo.getGithubEvents({ days })
+    sections.includes('signals')
+      ? repo.getSignals({ days, unusedOnly })
       : Promise.resolve([]),
   ]);
 
   print(
-    `Fetched: ${twitterPosts.length} tweets · ${linkedinPosts.length} LinkedIn posts · ${githubEvents.length} GitHub events`,
+    `Fetched: ${posts.length} posts · ${signals.length} signals`,
     'data',
   );
 
@@ -118,9 +121,8 @@ async function runExport(models, opts) {
 
   const markdown = buildMarkdown({
     context,
-    twitterPosts,
-    linkedinPosts,
-    githubEvents,
+    posts,
+    signals,
     days,
     sections,
     generatedAt,
@@ -137,51 +139,58 @@ async function runExport(models, opts) {
 
   print(`Export saved: ${outPath}`, 'success');
 
-  // ── Mark posts as used ─────────────────────────────────────────────────────
+  // ── Mark as used ───────────────────────────────────────────────────────────
 
   if (mark) {
-    const unusedTwitter  = twitterPosts.filter(p => !p.used).map(p => p.id);
-    const unusedLinkedin = linkedinPosts.filter(p => !p.used).map(p => p.id);
+    const unusedPostIds   = posts.filter(p => !p.used).map(p => p.id);
+    const unusedSignalIds = signals.filter(s => !s.used).map(s => s.id);
 
-    if (unusedTwitter.length || unusedLinkedin.length) {
+    if (unusedPostIds.length || unusedSignalIds.length) {
       await repo.markAsUsed({
-        twitterIds:  unusedTwitter,
-        linkedinIds: unusedLinkedin,
+        postIds:   unusedPostIds,
+        signalIds: unusedSignalIds,
       });
       print(
-        `Marked as used: ${unusedTwitter.length} tweets · ${unusedLinkedin.length} LinkedIn posts`,
+        `Marked as used: ${unusedPostIds.length} posts · ${unusedSignalIds.length} signals`,
         'system',
       );
     }
   } else {
-    print('--no-mark active: posts were NOT marked as used.', 'warning');
+    print('--no-mark active: items were NOT marked as used.', 'warning');
   }
 
   // ── Summary ────────────────────────────────────────────────────────────────
 
-  printSummary({ twitterPosts, linkedinPosts, githubEvents, outPath });
+  printSummary({ posts, signals, outPath });
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function isoDate(d) {
-  return d.toISOString().slice(0, 10); // YYYY-MM-DD
+  return d.toISOString().slice(0, 10);
 }
 
-function printSummary({ twitterPosts, linkedinPosts, githubEvents, outPath }) {
-  const tw  = twitterPosts.length;
-  const li  = linkedinPosts.length;
-  const gh  = githubEvents.length;
-  const twN = twitterPosts.filter(p => !p.used).length;
-  const liN = linkedinPosts.filter(p => !p.used).length;
+function printSummary({ posts, signals, outPath }) {
+  const pTotal  = posts.length;
+  const pNew    = posts.filter(p => !p.used).length;
+  const sTotal  = signals.length;
+  const sNew    = signals.filter(s => !s.used).length;
+
+  // Group posts by platform for the summary line
+  const byPlatform = {};
+  for (const p of posts) {
+    byPlatform[p.platform] = (byPlatform[p.platform] ?? 0) + 1;
+  }
+  const platformLine = Object.entries(byPlatform)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(', ') || 'none';
 
   console.log('');
   console.log('─────────────────────────────────────');
   console.log(' Export summary');
   console.log('─────────────────────────────────────');
-  console.log(` Twitter:  ${tw} posts (${twN} new)`);
-  console.log(` LinkedIn: ${li} posts (${liN} new)`);
-  console.log(` GitHub:   ${gh} events`);
+  console.log(` Posts:    ${pTotal} (${pNew} new)  [${platformLine}]`);
+  console.log(` Signals:  ${sTotal} (${sNew} new)`);
   console.log(` File:     ${outPath}`);
   console.log('─────────────────────────────────────');
   console.log('');

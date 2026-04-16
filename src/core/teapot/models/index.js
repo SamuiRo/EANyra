@@ -1,29 +1,28 @@
-import { defineAccountModel }      from './Account.js';
-import { definePostModel }         from './Post.js';
-import { defineScraperRunModel }   from './ScraperRun.js';
-import { defineUserContextModel }  from './UserContext.js';
-import { defineProjectModel }      from './Project.js';
-import { defineGithubEventModel }  from './GithubEvent.js';
-import { defineLinkedinPostModel } from './LinkedinPost.js';
+import { defineAccountModel }  from './Account.js';
+import { definePostModel }     from './Post.js';
+import { defineSignalModel }   from './Signal.js';
+import { defineScraperRunModel }  from './ScraperRun.js';
+import { defineUserContextModel } from './UserContext.js';
+import { defineProjectModel }     from './Project.js';
 
 /**
  * Register all Sequelize models and declare associations.
  * Call once after database.connect() resolves.
  *
  * @param {import('sequelize').Sequelize} sequelize
- * @returns {{ Account, Post, ScraperRun, UserContext, Project, GithubEvent, LinkedinPost }}
+ * @returns {{ Account, Post, Signal, ScraperRun, UserContext, Project }}
  */
 export function registerModels(sequelize) {
-  const Account      = defineAccountModel(sequelize);
-  const Post         = definePostModel(sequelize);
-  const ScraperRun   = defineScraperRunModel(sequelize);
-  const UserContext  = defineUserContextModel(sequelize);
-  const Project      = defineProjectModel(sequelize);
-  const GithubEvent  = defineGithubEventModel(sequelize);
-  const LinkedinPost = defineLinkedinPostModel(sequelize);
+  const Account     = defineAccountModel(sequelize);
+  const Post        = definePostModel(sequelize);
+  const Signal      = defineSignalModel(sequelize);
+  const ScraperRun  = defineScraperRunModel(sequelize);
+  const UserContext = defineUserContextModel(sequelize);
+  const Project     = defineProjectModel(sequelize);
 
   // ── Associations ──────────────────────────────────────────────────────────
 
+  // One account → many posts (all platforms)
   Account.hasMany(Post, {
     foreignKey: 'account_id',
     as:         'posts',
@@ -34,27 +33,19 @@ export function registerModels(sequelize) {
     as:         'account',
   });
 
-  Account.hasMany(GithubEvent, {
+  // One account → many signals (GitHub events, future sources)
+  // account_id is nullable on Signal — manual signals have no account
+  Account.hasMany(Signal, {
     foreignKey: 'account_id',
-    as:         'githubEvents',
+    as:         'signals',
     onDelete:   'CASCADE',
   });
-  GithubEvent.belongsTo(Account, {
+  Signal.belongsTo(Account, {
     foreignKey: 'account_id',
     as:         'account',
   });
 
-  Account.hasMany(LinkedinPost, {
-    foreignKey: 'account_id',
-    as:         'linkedinPosts',
-    onDelete:   'CASCADE',
-  });
-  LinkedinPost.belongsTo(Account, {
-    foreignKey: 'account_id',
-    as:         'account',
-  });
+  // UserContext and Project are standalone — no associations needed
 
-  // UserContext and Project have no associations — standalone stores.
-
-  return { Account, Post, ScraperRun, UserContext, Project, GithubEvent, LinkedinPost };
+  return { Account, Post, Signal, ScraperRun, UserContext, Project };
 }
