@@ -132,7 +132,7 @@ async function runExport(models, opts) {
 
   const outPath = out
     ? path.resolve(process.cwd(), out)
-    : path.join(DEFAULT_OUT, `export-${isoDate(generatedAt)}.md`);
+    : path.join(DEFAULT_OUT, `export-${generatedAt.toISOString().replace('T', '_').replaceAll(":","").substring(0, 19)}.md`);
 
   await fs.mkdir(path.dirname(outPath), { recursive: true });
   await fs.writeFile(outPath, markdown, 'utf-8');

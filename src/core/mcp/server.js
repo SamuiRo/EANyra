@@ -1,49 +1,58 @@
-import { McpServer }              from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport }   from '@modelcontextprotocol/sdk/server/stdio.js';
+import { McpServer }                    from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport }          from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { z }                      from 'zod';
-import http                       from 'node:http';
+import { z }                             from 'zod';
+import http                              from 'node:http';
 
-import { twitterTools } from './tools/twitter.js';
-import { statusTools }  from './tools/status.js';
+import { postTools }         from './tools/posts.js';
+import { signalTools }       from './tools/signals.js';
+import { statusTools }       from './tools/status.js';
 import { buildContextTools } from './tools/context.js';
-import {MCP_PORT, MCP_HOST, MCP_TRANSPORT, PKG} from "../../config/app.config.js"
+import { MCP_PORT, MCP_HOST, MCP_TRANSPORT, PKG } from '../../config/app.config.js';
 
-// ── Config ────────────────────────────────────────────────────────────────
+// ── Config ────────────────────────────────────────────────────────────────────
 //
-//  MCP_TRANSPORT=stdio   → stdio mode  (default, Claude Desktop / mcporter local)
-//  MCP_TRANSPORT=http    → Streamable HTTP mode (Docker / remote OpenClaw)
-//  MCP_PORT              → HTTP port when transport=http (default: 3001)
+//  MCP_TRANSPORT=stdio   → stdio (default; Claude Desktop, OpenClaw local)
+//  MCP_TRANSPORT=http    → Streamable HTTP (Docker, OpenClaw remote)
+//  MCP_PORT              → HTTP port (default: 3001)
 //  MCP_HOST              → bind address (default: 127.0.0.1)
-//                          set to 0.0.0.0 only inside Docker — never expose
-//                          this port to the public internet without auth.
+//                          Set to 0.0.0.0 only inside Docker.
 
 const TRANSPORT = MCP_TRANSPORT;
 const PORT      = MCP_PORT;
 const HOST      = MCP_HOST;
 
-// ── Build server ──────────────────────────────────────────────────────────
+// ── Server ────────────────────────────────────────────────────────────────────
 
 const server = new McpServer({
-  name:        PKG.name,
-  version:     PKG.version,
-  description: 'EANyra — Twitter/X monitoring pipeline. ' +
-               'Provides read access to scraped posts, account stats, and scraper health. ' +
-               'Data is collected automatically on a daily schedule via Playwright. ' +
-               'Use twitter_get_scraper_status first to verify data freshness before querying posts.',
+  name:    PKG.name,
+  version: PKG.version,
+  description:
+    'EANyra — multi-platform social media pipeline for AI-assisted content creation. ' +
+    'Collects posts (Twitter, LinkedIn) and GitHub activity into a local SQLite database. ' +
+    'Exposes unified tools for querying posts, signals, user context, and export files. ' +
+    'Recommended call order: context_get → signals_get → posts_get → write → signals_mark_used.',
 });
 
-// ── Register all tools ────────────────────────────────────────────────────
+// ── Tool registry ─────────────────────────────────────────────────────────────
+//
+//  posts.js    → posts_get, posts_search, posts_stats, accounts_list
+//  signals.js  → signals_get, signals_mark_used
+//  context.js  → context_get, export_get
+//  status.js   → scraper_status
 
-const allTools = [...twitterTools, ...statusTools, ...contextTools];
+const allTools = [
+  ...postTools,
+  ...signalTools,
+  ...buildContextTools(),
+  ...statusTools,
+];
 
 for (const tool of allTools) {
-  const zodShape = jsonSchemaToZod(tool.inputSchema);
-
   server.tool(
     tool.name,
     tool.description,
-    zodShape,
+    jsonSchemaToZod(tool.inputSchema),
     async (args) => {
       try {
         const result = await tool.handler(args);
@@ -61,7 +70,7 @@ for (const tool of allTools) {
   );
 }
 
-// ── Start transport ───────────────────────────────────────────────────────
+// ── Transport ─────────────────────────────────────────────────────────────────
 
 if (TRANSPORT === 'http') {
   await startHttp();
@@ -69,43 +78,25 @@ if (TRANSPORT === 'http') {
   await startStdio();
 }
 
-// ── Transport: stdio ──────────────────────────────────────────────────────
-
 async function startStdio() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   log('stdio transport ready');
 }
 
-// ── Transport: Streamable HTTP ────────────────────────────────────────────
-//
-//  Single endpoint  POST /mcp  — handles all JSON-RPC requests.
-//  GET  /mcp                  — optional SSE stream for server-initiated msgs.
-//  GET  /health               — simple liveness check for Docker healthcheck.
-//
-//  mcporter.json (inside OpenClaw container) should reference:
-//    { "transport": "streamable-http", "url": "http://host.docker.internal:3001/mcp" }
-//
-//  Or for legacy SSE-only clients:
-//    { "transport": "sse", "url": "http://host.docker.internal:3001/mcp" }
-
 async function startHttp() {
-  // One transport instance per active session (keyed by sessionId header)
   const sessions = new Map();
 
   const httpServer = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
 
-    // ── Health check ──────────────────────────────────────────────────────
     if (url.pathname === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', server: 'eanyra', transport: 'http' }));
+      res.end(JSON.stringify({ status: 'ok', server: PKG.name, version: PKG.version }));
       return;
     }
 
-    // ── MCP endpoint ──────────────────────────────────────────────────────
     if (url.pathname === '/mcp') {
-      // Re-use existing transport for this session if present
       const sessionId = req.headers['mcp-session-id'];
 
       if (req.method === 'POST' || req.method === 'GET') {
@@ -119,14 +110,12 @@ async function startHttp() {
               log(`Session opened: ${id}`);
             },
           });
-
           transport.onclose = () => {
             if (transport.sessionId) {
               sessions.delete(transport.sessionId);
               log(`Session closed: ${transport.sessionId}`);
             }
           };
-
           await server.connect(transport);
         }
 
@@ -134,10 +123,8 @@ async function startHttp() {
         return;
       }
 
-      // DELETE — explicit session teardown
       if (req.method === 'DELETE' && sessionId && sessions.has(sessionId)) {
-        const transport = sessions.get(sessionId);
-        await transport.close();
+        await sessions.get(sessionId).close();
         sessions.delete(sessionId);
         res.writeHead(200).end();
         return;
@@ -151,21 +138,20 @@ async function startHttp() {
   });
 
   httpServer.listen(PORT, HOST, () => {
-    log(`HTTP transport ready → http://${HOST}:${PORT}/mcp`);
-    log(`Health check       → http://${HOST}:${PORT}/health`);
+    log(`HTTP transport ready  → http://${HOST}:${PORT}/mcp`);
+    log(`Health check          → http://${HOST}:${PORT}/health`);
   });
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function log(msg) {
   process.stderr.write(`[eanyra-mcp] ${msg}\n`);
 }
 
 /**
- * Minimal JSON Schema → zod shape converter.
- * Handles the subset used in our tool definitions:
- *   string, integer, boolean — all optional unless listed in `required`.
+ * Minimal JSON Schema → Zod shape converter.
+ * Handles: string (+ enum), integer, boolean, array, oneOf (union).
  */
 function jsonSchemaToZod(schema) {
   if (!schema?.properties) return {};
@@ -176,21 +162,28 @@ function jsonSchemaToZod(schema) {
   for (const [key, def] of Object.entries(schema.properties)) {
     let field;
 
-    switch (def.type) {
-      case 'integer':
-        field = z.number().int();
-        if (def.default !== undefined) field = field.default(def.default);
-        break;
-      case 'boolean':
-        field = z.boolean();
-        if (def.default !== undefined) field = field.default(def.default);
-        break;
-      case 'string':
-        field = def.enum ? z.enum(def.enum) : z.string();
-        if (def.default !== undefined) field = field.default(def.default);
-        break;
-      default:
-        field = z.any();
+    if (def.oneOf) {
+      field = z.union([z.number().int(), z.array(z.number().int())]);
+    } else {
+      switch (def.type) {
+        case 'integer':
+          field = z.number().int();
+          if (def.default !== undefined) field = field.default(def.default);
+          break;
+        case 'boolean':
+          field = z.boolean();
+          if (def.default !== undefined) field = field.default(def.default);
+          break;
+        case 'array':
+          field = z.array(z.any());
+          break;
+        case 'string':
+          field = def.enum ? z.enum(def.enum) : z.string();
+          if (def.default !== undefined) field = field.default(def.default);
+          break;
+        default:
+          field = z.any();
+      }
     }
 
     if (!required.has(key)) field = field.optional();

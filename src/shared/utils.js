@@ -99,7 +99,7 @@ const LOG_TYPES = {
  */
 export function print(text, type = 'info') {
   const cfg       = LOG_TYPES[type] ?? LOG_TYPES.info;
-  const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+  const timestamp = new Date().toISOString().replace('T', '_').substring(0, 19);
   const sep       = chalk.hex(colors.dim)(symbols.separator);
   const ts        = chalk.hex(colors.dim)(timestamp);
 
