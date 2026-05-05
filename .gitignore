@@ -10,6 +10,8 @@
 /src/context/voice.yaml
 /src/context/bio.yaml
 /nyra_test_docs
+env.example
+docs/PLAN.md
 
 # Logs
 logs

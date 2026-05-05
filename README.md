@@ -148,18 +148,18 @@ npm run login
 npm run scrape
 
 # 7. Sync user context into the database
-eanyra context sync
+npm run nyra context sync
 
-# 8. Start the daily daemon
+# 8. Manual export context
+npm run nyra export --no-mark
+
+# 9. Start the daily daemon
 npm start
 ```
 
 ---
 
 ## CLI
-
-EANyra ships a `eanyra` binary (registered in `package.json` → `bin`).
-After `npm install` you can run it directly via `npx eanyra` or, after `npm link`, globally as `eanyra`.
 
 ```
 Usage: eanyra [command]
@@ -180,37 +180,37 @@ Options:
 
 ```bash
 # Daemon mode (same as npm start)
-eanyra start
+npm run nyra start
 
 # Scrape all platforms once and exit
-eanyra scrape
+npm run nyra scrape
 
 # Scrape only Twitter/X
-eanyra scrape twitter
+npm run nyra scrape twitter
 
 # Scrape only GitHub
-eanyra scrape github
+npm run nyra scrape github
 
 # Import LinkedIn CSVs from data/imports/
-eanyra scrape linkedin
+npm run nyra scrape linkedin
 
 # Sync context after editing any YAML file
-eanyra context sync
+npm run nyra context sync
 
 # Inspect what the agent currently sees
-eanyra context show
-eanyra context show -k voice
-eanyra context show -k project.eanyra
+npm run nyra context show
+npm run nyra context show -k voice
+npm run nyra context show -k project.eanyra
 ```
 
 ### npm scripts (convenience wrappers)
 
 | Script | Equivalent | Description |
 |--------|-----------|-------------|
-| `npm start` | `eanyra start` | Start the cron daemon |
+| `npm start` | `nyra start` | Start the cron daemon |
 | `npm run dev` | `node --watch … start` | Daemon with auto-restart on file change |
-| `npm run scrape` | `eanyra scrape` | Single run, all platforms |
-| `npm run scrape:twitter` | `eanyra scrape twitter` | Single run, Twitter/X only |
+| `npm run scrape` | `nyra scrape` | Single run, all platforms |
+| `npm run scrape:twitter` | `nyra scrape twitter` | Single run, Twitter/X only |
 | `npm run login` | — | Open browser for manual Twitter login |
 
 ---
