@@ -1,4 +1,5 @@
 import { query, run } from '../db.js';
+import { MCP } from '../../../config/app.config.js';
 
 /**
  * src/core/mcp/tools/signals.js
@@ -85,8 +86,8 @@ export const signalTools = [
         },
         limit: {
           type:        'integer',
-          description: 'Max signals to return (default 30, max 100).',
-          default:     30,
+          description: `Max signals to return (default ${MCP.defaultSignalLimit}, max ${MCP.queryMaxRecords}).`,
+          default:     MCP.defaultSignalLimit,
         },
         since_days: {
           type:        'integer',
@@ -101,10 +102,10 @@ export const signalTools = [
       signal_type,
       used_for_content,
       account,
-      limit      = 30,
+      limit      = MCP.defaultSignalLimit,
       since_days,
     } = {}) {
-      const cap    = Math.min(Number(limit), 100);
+      const cap    = Math.min(Number(limit), MCP.queryMaxRecords);
       const conds  = ['1=1'];
       const params = [];
 

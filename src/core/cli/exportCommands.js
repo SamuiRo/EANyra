@@ -20,11 +20,11 @@ import path from 'node:path';
 
 import { ExportRepository } from '../teapot/repositories/ExportRepository.js';
 import { buildMarkdown }    from '../export/MarkdownExporter.js';
-import { PROJECT_ROOT }     from '../../config/app.config.js';
+import { EXPORT, PATHS }    from '../../config/app.config.js';
 import { print }            from '../../shared/utils.js';
 
-const ALL_SECTIONS  = ['context', 'projects', 'posts', 'signals'];
-const DEFAULT_OUT   = path.join(PROJECT_ROOT, 'data', 'exports');
+const ALL_SECTIONS = EXPORT.sections;
+const DEFAULT_OUT  = PATHS.exportsDir;
 
 /**
  * @param {import('commander').Command} program
@@ -35,7 +35,7 @@ export function registerExportCommands(program, models) {
     .command('export')
     .description(
       'Export recent social data to a Markdown file for AI-assisted content creation.\n' +
-      '  eanyra export                        → all sections, last 7 days\n' +
+      `  eanyra export                        → all sections, last ${EXPORT.defaultDays} days\n` +
       '  eanyra export --days 14              → last 14 days\n' +
       '  eanyra export --sections posts,signals\n' +
       '  eanyra export --platform twitter     → only twitter posts\n' +
@@ -44,13 +44,13 @@ export function registerExportCommands(program, models) {
     )
     .option(
       '--days <n>',
-      'How many days back to include (default: 7)',
+      `How many days back to include (default: ${EXPORT.defaultDays})`,
       v => {
         const n = parseInt(v, 10);
         if (isNaN(n) || n < 1) throw new Error('--days must be a positive integer');
         return n;
       },
-      7,
+      EXPORT.defaultDays,
     )
     .option(
       '--sections <list>',
@@ -83,7 +83,7 @@ export function registerExportCommands(program, models) {
 
 async function runExport(models, opts) {
   const {
-    days       = 7,
+    days       = EXPORT.defaultDays,
     sections   = ALL_SECTIONS,
     platform,
     unusedOnly = false,

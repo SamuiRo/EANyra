@@ -7,6 +7,7 @@
  */
 
 import { Op } from 'sequelize';
+import { EXPORT } from '../../../config/app.config.js';
 
 // Top-level context keys that live in user_context table.
 // project.* keys are stored there too (for quick lookup) but we load
@@ -85,7 +86,7 @@ export class ExportRepository {
    * @param {{ days?: number, unusedOnly?: boolean, platform?: string }} opts
    * @returns {Promise<object[]>}
    */
-  async getPosts({ days = 7, unusedOnly = false, platform } = {}) {
+  async getPosts({ days = EXPORT.defaultDays, unusedOnly = false, platform } = {}) {
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1_000);
     const where  = { is_repost: false };
 
@@ -104,7 +105,7 @@ export class ExportRepository {
     const rows = await this.Post.findAll({
       where,
       order:   [['posted_at', 'DESC']],
-      limit:   100,
+      limit:   EXPORT.maxRecords,
       include: [{
         model:      this.Account,
         as:         'account',
@@ -148,7 +149,7 @@ export class ExportRepository {
    * @param {{ days?: number, unusedOnly?: boolean, source?: string }} opts
    * @returns {Promise<object[]>}
    */
-  async getSignals({ days = 7, unusedOnly = false, source } = {}) {
+  async getSignals({ days = EXPORT.defaultDays, unusedOnly = false, source } = {}) {
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1_000);
     const where  = {};
 
@@ -168,7 +169,7 @@ export class ExportRepository {
     const rows = await this.Signal.findAll({
       where,
       order:   [['occurred_at', 'DESC']],
-      limit:   100,
+      limit:   EXPORT.maxRecords,
       include: [{
         model:      this.Account,
         as:         'account',

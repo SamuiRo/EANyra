@@ -1,4 +1,5 @@
 import { query } from '../db.js';
+import { MCP, SUPPORTED_PLATFORMS } from '../../../config/app.config.js';
 
 /**
  * src/core/mcp/tools/posts.js
@@ -63,7 +64,7 @@ export const postTools = [
       properties: {
         platform: {
           type:        'string',
-          enum:        ['twitter', 'linkedin', 'telegram', 'bluesky'],
+          enum:        SUPPORTED_PLATFORMS,
           description: 'Filter by platform. Omit to query all platforms.',
         },
         type: {
@@ -74,8 +75,8 @@ export const postTools = [
         },
         limit: {
           type:        'integer',
-          description: 'Max posts to return (default 20, max 100).',
-          default:     20,
+          description: `Max posts to return (default ${MCP.defaultPostLimit}, max ${MCP.queryMaxRecords}).`,
+          default:     MCP.defaultPostLimit,
         },
         lang: {
           type:        'string',
@@ -104,14 +105,14 @@ export const postTools = [
     async handler({
       platform,
       type            = 'recent',
-      limit           = 20,
+      limit           = MCP.defaultPostLimit,
       lang,
       account,
       since_days,
       include_replies = false,
       unused_only     = false,
     } = {}) {
-      const cap    = Math.min(Number(limit), 100);
+      const cap    = Math.min(Number(limit), MCP.queryMaxRecords);
       const conds  = ['p.is_repost = 0'];
       const params = [];
 
@@ -218,7 +219,7 @@ export const postTools = [
         },
         platform: {
           type:        'string',
-          enum:        ['twitter', 'linkedin', 'telegram', 'bluesky'],
+          enum:        SUPPORTED_PLATFORMS,
           description: 'Limit search to a specific platform. Omit for all.',
         },
         account: {
@@ -227,8 +228,8 @@ export const postTools = [
         },
         limit: {
           type:        'integer',
-          description: 'Max results to return (default 20, max 100).',
-          default:     20,
+          description: `Max results to return (default ${MCP.defaultPostLimit}, max ${MCP.queryMaxRecords}).`,
+          default:     MCP.defaultPostLimit,
         },
         since_days: {
           type:        'integer',
@@ -236,8 +237,8 @@ export const postTools = [
         },
       },
     },
-    async handler({ query: searchQuery, platform, account, limit = 20, since_days }) {
-      const cap    = Math.min(Number(limit), 100);
+    async handler({ query: searchQuery, platform, account, limit = MCP.defaultPostLimit, since_days }) {
+      const cap    = Math.min(Number(limit), MCP.queryMaxRecords);
       const conds  = ['LOWER(p.text) LIKE LOWER(?)'];
       const params = [`%${searchQuery}%`];
 
@@ -288,7 +289,7 @@ export const postTools = [
       properties: {
         platform: {
           type:        'string',
-          enum:        ['twitter', 'linkedin', 'telegram', 'bluesky'],
+          enum:        SUPPORTED_PLATFORMS,
           description: 'Filter to a specific platform. Omit for all platforms.',
         },
         account: {
@@ -297,12 +298,12 @@ export const postTools = [
         },
         days: {
           type:        'integer',
-          description: 'Time window in days (default 30). Use 0 for all-time.',
-          default:     30,
+          description: `Time window in days (default ${MCP.defaultStatsDays}). Use 0 for all-time.`,
+          default:     MCP.defaultStatsDays,
         },
       },
     },
-    async handler({ platform, account, days = 30 } = {}) {
+    async handler({ platform, account, days = MCP.defaultStatsDays } = {}) {
       const conds  = ['1=1'];
       const params = [];
 
@@ -365,7 +366,7 @@ export const postTools = [
       properties: {
         platform: {
           type:        'string',
-          enum:        ['twitter', 'github', 'linkedin', 'telegram', 'bluesky'],
+          enum:        SUPPORTED_PLATFORMS,
           description: 'Filter by platform. Omit to list all platforms.',
         },
         active_only: {

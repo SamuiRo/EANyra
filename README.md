@@ -1,747 +1,307 @@
 # EANyra
 
-Multi-platform social media monitoring pipeline designed primarily for AI agents.
+EANyra is a local, multi-platform content intelligence pipeline for AI-assisted
+content creation.
 
-EANyra collects activity across platforms — Twitter/X via Playwright, GitHub via REST API, LinkedIn via CSV import — stores everything in SQLite, and exposes it through an MCP server. An AI agent can query posts, GitHub activity, stats, and scraper health directly from the database without touching the live platforms. This eliminates token waste on live scraping and gives the agent structured, reliable data on demand.
+It collects:
 
-The pipeline is equally useful outside of AI contexts: as a data source for scripts, dashboards, or any automation that needs a local feed of social/code activity.
+- published posts from Twitter/X through Playwright;
+- published LinkedIn posts from a LinkedIn CSV export;
+- GitHub activity through the GitHub REST API.
 
----
+EANyra normalizes that data into SQLite, combines it with author context stored
+as YAML, and exposes it through a CLI, Markdown exports, and an MCP server.
 
-## How it works
+> Project status: active development. See [docs/ROADMAP.md](docs/ROADMAP.md)
+> for known limitations and planned improvements.
 
-```
-Twitter/X  ──►  TwitterScraper (Playwright)         ──►  posts
-GitHub     ──►  GithubScraper (REST API)             ──►  github_events    ──►  pot.sqlite
-LinkedIn   ──►  LinkedinImporter (CSV from disk)     ──►  linkedin_posts         │
-                                                                            MCP Server
-                                                                       (src/core/mcp/server.js)
-                                                                                   │
-                                                                            AI Agent
-                                                                      (OpenClaw / Claude Desktop)
+## Data Flow
 
-src/context/*.yaml  ──►  eanyra context sync  ──►  pot.sqlite
-  (edited by hand)                                       │
-                                                  context_get() (MCP tool)
-```
-
-Each platform has a different collection mechanism but the same downstream contract — all data ends up in SQLite and is queryable via MCP tools. The MCP server is a read-only layer that exposes typed tools; the agent never touches live platforms.
-
-User context (voice, bio, platform rules, projects) lives in YAML files and is synced into the DB on demand. The agent always reads context from the DB — never from files directly.
-
----
-
-## Project structure
-
-```
-EANyra/
-├── package.json
-├── .env                        # Runtime config (copy from .env.example)
-├── .env.example                # All available env variables with defaults
-├── README.md
-├── data/                       # Runtime data — gitignored
-│   ├── nyra/                   # Playwright persistent context (cookies, session)
-│   ├── imports/                # LinkedIn CSV exports go here (Shares.csv, Profile.csv)
-│   └── pot.sqlite              # SQLite database
-└── src/
-    ├── context/                        # User context — YAML source of truth
-    │   ├── voice.yaml                  # Tone, style, likes/dislikes, taboo
-    │   ├── bio.yaml                    # Bio per platform
-    │   ├── platforms.yaml              # Content rules per platform
-    │   └── projects/
-    │       ├── eanyra.yaml             # Project description, angles, posting rules
-    │       └── _template.yaml          # Copy this to add a new project
-    ├── core/
-    │   ├── cli/
-    │   │   ├── index.js                # Entry point — Commander CLI
-    │   │   └── contextCommands.js      # `eanyra context` sub-commands
-    │   ├── orchestrator/
-    │   │   └── ScraperOrchestrator.js  # Routes accounts to the correct platform scraper
-    │   ├── scheduler/
-    │   │   └── Scheduler.js            # node-cron wrapper
-    │   ├── browser/
-    │   │   └── Browser.js              # Playwright persistent context + anti-detection
-    │   ├── teapot/                     # Database layer (kept as "teapot")
-    │   │   ├── database.js             # Sequelize singleton
-    │   │   ├── models/
-    │   │   │   ├── index.js            # registerModels() — associations live here
-    │   │   │   ├── Account.js          # Shared across platforms (has `platform` field)
-    │   │   │   ├── Post.js             # Twitter posts
-    │   │   │   ├── GithubEvent.js      # GitHub events (releases, commits, repos, README)
-    │   │   │   ├── LinkedinPost.js     # LinkedIn posts imported from CSV
-    │   │   │   ├── ScraperRun.js
-    │   │   │   ├── UserContext.js      # Key/value store for YAML context
-    │   │   │   └── Project.js          # Project metadata from projects/*.yaml
-    │   │   └── repositories/
-    │   │       ├── AccountRepository.js
-    │   │       ├── PostRepository.js
-    │   │       ├── GithubEventRepository.js
-    │   │       ├── LinkedinPostRepository.js
-    │   │       ├── ScraperRunRepository.js
-    │   │       └── UserContextRepository.js  # YAML → DB sync logic
-    │   └── mcp/
-    │       ├── server.js               # Entry point, tool registration
-    │       ├── db.js                   # SQLite query layer for MCP tools
-    │       └── tools/
-    │           ├── twitter.js          # Post/account query tools
-    │           ├── status.js           # Scraper health tool
-    │           └── context.js          # context_get() tool
-    ├── platforms/
-    │   ├── twitter/
-    │   │   ├── index.js            # Platform module interface (factory + re-exports)
-    │   │   ├── TwitterScraper.js   # DOM-based tweet extractor (Playwright)
-    │   │   └── humanBehavior.js    # Realistic mouse/scroll helpers
-    │   ├── github/
-    │   │   ├── index.js            # Platform module interface (factory + re-exports)
-    │   │   ├── GithubScraper.js    # Activity collector (REST API, no browser)
-    │   │   └── client.js           # GitHub REST API v3 wrapper
-    │   └── linkedin/
-    │       ├── index.js            # Platform module interface (factory + re-exports)
-    │       ├── LinkedinImporter.js # Reads CSVs from data/imports/, returns RawLinkedinPost[]
-    │       └── csvParser.js        # Pure CSV parser for Shares.csv and Profile.csv
-    ├── config/
-    │   ├── app.config.js               # All configuration with documented defaults
-    │   └── accounts.json               # Monitored accounts list (all platforms)
-    └── shared/
-        ├── utils.js                    # Logging, sleep, jitter, file helpers
-        └── message.js                  # CLI/MCP user-facing messages
+```text
+Twitter/X profile -- Playwright scraper --+
+LinkedIn export --- CSV importer ---------+--> posts ----+
+GitHub API -------- REST collector ----------> signals --+--> SQLite
+YAML context ------ context sync ------------------------+
+                                                            |
+                              +-----------------------------+------------------+
+                              |                             |                  |
+                           CLI queries                Markdown export      MCP tools
 ```
 
-### Directory purposes
+The central distinction is:
 
-| Path | Purpose |
-|------|---------|
-| `data/imports/` | Drop LinkedIn CSV exports here before running `eanyra scrape linkedin`. Gitignored. |
-| `src/context/` | YAML source of truth for user context. Edit by hand; sync to DB via `eanyra context sync`. Versioned in git. |
-| `src/core/mcp/` | MCP server exposing DB data to AI agents via typed tools. |
-| `src/config/` | Environment config and exported constants. Single source of truth for all tuneable values. |
-| `src/core/browser/` | Playwright persistent context management and anti-detection patches. Only used by Twitter. |
-| `src/platforms/twitter/` | Twitter/X extraction via Playwright DOM scraping. |
-| `src/platforms/github/` | GitHub activity collection via REST API. No browser required. |
-| `src/platforms/linkedin/` | LinkedIn CSV import. No network calls — reads files from `data/imports/`. |
-| `src/core/orchestrator/` | Reads all active accounts, filters by platform, dispatches to the right scraper. |
-| `src/core/scheduler/` | `node-cron` wrapper for scheduled execution. |
-| `src/shared/` | Reusable utilities shared across the project. |
-| `src/core/teapot/` | Database layer: Sequelize wrapper, model definitions, repository classes. |
+- **posts** are already-published content;
+- **signals** are raw material that may become future content.
 
----
+GitHub releases, commit batches, new repositories, and README changes are
+signals. Twitter and LinkedIn publications are posts.
 
-## Quick start
+## Requirements
+
+- Node.js 20+; Node.js 22 is recommended
+- npm
+- a GitHub Personal Access Token for GitHub collection
+- a persistent Twitter/X login session for Twitter collection
+- LinkedIn `Shares.csv` for LinkedIn import
+
+## Quick Start
 
 ```bash
-# 1. Install dependencies
 npm install
-
-# 2. Copy env template and fill in credentials
 cp .env.example .env
-# Required: GITHUB_TOKEN (for GitHub)
-# Twitter: run npm run login after this step
+cp src/config/accounts.json.example src/config/accounts.json
+```
 
-# 3. Twitter only: log in once (opens a real Chrome window — complete login manually)
+Edit `.env` and `src/config/accounts.json`, then initialize the data sources you
+need:
+
+```bash
+# Twitter/X only: open a browser and save a persistent login session
 npm run login
 
-# 4. Add accounts to src/config/accounts.json (see "Account management" below)
+# LinkedIn only: place Shares.csv in data/imports/
 
-# 5. LinkedIn only: drop CSV exports into data/imports/ (see "LinkedIn module" below)
-
-# 6. Run a single scrape to verify everything works
+# Collect all configured platforms once
 npm run scrape
 
-# 7. Sync user context into the database
-npm run nyra context sync
+# Sync author context from src/context/*.yaml into SQLite
+npm run context:sync
 
-# 8. Manual export context
-npm run nyra export --no-mark
+# Generate a Markdown context export without marking records as used
+npm run export:dry
 
-# 9. Start the daily daemon
+# Start the scheduled daemon
 npm start
 ```
 
----
+Windows PowerShell equivalents for the initial copies:
 
-## CLI
-
-```
-Usage: eanyra [command]
-
-Commands:
-  start                   Start the daemon — scrapes on the configured cron schedule
-  scrape [platform]       Run a single scrape then exit
-  context sync            Read src/context/ YAML files and sync into the database
-  context show            Print current context from the database (what the agent sees)
-  context show -k <key>   Print a single context key (voice, bio, platforms, project.eanyra)
-
-Options:
-  -v, --version           Print version and exit
-  -h, --help              Display help
+```powershell
+Copy-Item .env.example .env
+Copy-Item src/config/accounts.json.example src/config/accounts.json
 ```
 
-### Examples
+## Account Configuration
 
-```bash
-# Daemon mode (same as npm start)
-npm run nyra start
-
-# Scrape all platforms once and exit
-npm run nyra scrape
-
-# Scrape only Twitter/X
-npm run nyra scrape twitter
-
-# Scrape only GitHub
-npm run nyra scrape github
-
-# Import LinkedIn CSVs from data/imports/
-npm run nyra scrape linkedin
-
-# Sync context after editing any YAML file
-npm run nyra context sync
-
-# Inspect what the agent currently sees
-npm run nyra context show
-npm run nyra context show -k voice
-npm run nyra context show -k project.eanyra
-```
-
-### npm scripts (convenience wrappers)
-
-| Script | Equivalent | Description |
-|--------|-----------|-------------|
-| `npm start` | `nyra start` | Start the cron daemon |
-| `npm run dev` | `node --watch … start` | Daemon with auto-restart on file change |
-| `npm run scrape` | `nyra scrape` | Single run, all platforms |
-| `npm run scrape:twitter` | `nyra scrape twitter` | Single run, Twitter/X only |
-| `npm run login` | — | Open browser for manual Twitter login |
-
----
-
-## Account management
-
-All monitored accounts live in `src/config/accounts.json`, regardless of platform. The `platform` field controls which scraper runs for each account. Omitting `platform` defaults to `'twitter'`.
+`src/config/accounts.json` is the input list for monitored accounts. It is
+gitignored because it commonly contains personal account choices.
 
 ```json
 [
-  { "username": "elonmusk",        "display_name": "Elon Musk",        "platform": "twitter",  "active": true },
-  { "username": "torvalds",        "display_name": "Linus Torvalds",   "platform": "github",   "active": true },
-  { "username": "your-li-handle",  "display_name": "Your Name",        "platform": "linkedin", "active": true }
+  {
+    "username": "example-twitter-user",
+    "display_name": "Example",
+    "platform": "twitter",
+    "active": true
+  },
+  {
+    "username": "example-github-user",
+    "display_name": "Example",
+    "platform": "github",
+    "active": true
+  },
+  {
+    "username": "example-linkedin-user",
+    "display_name": "Example",
+    "platform": "linkedin",
+    "active": true
+  }
 ]
 ```
 
-For LinkedIn, `username` is a free-form identifier you choose — it's used to group records in the DB and doesn't need to match your actual LinkedIn URL slug. All posts imported from CSV will be attributed to this account.
+Supported platform IDs are `twitter`, `github`, and `linkedin`. When
+`platform` is omitted, it defaults to `twitter`.
 
-On every run, `AccountRepository.syncFromConfig()` upserts this list into the `accounts` table. Set `"active": false` to pause an account without deleting its data.
+On each scrape, configured accounts are upserted into SQLite. Removing an entry
+from the JSON file does not currently deactivate its existing database row; set
+`"active": false` explicitly.
 
----
+## Platform Setup
 
-## Twitter module
+### Twitter/X
 
-### Setup
+Twitter collection uses a persistent Playwright Chromium profile.
 
-1. Run `npm run login` — a real Chrome window opens, log in manually (2FA is fine)
-2. Once the feed fully loads, press `ENTER` in the terminal
-3. Add Twitter accounts to `accounts.json` with `"platform": "twitter"` (or no platform field — default is twitter)
-4. Run `eanyra scrape twitter` to verify
-
-The Playwright session (cookies, local storage) is stored in `data/nyra/` and reused on every run. Sessions typically last several weeks — re-run `npm run login` when expired.
-
-### Scrape depth
-
-The orchestrator automatically detects whether an account has been scraped before:
-
-| Condition | Posts target | Behaviour |
-|-----------|-------------|-----------|
-| No posts in DB yet | `INITIAL_POSTS_PER_ACCOUNT` (default 200) | Deep scroll — collects historical posts |
-| Posts already exist | `POSTS_PER_ACCOUNT` (default 20) | Shallow scroll — catches recent activity |
-
-All posts are deduplicated by `tweet_id` — re-runs never create duplicates.
-
-### Configurable parameters
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `POSTS_PER_ACCOUNT` | `20` | Daily top-up depth |
-| `INITIAL_POSTS_PER_ACCOUNT` | `200` | First-run harvest depth |
-| `SCROLL_DELAY_MS` | `2500` | Base delay (ms) between scroll steps |
-| `MIN_DELAY_BETWEEN_ACCOUNTS_MS` | `300000` | Min pause between accounts (5 min) |
-| `MAX_DELAY_BETWEEN_ACCOUNTS_MS` | `900000` | Max pause between accounts (15 min) |
-| `MAX_SCROLL_ATTEMPTS` | `30` | Max scroll passes before giving up |
-
----
-
-## GitHub module
-
-### Setup
-
-1. Generate a Personal Access Token at https://github.com/settings/tokens
-   - Required scopes: `read:user`, `public_repo`
-2. Add to `.env`:
-   ```env
-   GITHUB_TOKEN=ghp_your_token_here
-   ```
-3. Add GitHub accounts to `accounts.json` with `"platform": "github"`
-4. Run `eanyra scrape github` to verify
-
-### What gets collected
-
-| Event type | Description |
-|------------|-------------|
-| `release` | A published release/tag on any repo (draft releases skipped) |
-| `commit_batch` | Commits grouped by calendar week — one DB row per repo per week; stores count + up to 10 commit messages |
-| `new_repo` | A public repo created within the lookback window |
-| `readme_change` | README sha changed since the previous run |
-
-All events are stored in the `github_events` table, deduplicated by `event_id`. Format: `<type>:<owner>/<repo>:<detail>` — e.g. `commit_batch:torvalds/linux:2025-W03`.
-
-README change detection works by storing the last known README sha from each `readme_change` event and comparing it on the next run. No sha stored = first time seen = no event emitted (avoids false positives on first scrape).
-
-### Configurable parameters
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GITHUB_TOKEN` | — | Personal Access Token (required) |
-| `GITHUB_LOOKBACK_DAYS` | `8` | How many days back to look for events |
-| `GITHUB_REPOS_PER_ACCOUNT` | `30` | Max repos inspected per account (sorted by push date) |
-| `GITHUB_RELEASES_PER_REPO` | `10` | Max releases fetched per repo |
-| `GITHUB_COMMITS_PER_REPO` | `100` | Max commits fetched per repo within the lookback window |
-| `GITHUB_COMMIT_MESSAGES_PER_BATCH` | `10` | Max commit messages stored in a `commit_batch` body |
-
-GitHub allows 5 000 requests/hour with a PAT. For typical usage (10–20 accounts, daily runs) this limit is not a concern.
-
----
-
-## LinkedIn module
-
-LinkedIn's API is heavily restricted, so this module works with **CSV exports** from your LinkedIn account. You export manually, drop the files into `data/imports/`, and run the import command. On subsequent runs only new posts (not yet in the DB) are inserted — re-importing the same CSV is safe.
-
-### Setup
-
-1. Export your data from LinkedIn:
-   - Go to **linkedin.com → Me → Settings & Privacy → Data Privacy → Get a copy of your data**
-   - Select **Posts** (and optionally **Profile**)
-   - LinkedIn emails a download link — usually within 10 minutes
-   - Unzip and place the files into `data/imports/`
-
-2. The expected filenames (configurable via `.env`):
-   ```
-   data/imports/Shares.csv    ← posts
-   data/imports/Profile.csv   ← profile metadata (optional)
-   ```
-
-3. Add yourself to `accounts.json`:
-   ```json
-   { "username": "your-name", "display_name": "Your Name", "platform": "linkedin", "active": true }
-   ```
-   The `username` here is a free-form identifier you choose — it groups records in the DB and does not need to match your LinkedIn URL.
-
-4. Run the import:
-   ```bash
-   eanyra scrape linkedin
-   ```
-
-### What gets imported
-
-From `Shares.csv` (LinkedIn's posts export):
-
-| Field | Source column | Description |
-|-------|--------------|-------------|
-| `post_id` | `ShareLink` (URN extracted) | Unique identifier — prevents duplicate imports |
-| `text` | `ShareCommentary` | Full post text including newlines |
-| `posted_at` | `Date` | Publication timestamp (UTC) |
-| `shared_url` | `SharedUrl` | External URL shared in the post, if any |
-| `media_url` | `MediaUrl` | Attached media URL, if any |
-| `visibility` | `Visibility` | e.g. `MEMBER_NETWORK` |
-| `raw_url` | `ShareLink` | Direct URL to the post on LinkedIn |
-
-`Profile.csv` is parsed and logged but not persisted to the DB at this stage — it serves as a reference and future hook for profile sync.
-
-### Re-importing
-
-Every import is idempotent. `post_id` has a unique constraint — rows already in the DB are silently skipped. You can drop a new export into `data/imports/` at any time and re-run `eanyra scrape linkedin`; only new posts will be inserted.
-
-### Configurable parameters
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LINKEDIN_IMPORTS_DIR` | `data/imports/` | Path to the folder containing CSV exports |
-| `LINKEDIN_SHARES_FILE` | `Shares.csv` | Filename of the posts export |
-| `LINKEDIN_PROFILE_FILE` | `Profile.csv` | Filename of the profile export |
-
----
-
-## Platform module interface
-
-Each platform lives under `src/platforms/<n>/` and exposes a standard interface via its `index.js`:
-
-```js
-// Stable string key — used in CLI commands and DB records
-export const PLATFORM_ID = 'linkedin'; // 'twitter' | 'github' | 'linkedin'
-
-// Human-readable label for logs
-export const displayName = 'LinkedIn';
-
-// Factory — creates a scraper/importer instance
-export function createScraper(...args) { … }
+```bash
+npm run login
+npm run scrape:twitter
 ```
 
-`ScraperOrchestrator` dispatches via a `switch` on `account.platform`. Adding a new platform means:
-1. Create `src/platforms/<n>/index.js` with `createScraper()` + `PLATFORM_ID`
-2. Add a `case` in `ScraperOrchestrator.#scrapeAccount()`
-3. Add the platform string to `VALID_PLATFORMS` in `cli/index.js`
+The login helper opens a visible browser. Complete login, wait for the feed,
+then press Enter in the terminal. Session data is stored in `data/nyra/`.
 
----
+The first run for an account targets `INITIAL_POSTS_PER_ACCOUNT`; later runs
+target `POSTS_PER_ACCOUNT`. Extraction is currently DOM-based and therefore
+sensitive to Twitter/X markup changes.
 
-## Human-behaviour simulation (Twitter only)
+### GitHub
 
-The Twitter scraper is designed to look like a person casually browsing several profiles. GitHub and LinkedIn have no bot detection concerns — no delays are applied to them.
-
-**Per-run (orchestrator level):**
-- **0–3 min random "wake-up" pause** before the first Twitter account
-- **5–15 min random gap** between consecutive Twitter accounts
-
-**Per-account (scraper level):**
-- **`simulatePageLanding()`** — called once after the first tweet appears: moves the mouse from the top-left corner, pauses 2–5 s as if reading the profile header, performs a small initial scroll
-- **Bézier-curve mouse movement** before each scroll step
-- **Reading pause** of 1.5–4 s before every scroll step
-- **±15–35% jitter** on scroll distance
-- **~15% chance** of a small upward correction scroll (humans overshoot)
-
----
-
-## Anti-detection (Browser.js)
-
-Beyond human behaviour, the browser context patches several fingerprint vectors used by Twitter:
-
-| Layer | What is patched | Why |
-|-------|----------------|-----|
-| Chromium args | `--disable-blink-features=AutomationControlled` | Removes the main CDP automation flag |
-| `navigator.webdriver` | Returns `false` | Most basic bot check |
-| `navigator.plugins` | Returns 3 realistic plugins | Headless Chrome has 0 plugins |
-| `navigator.languages` | `['en-US', 'en']` | Consistency with locale setting |
-| `Permissions API` | Returns `"prompt"` for notifications/geolocation | Headless silently denies all |
-| Canvas fingerprint | ±1 bit of per-session noise | Breaks deterministic SwiftShader hash |
-| WebGL renderer | `"Intel Iris OpenGL Engine"` | Hides `"Google SwiftShader"` headless tell |
-| `window.chrome` | Minimal chrome object present | Missing in headless, checked by detectors |
-| `screen.availWidth/Height` | Matches `window.innerWidth/Height` | Headless mismatch |
-| Network routing | Blocks analytics/telemetry domains | Reduces bot-signal telemetry to Twitter |
-
-**Viewport** is fixed (not randomised per run) because a persistent context must look consistent across sessions — a changing viewport is itself a fingerprint anomaly.
-
----
-
-## Database schema
-
-### `accounts`
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | INTEGER | Primary key |
-| username | STRING | Account handle (unique across all platforms) |
-| display_name | STRING | Human-readable label |
-| platform | STRING | `'twitter'` / `'github'` / `'linkedin'` (default: `'twitter'`) |
-| is_active | BOOLEAN | Soft toggle — set false to pause without deleting data |
-| last_scraped_at | DATE | Timestamp of last successful scrape/import |
-
-### `posts` (Twitter)
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | INTEGER | Primary key |
-| tweet_id | STRING | Twitter's own ID (unique) |
-| account_id | INTEGER | FK → accounts |
-| text | TEXT | Full post text |
-| lang | STRING | Language code (`en`, `uk`, …) |
-| posted_at | DATE | Original publication timestamp |
-| likes | INTEGER | Like count at time of scrape |
-| retweets | INTEGER | Retweet count |
-| replies | INTEGER | Reply count |
-| views | INTEGER | View/impression count (if available) |
-| media_urls | TEXT | JSON array of photo/video URLs |
-| is_retweet | BOOLEAN | Is this a retweet? |
-| is_reply | BOOLEAN | Is this a reply? |
-| raw_url | STRING | Direct link to the tweet |
-| scraped_at | DATE | When this record was captured |
-
-### `linkedin_posts` (LinkedIn)
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | INTEGER | Primary key |
-| post_id | STRING | Numeric ID extracted from post URN (unique) |
-| account_id | INTEGER | FK → accounts |
-| username | STRING | LinkedIn handle (from accounts.json) |
-| text | TEXT | Full post commentary |
-| shared_url | STRING | External URL shared in the post, if any |
-| media_url | STRING | Attached media URL, if any |
-| visibility | STRING | e.g. `MEMBER_NETWORK` |
-| posted_at | DATE | Publication timestamp |
-| raw_url | STRING | Direct URL to the post on LinkedIn |
-| scraped_at | DATE | When this record was imported |
-
-`post_id` is extracted from the ShareLink URN: `urn:li:share:7399399426819026944` → `7399399426819026944`. Both `urn:li:share:` and `urn:li:ugcPost:` formats are handled.
-
-### `github_events` (GitHub)
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | INTEGER | Primary key |
-| event_id | STRING(256) | Stable unique key — format: `<type>:<owner>/<repo>:<detail>` |
-| account_id | INTEGER | FK → accounts |
-| username | STRING | GitHub login |
-| repo | STRING | Repository name (short, no owner prefix) |
-| event_type | ENUM | `release` / `commit_batch` / `new_repo` / `readme_change` |
-| title | STRING | Human-readable summary |
-| body | TEXT | Release notes, commit messages, etc. |
-| url | STRING | Direct link to the event on GitHub |
-| occurred_at | DATE | When the event happened |
-| metadata | TEXT | JSON — event-type-specific extras (tag, sha, week, count…) |
-| scraped_at | DATE | When this record was captured |
-
-### `scraper_runs`
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | INTEGER | Primary key |
-| started_at | DATE | Run start time |
-| finished_at | DATE | Run end time |
-| status | ENUM | `running` / `success` / `partial` / `failed` |
-| accounts_processed | INTEGER | Successfully scraped/imported accounts |
-| posts_saved | INTEGER | Newly inserted records (all platforms combined) |
-| error_message | TEXT | Top-level error if failed or partial |
-
-### `user_context`
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | INTEGER | Primary key |
-| key | STRING(128) | Unique identifier: `voice`, `bio`, `platforms`, `project.<slug>` |
-| value | TEXT | JSON-serialised content of the corresponding YAML section |
-| synced_at | DATE | Timestamp of last sync from YAML |
-
-### `projects`
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | INTEGER | Primary key |
-| slug | STRING(64) | Unique identifier (from `slug` field in YAML or filename) |
-| name | STRING | Human-readable project name |
-| status | ENUM | `active` / `paused` / `archived` |
-| description | TEXT | Full project description |
-| tech_stack | TEXT | JSON array of tech stack items |
-| links | TEXT | JSON object `{ github, website, ... }` |
-| content_angles | TEXT | JSON array of content angle strings |
-| posting_rules | TEXT | JSON array of posting rule strings |
-| synced_at | DATE | Timestamp of last sync from YAML |
-
----
-
-## Environment variables
-
-All variables are read in `src/config/app.config.js`. See `.env.example` for the full list.
+Add a token to `.env`:
 
 ```env
-# Scheduling
-CRON_SCHEDULE=0 8 * * *               # When to run (UTC). Default: 08:00 daily
-RUN_ON_STARTUP=false                   # Run once immediately on process start
-
-# Twitter / Browser
-BROWSER_HEADLESS=true                  # false to watch the browser (debug only)
-POSTS_PER_ACCOUNT=20                   # Daily top-up depth
-INITIAL_POSTS_PER_ACCOUNT=200          # First-run harvest depth
-SCROLL_DELAY_MS=2500                   # Base delay (ms) between scroll steps
-MIN_DELAY_BETWEEN_ACCOUNTS_MS=300000   # 5 min pause between accounts
-MAX_DELAY_BETWEEN_ACCOUNTS_MS=900000   # 15 min max pause between accounts
-MAX_SCROLL_ATTEMPTS=30                 # Max scroll passes before giving up
-
-# GitHub
-GITHUB_TOKEN=ghp_...                   # Personal Access Token (read:user, public_repo)
-GITHUB_LOOKBACK_DAYS=8                 # How many days back to collect events
-GITHUB_REPOS_PER_ACCOUNT=30            # Max repos inspected per account
-GITHUB_RELEASES_PER_REPO=10            # Max releases per repo
-GITHUB_COMMITS_PER_REPO=100            # Max commits per repo within the lookback window
-GITHUB_COMMIT_MESSAGES_PER_BATCH=10    # Max messages stored in a commit_batch body
-
-# LinkedIn
-LINKEDIN_IMPORTS_DIR=data/imports      # Path to CSV exports folder
-LINKEDIN_SHARES_FILE=Shares.csv        # Posts export filename
-LINKEDIN_PROFILE_FILE=Profile.csv      # Profile export filename (optional)
+GITHUB_TOKEN=github_pat_...
 ```
 
----
+Then configure a GitHub account and run:
 
-## MCP server — agent integration
-
-The MCP server lets an AI agent query EANyra's database directly using structured tools. The agent never touches live platforms — it reads from SQLite, getting clean structured data instantly.
-
-### Setup
-
-Add to your OpenClaw / Claude Desktop config (replace paths with absolute paths on your machine):
-
-```json
-{
-  "mcpServers": {
-    "eanyra": {
-      "command": "node",
-      "args": ["/absolute/path/to/EANyra/src/core/mcp/server.js"],
-      "env": {
-        "DB_PATH": "/absolute/path/to/EANyra/data/pot.sqlite"
-      }
-    }
-  }
-}
+```bash
+npm run nyra -- scrape github
 ```
 
-Restart the gateway — the agent discovers all tools automatically.
+GitHub collection creates signals for recent releases, weekly commit batches,
+new repositories, and README changes. See the known README tracking limitation
+in [docs/ROADMAP.md](docs/ROADMAP.md).
 
-### Available tools
+### LinkedIn
 
-| Tool | Description |
-|------|-------------|
-| `twitter_get_recent_posts` | Latest posts, optionally filtered by account, time window, type |
-| `twitter_search_posts` | Full-text search across post content |
-| `twitter_get_trending_posts` | Top posts ranked by likes / retweets / views |
-| `twitter_get_account_stats` | Aggregated engagement stats per account |
-| `twitter_list_accounts` | All monitored accounts with last scrape time |
-| `twitter_get_scraper_status` | Scraper health, last run result, data freshness |
-| `context_get` | Full user context: voice, bio, platform rules, active projects. Always call before generating content. |
+Request a LinkedIn data export and place these files in `data/imports/`:
 
-### Extending with new tools
-
-Create `src/core/mcp/tools/yourskill.js` following the pattern in `twitter.js` (export a named array, each item has `name`, `description`, `inputSchema`, `handler`), then register it in `server.js`:
-
-```js
-import { yourSkillTools } from './tools/yourskill.js';
-const allTools = [...twitterTools, ...statusTools, ...contextTools, ...yourSkillTools];
+```text
+Shares.csv     required for posts
+Profile.csv    optional; parsed for logging only
 ```
 
-Restart the gateway — new tools appear automatically.
+Then run:
 
----
-
-## User context
-
-User context is the information the AI agent needs to generate content that sounds like you — not generic AI output. It covers tone, platform rules, bio, and active projects.
-
-YAML files in `src/context/` are the source of truth. They are edited by hand, versioned in git, and never read directly by the agent. On `eanyra context sync`, `UserContextRepository` reads all YAML files and upserts them into two SQLite tables: `user_context` (flat key/value) and `projects` (one row per project).
-
-```
-src/context/*.yaml  →  eanyra context sync  →  user_context + projects tables
-                                                          ↑
-                                                 context_get() MCP tool
+```bash
+npm run nyra -- scrape linkedin
 ```
 
-### YAML files
+Import is idempotent. Engagement metrics are not present in LinkedIn's export,
+so imported posts use zero or null values for those fields.
 
-**`voice.yaml`** — tone, style preferences, taboos. The most important file — the agent uses this to calibrate writing style.
+## CLI
 
-```yaml
-tone: "Технічний але без снобізму. Практик, не теоретик."
-likes:
-  - "Конкретні числа (5 хвилин, 200 постів)"
-  - "Behind the scenes думки"
-dislikes:
-  - "Корпоративні кліше"
-taboo:
-  - "Не публікувати непідтверджені факти як факти"
+Use `npm run nyra -- <command>` when the `eanyra` binary is not globally linked.
+
+| Command | Purpose |
+|---|---|
+| `npm start` | Start the cron daemon |
+| `npm run scrape` | Collect all active configured accounts once |
+| `npm run scrape:twitter` | Collect Twitter/X accounts once |
+| `npm run scrape:github` | Collect GitHub accounts once |
+| `npm run scrape:linkedin` | Import LinkedIn accounts once |
+| `npm run nyra -- scrape <platform>` | Collect one platform once |
+| `npm run context:sync` | Sync YAML author context into SQLite |
+| `npm run nyra -- context show` | Print all context currently stored in SQLite |
+| `npm run nyra -- context show -k <key>` | Print one context key |
+| `npm run export` | Generate a Markdown content export |
+| `npm run export:dry` | Generate an export without marking records used |
+| `npm run login` | Create or refresh the persistent Twitter/X session |
+| `npm run import-cookies -- <file>` | Import browser cookies into the persistent session |
+
+Important export options:
+
+| Option | Meaning |
+|---|---|
+| `--days <n>` | Date window for recent used records; default `7` |
+| `--sections <list>` | Any of `context,projects,posts,signals` |
+| `--platform <name>` | Filter exported posts by platform |
+| `--unused-only` | Include only records not marked as used |
+| `--no-mark` | Do not update `used_for_content` timestamps |
+| `--out <path>` | Write to a custom file |
+
+Exports are written to `data/exports/` by default.
+For custom options, use `node src/core/cli/index.js export [options]` or the
+globally linked `eanyra export [options]` command.
+
+## Author Context
+
+Context files are the editable source of truth:
+
+```text
+src/context/
+  voice.yaml
+  bio.yaml
+  platforms.yaml
+  projects/*.yaml
 ```
 
-**`bio.yaml`** — short and full bio per platform.
+Only `.example.yaml` files and the project template are committed. Create the
+real files from those examples, edit them, then sync:
 
-```yaml
-twitter:
-  short: "Будую інструменти для медійки."
-linkedin:
-  short: "Full-Stack Engineer. Building tools for media."
-  full: |
-    Multi-line full bio here.
+```bash
+npm run nyra -- context sync
 ```
 
-**`platforms.yaml`** — content rules per platform: max length, language, style, formats, posting frequency.
+The sync writes top-level context into `user_context` and project metadata into
+both `projects` and `user_context`.
 
-```yaml
-twitter:
-  max_length: 280
-  language: "uk"
-  style: "Короткий удар. Одна думка — один твіт."
-linkedin:
-  max_length: 3000
-  language: "en"
-  style: "Professional but personal. Show the work, not just the result."
+See the [Author Context Guide](docs/CONTEXT_GUIDE.md) for every supported field,
+writing guidance, sync semantics, and current validation limitations.
+
+## MCP Server
+
+The intended MCP entry point is:
+
+```bash
+node src/core/mcp/server.js
 ```
 
-**`projects/<slug>.yaml`** — one file per project. The `slug` field becomes the DB key `project.<slug>`.
+It supports local stdio and Streamable HTTP transports:
 
-```yaml
-slug: "eanyra"
-name: "EANyra"
-status: "active"
-description: |
-  Multi-platform monitoring pipeline для AI-агентів.
-tech_stack:
-  - "Node.js (ESM)"
-  - "Playwright"
-  - "GitHub REST API"
-content_angles:
-  - "Anti-detection: canvas fingerprint, не UA"
-  - "MCP як шар між агентом і даними"
-posting_rules:
-  - "На реліз — 3-4 пости, не всі одразу"
-  - "Технічні інсайти > анонси фіч"
+```env
+MCP_TRANSPORT=stdio
+MCP_HOST=127.0.0.1
+MCP_PORT=3001
+DB_PATH=data/pot.sqlite
 ```
 
-To add a new project: copy `projects/_template.yaml`, rename to `<slug>.yaml`, fill in the fields, run `eanyra context sync`.
+The registered MCP API is designed to expose:
 
----
+- `context_get`, `export_get`;
+- `posts_get`, `posts_search`, `posts_stats`, `accounts_list`;
+- `signals_get`, `signals_mark_used`;
+- `scraper_status`.
 
-## Roadmap
+The server reads all runtime paths, transport settings, routes, and query limits
+from `src/config/app.config.js`.
 
-### Done
+## Configuration
 
-**MCP server** — read-only MCP server (`src/core/mcp/`) exposing all scraped data to AI agents.
+Runtime configuration is centralized in `src/config/app.config.js`.
+`.env.example` documents every supported environment variable. The groups are:
 
-**CLI foundation** — Commander-based CLI with `eanyra start`, `eanyra scrape [platform]`, `eanyra context`. Binary in `package.json → bin`.
+- general: `NODE_ENV`;
+- runtime paths: `DATA_DIR`, `ACCOUNTS_CONFIG_PATH`, `CONTEXT_DIR`,
+  `EXPORTS_DIR`;
+- scheduler: `CRON_SCHEDULE`, `RUN_ON_STARTUP`;
+- database: `DB_PATH`, `DB_POOL_*`;
+- MCP: `MCP_TRANSPORT`, `MCP_HOST`, `MCP_PORT`, routes and query defaults;
+- browser and Twitter/X: `BROWSER_*`, `TWITTER_*`;
+- scraper behavior: `POSTS_PER_ACCOUNT`, `INITIAL_POSTS_PER_ACCOUNT`,
+  `SCROLL_DELAY_MS`, account delay limits, scroll and timeout limits;
+- Markdown export: `EXPORT_DEFAULT_DAYS`, `EXPORT_MAX_RECORDS`;
+- GitHub: `GITHUB_TOKEN`, `GITHUB_LOOKBACK_DAYS`,
+  `GITHUB_REPOS_PER_ACCOUNT`, release/commit limits;
+- LinkedIn: `LINKEDIN_IMPORTS_DIR`, `LINKEDIN_SHARES_FILE`,
+  `LINKEDIN_PROFILE_FILE`.
 
-**Platform module interface** — each platform under `src/platforms/<n>/` exposes `createScraper()`, `PLATFORM_ID`, `displayName`. Orchestrator dispatches via `account.platform` switch — adding a platform touches only the switch and `VALID_PLATFORMS`.
+## Documentation
 
-**User context system** — YAML files in `src/context/` synced into SQLite. Agent reads context via `context_get()` MCP tool.
+- [Architecture](docs/ARCHITECTURE.md): module boundaries, runtime flows, data
+  model, and extension points.
+- [Author Context Guide](docs/CONTEXT_GUIDE.md): how to write and synchronize
+  voice, biography, platform, and project YAML files.
+- [Product Vision](docs/PRODUCT_VISION.md): durable product purpose, boundaries,
+  and target agent workflows.
+- [Roadmap](docs/ROADMAP.md): confirmed defects, risks, and planned
+  improvements.
+- [Agent skill](skills/eanyra/SKILL.md): intended AI-agent content workflow.
 
-**Multi-platform account management** — `accounts.json` is the single source of truth. `platform` field routes each account to the correct scraper. `Account.js` carries the `platform` column (default: `'twitter'`).
+## Development Notes
 
-**GitHub module** — REST API scraper collecting releases, weekly commit batches, new repos, README changes. `GithubEvent` model + `GithubEventRepository`. CLI: `eanyra scrape github`.
+There is currently no automated test suite, lint script, or versioned migration
+command. JavaScript syntax can be checked with:
 
-**LinkedIn module** — CSV import from `data/imports/`. Dependency-free CSV parser handles LinkedIn's quoted multiline format. `LinkedinPost` model + `LinkedinPostRepository`. Idempotent — safe to re-import same CSV. CLI: `eanyra scrape linkedin`.
-
----
-
-### Next: Twitter network interception module
-
-**Goal:** replace DOM-based tweet extraction with GraphQL response interception.
-
-**Why:** Twitter/X is a React SPA — all post data arrives via internal GraphQL endpoints (`UserTweets`, `UserByScreenName`). Intercepting these responses gives access to exact numeric fields and data not present in the DOM at all.
-
-**What changes and what stays the same:**
-- `page.goto()` and all human-behaviour scrolling **stays** — the browser must navigate and scroll normally to trigger the GraphQL requests
-- `page.on('response', ...)` listener is added alongside the scroll loop
-- `TwitterScraper.js` DOM extraction becomes a **fallback** in case the interceptor yields nothing
-- No new HTTP requests — the interceptor only reads data the browser already received
-
-**Fields gained over DOM parsing:**
-
-| Field | DOM | Network |
-|-------|-----|---------|
-| Like count | Parsed from "1.2K" string | Exact integer |
-| Retweet count | Parsed from "1.2K" string | Exact integer |
-| Bookmark count | Not available | Available |
-| `conversation_id` | Not available | Available |
-| `possibly_sensitive` | Not available | Available |
-| Full text (>280 chars) | Sometimes truncated | Always complete |
-| Media — original URL | Thumbnail src | Original upload URL |
-
-**Planned files:**
-
+```powershell
+$files = rg --files -g '*.js'
+foreach ($file in $files) { node --check $file }
 ```
-src/platforms/twitter/
-├── TwitterScraper.js         # Existing — becomes coordinator + DOM fallback
-├── NetworkInterceptor.js     # New — registers response listener, parses GraphQL JSON
-├── tweetMapper.js            # New — maps raw GraphQL shape → RawPost (shared type)
-└── humanBehavior.js          # Unchanged
-```
+
+EANyra uses Sequelize with SQLite and calls `sequelize.sync({ alter: true })`
+during CLI startup. Back up `data/pot.sqlite` before schema-level development.
+
+## License
+
+See [LICENSE](LICENSE).

@@ -18,7 +18,7 @@
  * Adding a new platform:
  *   1. Create src/platforms/<n>/index.js with createScraper() + PLATFORM_ID
  *   2. Add a case in #scrapeAccount() below
- *   3. Add the platform string to VALID_PLATFORMS in cli/index.js
+ *   3. Add the platform string to SUPPORTED_PLATFORMS in app.config.js
  */
 
 import { Browser }                                  from '../browser/Browser.js';
@@ -89,7 +89,7 @@ export class ScraperOrchestrator {
     try {
       const hasTwitter = accounts.some(a => a.platform === 'twitter');
       if (hasTwitter) {
-        const wakeUpMs = Math.floor(Math.random() * 3 * 60 * 1_000);
+        const wakeUpMs = Math.floor(Math.random() * SCRAPER.wakeUpMaxMs);
         if (wakeUpMs > 0) {
           print(`Wake-up pause: ${Math.round(wakeUpMs / 1_000)}s…`, 'system');
           await sleep(wakeUpMs);

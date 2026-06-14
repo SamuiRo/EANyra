@@ -1,5 +1,5 @@
 import sqlite3 from 'sqlite3';
-import { DB }   from '../config/app.config.js';
+import { DB }   from '../../config/app.config.js';
 
 /**
  * src/core/mcp/db.js

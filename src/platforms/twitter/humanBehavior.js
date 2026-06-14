@@ -16,6 +16,7 @@
  */
 
 import { sleep, jitter } from '../../shared/utils.js';
+import { SCRAPER } from '../../config/app.config.js';
 
 // ─── Mouse movement ───────────────────────────────────────────────────────────
 
@@ -82,7 +83,7 @@ export async function mouseIdle(page, { baseX = 400, baseY = 400 } = {}) {
  * @param {import('playwright').Page} page
  * @param {{ scrollDelayMs?: number }} [opts]
  */
-export async function humanScroll(page, { scrollDelayMs = 2500 } = {}) {
+export async function humanScroll(page, { scrollDelayMs = SCRAPER.scrollDelayMs } = {}) {
   // ── 1. Reading pause before scrolling ───────────────────────────────────
   // Humans read for a moment before scrolling — 1.5–4 s depending on content.
   const readMs = 1_500 + Math.floor(Math.random() * 2_500);

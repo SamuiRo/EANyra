@@ -21,12 +21,7 @@ export class Database {
       dialect: 'sqlite',
       storage: DB.storagePath,
       logging: false,
-      pool: {
-        max:     5,
-        min:     0,
-        acquire: 30_000,
-        idle:    10_000,
-      },
+      pool: DB.pool,
       define: {
         freezeTableName: true,
         underscored:     false,

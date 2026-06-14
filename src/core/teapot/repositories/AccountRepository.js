@@ -8,13 +8,8 @@
  */
 
 import fs   from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { print } from '../../../shared/utils.js';
-
-const __filename     = fileURLToPath(import.meta.url);
-const __dirname      = path.dirname(__filename);
-const ACCOUNTS_JSON  = path.resolve(__dirname, '../../../config/accounts.json');
+import { PATHS } from '../../../config/app.config.js';
 
 export class AccountRepository {
   /** @param {import('sequelize').ModelStatic} AccountModel */
@@ -78,11 +73,11 @@ export class AccountRepository {
    */
   async #loadJson() {
     try {
-      const raw = await fs.readFile(ACCOUNTS_JSON, 'utf-8');
+      const raw = await fs.readFile(PATHS.accountsConfig, 'utf-8');
       return JSON.parse(raw);
     } catch (error) {
       throw new Error(
-        `Cannot load accounts config from ${ACCOUNTS_JSON}: ${error.message}`,
+        `Cannot load accounts config from ${PATHS.accountsConfig}: ${error.message}`,
       );
     }
   }

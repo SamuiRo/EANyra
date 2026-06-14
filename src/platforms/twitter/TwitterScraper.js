@@ -11,7 +11,7 @@
  *   purely on extraction logic.
  */
 
-import { SCRAPER }                                          from '../../config/app.config.js';
+import { SCRAPER, TWITTER }                                 from '../../config/app.config.js';
 import { print }                                            from '../../shared/utils.js';
 import { humanScroll, simulatePageLanding }                 from './humanBehavior.js';
 
@@ -79,7 +79,7 @@ export class TwitterScraper {
    * @returns {Promise<import('../../core/teapot/repositories/PostRepository.js').RawPost[]>}
    */
   async scrapeAccount(username) {
-    const url = `https://x.com/${username}`;
+    const url = `${TWITTER.baseUrl}/${username}`;
     print(`Navigating to ${url}`, 'info');
 
     try {
@@ -155,7 +155,7 @@ export class TwitterScraper {
     const tweetId   = extractTweetId(href);
     if (!tweetId) return null;
 
-    const raw_url = href ? `https://x.com${href}` : null;
+    const raw_url = href ? `${TWITTER.baseUrl}${href}` : null;
 
     const textEl = await article.$(SEL.tweetText);
     const text   = textEl ? (await textEl.innerText()).trim() : '';

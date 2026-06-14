@@ -1,4 +1,5 @@
 import { query, queryOne } from '../db.js';
+import { MCP } from '../../../config/app.config.js';
 
 /**
  * src/core/mcp/tools/status.js
@@ -19,13 +20,15 @@ export const statusTools = [
       properties: {
         history_limit: {
           type:        'integer',
-          description: 'Number of recent runs to include in history (default 5, max 20).',
-          default:     5,
+          description:
+            `Number of recent runs to include in history ` +
+            `(default ${MCP.defaultStatusHistory}, max ${MCP.maxStatusHistory}).`,
+          default:     MCP.defaultStatusHistory,
         },
       },
     },
-    async handler({ history_limit = 5 } = {}) {
-      const cap = Math.min(Number(history_limit), 20);
+    async handler({ history_limit = MCP.defaultStatusHistory } = {}) {
+      const cap = Math.min(Number(history_limit), MCP.maxStatusHistory);
 
       const latest = await queryOne(`
         SELECT *

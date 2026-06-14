@@ -6,7 +6,10 @@ import { ensureDir, print } from '../../shared/utils.js';
 
 const COOKIES_IMPORT_PATH = process.argv[2];
 if (!COOKIES_IMPORT_PATH) {
-  console.error('Usage: node src/import-cookies.js <path-to-cookies.json>');
+  console.error(
+    'Usage: npm run import-cookies -- <path-to-cookies.json>\n' +
+    '   or: node src/core/cli/import-cookies.js <path-to-cookies.json>',
+  );
   process.exit(1);
 }
 

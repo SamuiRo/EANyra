@@ -1,3 +1,5 @@
+import { EXPORT } from '../../config/app.config.js';
+
 /**
  * src/core/export/MarkdownExporter.js
  *
@@ -479,8 +481,8 @@ export function buildMarkdown(data) {
     context     = {},
     posts       = [],
     signals     = [],
-    days        = 7,
-    sections    = ['context', 'projects', 'posts', 'signals'],
+    days        = EXPORT.defaultDays,
+    sections    = EXPORT.sections,
     generatedAt = new Date(),
   } = data;
 

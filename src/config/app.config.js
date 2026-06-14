@@ -10,9 +10,6 @@ const __dirname  = path.dirname(__filename);
 /** Absolute path to the project root (two levels up from src/config/) */
 export const PROJECT_ROOT = path.resolve(__dirname, '../../');
 
-/** Default data directory: <project_root>/data */
-const DATA_DIR = path.join(PROJECT_ROOT, 'data');
-
 const DEFAULT_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
 
@@ -29,12 +26,39 @@ function envBoolean(name, fallback = false) {
   return raw.toLowerCase() === 'true';
 }
 
+function envPath(name, fallback) {
+  const raw = process.env[name];
+  return raw ? path.resolve(process.cwd(), raw) : fallback;
+}
+
 export const NODE_ENV = process.env.NODE_ENV ?? 'production';
 export const PKG      = pkg;
 
-export const MCP_PORT      = envNumber('MCP_PORT', 3001);
-export const MCP_HOST      = process.env.MCP_HOST      ?? '127.0.0.1';
-export const MCP_TRANSPORT = process.env.MCP_TRANSPORT ?? 'stdio';
+export const SUPPORTED_PLATFORMS = ['twitter', 'github', 'linkedin'];
+
+const DATA_DIR = envPath('DATA_DIR', path.join(PROJECT_ROOT, 'data'));
+
+export const PATHS = {
+  dataDir:         DATA_DIR,
+  accountsConfig: envPath('ACCOUNTS_CONFIG_PATH', path.join(PROJECT_ROOT, 'src', 'config', 'accounts.json')),
+  contextDir:      envPath('CONTEXT_DIR', path.join(PROJECT_ROOT, 'src', 'context')),
+  exportsDir:      envPath('EXPORTS_DIR', path.join(DATA_DIR, 'exports')),
+};
+
+export const MCP = {
+  port:           envNumber('MCP_PORT', 3001),
+  host:           process.env.MCP_HOST         ?? '127.0.0.1',
+  transport:      process.env.MCP_TRANSPORT    ?? 'stdio',
+  route:          process.env.MCP_ROUTE        ?? '/mcp',
+  healthRoute:    process.env.MCP_HEALTH_ROUTE ?? '/health',
+  exportMaxChars: envNumber('MCP_EXPORT_MAX_CHARS', 80_000),
+  queryMaxRecords: envNumber('MCP_QUERY_MAX_RECORDS', 100),
+  defaultPostLimit: envNumber('MCP_DEFAULT_POST_LIMIT', 20),
+  defaultSignalLimit: envNumber('MCP_DEFAULT_SIGNAL_LIMIT', 30),
+  defaultStatsDays: envNumber('MCP_DEFAULT_STATS_DAYS', 30),
+  defaultStatusHistory: envNumber('MCP_DEFAULT_STATUS_HISTORY', 5),
+  maxStatusHistory: envNumber('MCP_MAX_STATUS_HISTORY', 20),
+};
 
 export const SCHEDULER = {
   cronSchedule: process.env.CRON_SCHEDULE ?? '0 8 * * *',
@@ -42,15 +66,18 @@ export const SCHEDULER = {
 };
 
 export const DB = {
-  storagePath: process.env.DB_PATH
-    ? path.resolve(process.cwd(), process.env.DB_PATH)
-    : path.join(DATA_DIR, 'pot.sqlite'),
+  storagePath: envPath('DB_PATH', path.join(DATA_DIR, 'pot.sqlite')),
+  pool: {
+    max:     envNumber('DB_POOL_MAX', 5),
+    min:     envNumber('DB_POOL_MIN', 0),
+    acquire: envNumber('DB_POOL_ACQUIRE_MS', 30_000),
+    idle:    envNumber('DB_POOL_IDLE_MS', 10_000),
+  },
 };
 
 export const BROWSER = {
-  dataPath: process.env.BROWSER_DATA_PATH
-    ? path.resolve(process.cwd(), process.env.BROWSER_DATA_PATH)
-    : path.join(DATA_DIR, 'nyra'),
+  dataPath:             envPath('BROWSER_DATA_PATH', path.join(DATA_DIR, 'nyra')),
+  cookiesPath:          envPath('BROWSER_COOKIES_PATH', path.join(DATA_DIR, 'cookies.json')),
   headless:            envBoolean('BROWSER_HEADLESS', true),
   navigationTimeoutMs: envNumber('BROWSER_NAV_TIMEOUT_MS', 30_000),
   selectorTimeoutMs:   envNumber('BROWSER_SEL_TIMEOUT_MS', 15_000),
@@ -85,6 +112,7 @@ export const BROWSER = {
 };
 
 export const TWITTER = {
+  baseUrl:  process.env.TWITTER_BASE_URL  ?? 'https://x.com',
   loginUrl: process.env.TWITTER_LOGIN_URL ?? 'https://x.com',
   homeUrl:  process.env.TWITTER_HOME_URL  ?? 'https://x.com/home',
 };
@@ -98,6 +126,13 @@ export const SCRAPER = {
   maxScrollAttempts:         envNumber('MAX_SCROLL_ATTEMPTS', 30),
   navigationTimeoutMs:       envNumber('SCRAPER_NAV_TIMEOUT_MS', envNumber('BROWSER_NAV_TIMEOUT_MS', 30_000)),
   selectorTimeoutMs:         envNumber('SCRAPER_SELECTOR_TIMEOUT_MS', envNumber('BROWSER_SEL_TIMEOUT_MS', 15_000)),
+  wakeUpMaxMs:               envNumber('SCRAPER_WAKE_UP_MAX_MS', 3 * 60 * 1_000),
+};
+
+export const EXPORT = {
+  defaultDays: envNumber('EXPORT_DEFAULT_DAYS', 7),
+  maxRecords:  envNumber('EXPORT_MAX_RECORDS', 100),
+  sections:    ['context', 'projects', 'posts', 'signals'],
 };
 
 // ─── GitHub ───────────────────────────────────────────────────────────────────
@@ -108,6 +143,9 @@ export const GITHUB = {
    * Generate at: https://github.com/settings/tokens
    */
   token: process.env.GITHUB_TOKEN ?? '',
+  apiBaseUrl: process.env.GITHUB_API_BASE_URL ?? 'https://api.github.com',
+  apiVersion: process.env.GITHUB_API_VERSION ?? '2022-11-28',
+  userAgent:  process.env.GITHUB_USER_AGENT  ?? `${PKG.name}/${PKG.version}`,
 
   /** How many days back to look for events on each run. */
   lookbackDays:           envNumber('GITHUB_LOOKBACK_DAYS', 8),
@@ -137,9 +175,7 @@ export const LINKEDIN = {
    *   → "Get a copy of your data" → select Posts (+ Profile)
    *   Unzip and drop Shares.csv (and Profile.csv) into this folder.
    */
-  importsDir: process.env.LINKEDIN_IMPORTS_DIR
-    ? path.resolve(process.cwd(), process.env.LINKEDIN_IMPORTS_DIR)
-    : path.join(DATA_DIR, 'imports'),
+  importsDir: envPath('LINKEDIN_IMPORTS_DIR', path.join(DATA_DIR, 'imports')),
 
   /** Expected filename for the posts export inside importsDir. */
   sharesFile:  process.env.LINKEDIN_SHARES_FILE  ?? 'Shares.csv',

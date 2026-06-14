@@ -20,12 +20,9 @@ import { registerExportCommands }     from './exportCommands.js';
 import { registerModels }             from '../teapot/models/index.js';
 import { ScraperOrchestrator }        from '../orchestrator/ScraperOrchestrator.js';
 import { Scheduler }                  from '../scheduler/Scheduler.js';
-import { PKG, NODE_ENV }              from '../../config/app.config.js';
+import { PKG, NODE_ENV, SUPPORTED_PLATFORMS } from '../../config/app.config.js';
 import { banner, print }              from '../../shared/utils.js';
 import { WELCOME_MESSAGE, SUB_TITLE } from '../../shared/message.js';
-
-/** All recognised platform identifiers. Add new platforms here. */
-const VALID_PLATFORMS = ['twitter', 'github', 'linkedin'];
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 
@@ -161,9 +158,9 @@ function buildCLI(nyra) {
       '  eanyra scrape linkedin   → LinkedIn CSV import only',
     )
     .action(async (platform) => {
-      if (platform && !VALID_PLATFORMS.includes(platform)) {
+      if (platform && !SUPPORTED_PLATFORMS.includes(platform)) {
         print(
-          `Unknown platform "${platform}". Valid options: ${VALID_PLATFORMS.join(', ')}`,
+          `Unknown platform "${platform}". Valid options: ${SUPPORTED_PLATFORMS.join(', ')}`,
           'error',
         );
         process.exit(1);

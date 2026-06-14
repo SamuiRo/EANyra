@@ -7,8 +7,8 @@ import http                              from 'node:http';
 import { postTools }         from './tools/posts.js';
 import { signalTools }       from './tools/signals.js';
 import { statusTools }       from './tools/status.js';
-import { buildContextTools } from './tools/context.js';
-import { MCP_PORT, MCP_HOST, MCP_TRANSPORT, PKG } from '../../config/app.config.js';
+import { buildContextTools } from './context.js';
+import { MCP, PKG } from '../../config/app.config.js';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 //
@@ -18,9 +18,9 @@ import { MCP_PORT, MCP_HOST, MCP_TRANSPORT, PKG } from '../../config/app.config.
 //  MCP_HOST              → bind address (default: 127.0.0.1)
 //                          Set to 0.0.0.0 only inside Docker.
 
-const TRANSPORT = MCP_TRANSPORT;
-const PORT      = MCP_PORT;
-const HOST      = MCP_HOST;
+const TRANSPORT = MCP.transport;
+const PORT      = MCP.port;
+const HOST      = MCP.host;
 
 // ── Server ────────────────────────────────────────────────────────────────────
 
@@ -90,13 +90,13 @@ async function startHttp() {
   const httpServer = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
 
-    if (url.pathname === '/health') {
+    if (url.pathname === MCP.healthRoute) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok', server: PKG.name, version: PKG.version }));
       return;
     }
 
-    if (url.pathname === '/mcp') {
+    if (url.pathname === MCP.route) {
       const sessionId = req.headers['mcp-session-id'];
 
       if (req.method === 'POST' || req.method === 'GET') {
@@ -138,8 +138,8 @@ async function startHttp() {
   });
 
   httpServer.listen(PORT, HOST, () => {
-    log(`HTTP transport ready  → http://${HOST}:${PORT}/mcp`);
-    log(`Health check          → http://${HOST}:${PORT}/health`);
+    log(`HTTP transport ready  → http://${HOST}:${PORT}${MCP.route}`);
+    log(`Health check          → http://${HOST}:${PORT}${MCP.healthRoute}`);
   });
 }
 

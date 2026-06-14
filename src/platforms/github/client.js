@@ -14,7 +14,7 @@
  *   public_repo — repos, releases, commits, README
  */
 
-const BASE_URL = 'https://api.github.com';
+import { GITHUB } from '../../config/app.config.js';
 
 // ─── Custom error types ───────────────────────────────────────────────────────
 
@@ -56,7 +56,7 @@ export class GithubClient {
    * @param {number} [perPage=30]
    * @returns {Promise<GithubRepo[]>}
    */
-  async getRepos(username, perPage = 30) {
+  async getRepos(username, perPage = GITHUB.reposPerAccount) {
     return this.#request(
       `/users/${username}/repos?sort=pushed&direction=desc&per_page=${perPage}&type=public`
     );
@@ -72,7 +72,7 @@ export class GithubClient {
    * @param {number} [perPage=10]
    * @returns {Promise<GithubRelease[]>}
    */
-  async getReleases(username, repo, perPage = 10) {
+  async getReleases(username, repo, perPage = GITHUB.releasesPerRepo) {
     return this.#request(`/repos/${username}/${repo}/releases?per_page=${perPage}`);
   }
 
@@ -87,7 +87,7 @@ export class GithubClient {
    * @param {number}      [perPage=100]
    * @returns {Promise<GithubCommit[]>}
    */
-  async getCommitsSince(username, repo, since, perPage = 100) {
+  async getCommitsSince(username, repo, since, perPage = GITHUB.commitsPerRepo) {
     const sinceStr = since instanceof Date ? since.toISOString() : since;
     return this.#request(
       `/repos/${username}/${repo}/commits?since=${sinceStr}&per_page=${perPage}`
@@ -139,14 +139,14 @@ export class GithubClient {
    * @returns {Promise<any>}
    */
   async #request(path) {
-    const url = `${BASE_URL}${path}`;
+    const url = `${GITHUB.apiBaseUrl}${path}`;
 
     const res = await fetch(url, {
       headers: {
         Authorization:          `Bearer ${this.#token}`,
         Accept:                 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-        'User-Agent':           'EANyra/1.0',
+        'X-GitHub-Api-Version': GITHUB.apiVersion,
+        'User-Agent':           GITHUB.userAgent,
       },
     });
 

@@ -1,6 +1,6 @@
 {
   "name": "eanyra",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "description": "Twitter monitoring tool for AI agent data pipeline",
   "main": "src/core/cli/index.js",
   "bin": {
@@ -13,9 +13,13 @@
     "dev": "node --watch src/core/cli/index.js start",
     "scrape": "node src/core/cli/index.js scrape",
     "scrape:twitter": "node src/core/cli/index.js scrape twitter",
+    "scrape:github": "node src/core/cli/index.js scrape github",
+    "scrape:linkedin": "node src/core/cli/index.js scrape linkedin",
+    "context:sync": "node src/core/cli/index.js context sync",
+    "export": "node src/core/cli/index.js export",
+    "export:dry": "node src/core/cli/index.js export --no-mark",
     "login": "node src/login.js",
-    "db:migrate": "node src/database/migrate.js",
-    "import-cookies": "node src/import-cookies.js cookies_export.json"
+    "import-cookies": "node src/core/cli/import-cookies.js"
   },
   "repository": {
     "type": "git",

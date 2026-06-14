@@ -1,11 +1,11 @@
 import fs   from 'node:fs';
 import path  from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import { PROJECT_ROOT }       from '../../../config/app.config.js';
+import { PATHS }              from '../../../config/app.config.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const CONTEXT_DIR = path.join(PROJECT_ROOT, 'src', 'context');
+const CONTEXT_DIR = PATHS.contextDir;
 
 /**
  * UserContextRepository

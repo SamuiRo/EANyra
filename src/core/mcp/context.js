@@ -1,18 +1,17 @@
 import fs   from 'node:fs/promises';
 import path  from 'node:path';
-import { query, queryOne } from '../db.js';
+import { query, queryOne } from './db.js';
+import { MCP, PATHS } from '../../config/app.config.js';
 
 /**
- * src/core/mcp/tools/context.js
+ * src/core/mcp/context.js
  *
  * Tools:
  *   context_get  — voice, bio, platform rules, active projects
  *   export_get   — latest export Markdown file as a string
  */
 
-// Project root: server.js is at src/core/mcp/server.js → 4 levels up
-const PROJECT_ROOT = new URL('../../../../', import.meta.url).pathname;
-const EXPORTS_DIR  = path.join(PROJECT_ROOT, 'data', 'exports');
+const EXPORTS_DIR = PATHS.exportsDir;
 
 export function buildContextTools() {
   return [...contextTools, ...exportTools];
@@ -106,12 +105,12 @@ const exportTools = [
         },
         max_chars: {
           type:        'integer',
-          description: 'Truncate content to this many characters (default 80000).',
-          default:     80_000,
+          description: `Truncate content to this many characters (default ${MCP.exportMaxChars}).`,
+          default:     MCP.exportMaxChars,
         },
       },
     },
-    async handler({ file, max_chars = 80_000 } = {}) {
+    async handler({ file, max_chars = MCP.exportMaxChars } = {}) {
       let files;
       try {
         const entries = await fs.readdir(EXPORTS_DIR);
