@@ -165,7 +165,9 @@ blocked telemetry domains, and browser API patches.
 
 Collection behavior:
 
-1. Navigate to `https://x.com/<username>`.
+1. Attempt `https://x.com/<username>/with_replies`, then fall back to the Posts
+   timeline if it is unavailable. The route may still expose the same limited
+   dataset as the Posts timeline.
 2. Wait for tweet article elements.
 3. Simulate page landing and human-like scrolling.
 4. Intercept profile timeline GraphQL responses and extract normalized
@@ -173,15 +175,21 @@ Collection behavior:
 5. Extract visible DOM fields as a fallback when network data is absent or
    incomplete.
 6. Merge and deduplicate collected results by tweet ID before persistence.
+7. Stop early when repeated scrolls load no new post IDs.
 
 The orchestrator chooses scrape depth:
 
 - no prior Twitter post: `INITIAL_POSTS_PER_ACCOUNT`, default `200`;
 - existing Twitter data: `POSTS_PER_ACCOUNT`, default `20`.
 
+These values are upper bounds. A run may return fewer records when the profile
+timeline contains or exposes fewer entries.
+
 GraphQL extraction is preferred for complete text, exact engagement, media,
 language, and reply/repost state. DOM extraction remains a fallback because
 Twitter/X may change its internal GraphQL response shape or selectors.
+Reply classification is implemented, but exhaustive reply discovery remains an
+open issue documented in `TWITTER_SCRAPING_STATUS.md`.
 
 ### GitHub
 

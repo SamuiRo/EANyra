@@ -125,6 +125,7 @@ export const SCRAPER = {
   minDelayBetweenAccountsMs: envNumber('MIN_DELAY_BETWEEN_ACCOUNTS_MS', 5 * 60 * 1_000),
   maxDelayBetweenAccountsMs: envNumber('MAX_DELAY_BETWEEN_ACCOUNTS_MS', 15 * 60 * 1_000),
   maxScrollAttempts:         envNumber('MAX_SCROLL_ATTEMPTS', 30),
+  maxStagnantScrollAttempts: envNumber('MAX_STAGNANT_SCROLL_ATTEMPTS', 4),
   navigationTimeoutMs:       envNumber('SCRAPER_NAV_TIMEOUT_MS', envNumber('BROWSER_NAV_TIMEOUT_MS', 30_000)),
   selectorTimeoutMs:         envNumber('SCRAPER_SELECTOR_TIMEOUT_MS', envNumber('BROWSER_SEL_TIMEOUT_MS', 15_000)),
   wakeUpMaxMs:               envNumber('SCRAPER_WAKE_UP_MAX_MS', 3 * 60 * 1_000),

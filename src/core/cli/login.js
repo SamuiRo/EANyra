@@ -76,6 +76,11 @@ function resolveLoginUrl() {
 
 async function main() {
   banner('EANyra - Login Helper', 'Interactive Twitter/X authentication');
+  print(
+    'X may reject Playwright-controlled browsers. Cookie import is the recommended session setup.',
+    'warning',
+  );
+  print('Fallback: npm run import-cookies -- <file>', 'info');
   await ensureDir(BROWSER.dataPath);
 
   let context;

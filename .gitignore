@@ -1,6 +1,7 @@
 *.sqlite
 *.db
 /cookies_export.json
+/cookies.json
 /data
 /src/config/accounts.json
 /PLAN.md

@@ -19,6 +19,10 @@ the current repository state, not on the older README.
   rename the behavior.
 - [x] **Fix Twitter reply detection.** Network-response extraction now uses
   Twitter's reply metadata, with DOM parsing retained as a fallback.
+- [ ] **Complete Twitter reply discovery.** Reply classification works, but the
+  authenticated `/with_replies` route currently returns the same 15 timeline
+  records as the profile view and does not expose every known reply. Compare
+  GraphQL operations and cursors after explicitly clicking the Replies tab.
 - [ ] **Preserve LinkedIn media URLs.** `MediaUrl` is parsed from `Shares.csv`
   but is discarded when building the normalized post.
 - [ ] **Support multiple accounts with the same username on different

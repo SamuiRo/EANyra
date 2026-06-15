@@ -18,11 +18,11 @@
 import { sleep, jitter } from '../../shared/utils.js';
 import { SCRAPER } from '../../config/app.config.js';
 
-// ─── Mouse movement ───────────────────────────────────────────────────────────
+// Mouse movement
 
 /**
  * Move the mouse in a curved arc from (x1,y1) to (x2,y2) over ~n steps.
- * A real human never moves the mouse in a straight line — the path curves
+ * A real human never moves the mouse in a straight line; the path curves
  * slightly and accelerates/decelerates.
  *
  * @param {import('playwright').Page} page
@@ -33,7 +33,7 @@ import { SCRAPER } from '../../config/app.config.js';
  * @param {{ steps?: number }} [opts]
  */
 export async function humanMouseMove(page, x1, y1, x2, y2, { steps = 12 } = {}) {
-  // Bézier control point — offset perpendicular to the straight-line path.
+  // Bezier control point offset perpendicular to the straight-line path.
   const cx = (x1 + x2) / 2 + (Math.random() - 0.5) * 80;
   const cy = (y1 + y2) / 2 + (Math.random() - 0.5) * 60;
 
@@ -42,24 +42,24 @@ export async function humanMouseMove(page, x1, y1, x2, y2, { steps = 12 } = {}) 
     // Ease in-out: slow start, fast middle, slow end
     const et = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
 
-    // Quadratic Bézier point
+    // Quadratic Bezier point
     const x = (1 - et) * (1 - et) * x1 + 2 * (1 - et) * et * cx + et * et * x2;
     const y = (1 - et) * (1 - et) * y1 + 2 * (1 - et) * et * cy + et * et * y2;
 
     await page.mouse.move(x, y);
-    await sleep(Math.floor(10 + Math.random() * 15)); // 10–25 ms per step
+    await sleep(Math.floor(10 + Math.random() * 15)); // 10-25 ms per step
   }
 }
 
 /**
- * Perform a few small random mouse micro-movements — simulates the natural
+ * Perform a few small random mouse micro-movements to simulate the natural
  * small drift of a hand resting on a mouse while reading.
  *
  * @param {import('playwright').Page} page
  * @param {{ baseX?: number, baseY?: number }} [opts]
  */
 export async function mouseIdle(page, { baseX = 400, baseY = 400 } = {}) {
-  const moves = 2 + Math.floor(Math.random() * 3); // 2–4 micro-moves
+  const moves = 2 + Math.floor(Math.random() * 3); // 2-4 micro-moves
   let cx = baseX, cy = baseY;
   for (let i = 0; i < moves; i++) {
     cx += (Math.random() - 0.5) * 30;
@@ -69,11 +69,11 @@ export async function mouseIdle(page, { baseX = 400, baseY = 400 } = {}) {
   }
 }
 
-// ─── Scroll ───────────────────────────────────────────────────────────────────
+// Scroll
 
 /**
  * Scroll down in a human-like manner:
- *   - Non-uniform scroll amount (viewport × 0.6–1.1, never exact)
+ *   - Non-uniform scroll amount (viewport x 0.6-1.1, never exact)
  *   - Occasional small upward "correction" scroll (humans overshoot and back up)
  *   - Brief pause before scrolling (reading time simulation)
  *   - Mouse position moves to a realistic Y before the scroll gesture
@@ -84,28 +84,27 @@ export async function mouseIdle(page, { baseX = 400, baseY = 400 } = {}) {
  * @param {{ scrollDelayMs?: number }} [opts]
  */
 export async function humanScroll(page, { scrollDelayMs = SCRAPER.scrollDelayMs } = {}) {
-  // ── 1. Reading pause before scrolling ───────────────────────────────────
-  // Humans read for a moment before scrolling — 1.5–4 s depending on content.
+  // Humans read for a moment before scrolling: 1.5-4 s depending on content.
   const readMs = 1_500 + Math.floor(Math.random() * 2_500);
   await sleep(readMs);
 
-  // ── 2. Move mouse to a mid-page position (humans grab mouse before scrolling)
+  // Move the mouse to a mid-page position before scrolling.
   const viewportSize = page.viewportSize() ?? { width: 1280, height: 900 };
   const mouseX = 200 + Math.floor(Math.random() * (viewportSize.width - 400));
   const mouseY = 300 + Math.floor(Math.random() * 300);
   await page.mouse.move(mouseX, mouseY);
   await sleep(80 + Math.floor(Math.random() * 120));
 
-  // ── 3. Scroll amount: 60–110% of viewport height, never a round number ──
+  // Scroll 60-110% of viewport height, never a round number.
   const factor   = 0.6 + Math.random() * 0.5;
   const scrollPx = Math.floor(viewportSize.height * factor) + Math.floor(Math.random() * 40 - 20);
 
   await page.evaluate((px) => window.scrollBy({ top: px, behavior: 'smooth' }), scrollPx);
 
-  // ── 4. Jitter wait while smooth-scroll animation plays ──────────────────
+  // Wait with jitter while the smooth-scroll animation plays.
   await jitter(scrollDelayMs, scrollDelayMs + 800);
 
-  // ── 5. Occasional small upward correction (≈15% of scrolls) ─────────────
+  // Occasionally make a small upward correction.
   if (Math.random() < 0.15) {
     const backPx = 40 + Math.floor(Math.random() * 80);
     await sleep(300 + Math.floor(Math.random() * 400));
@@ -116,7 +115,7 @@ export async function humanScroll(page, { scrollDelayMs = SCRAPER.scrollDelayMs 
     await sleep(300);
   }
 
-  // ── 6. Idle mouse micro-movement while page settles ──────────────────────
+  // Add idle mouse micro-movement while the page settles.
   if (Math.random() < 0.4) {
     await mouseIdle(page, { baseX: mouseX, baseY: mouseY });
   }
@@ -143,7 +142,7 @@ export async function simulatePageLanding(page) {
     100 + Math.floor(Math.random() * 200),
   );
 
-  // Pause as if reading the profile header — 2–5 s
+  // Pause as if reading the profile header for 2-5 s.
   await jitter(2_000, 5_000);
 
   // Tiny scroll to show engagement before the main loop starts

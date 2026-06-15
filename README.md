@@ -56,11 +56,11 @@ Edit `.env` and `src/config/accounts.json`, then initialize the data sources you
 need:
 
 ```bash
-# Twitter/X only: open a browser and save a persistent login session
-npm run login
-
-# Alternative when X rejects automated-browser login
+# Twitter/X only: recommended session setup
 npm run import-cookies -- path/to/cookies.json
+
+# Best-effort alternative; X may reject automated-browser login
+npm run login
 
 # LinkedIn only: place Shares.csv in data/imports/
 
@@ -126,22 +126,26 @@ from the JSON file does not currently deactivate its existing database row; set
 Twitter collection uses a persistent Playwright Chromium profile.
 
 ```bash
-npm run login
+npm run import-cookies -- path/to/cookies.json
 npm run scrape:twitter
 ```
 
-The login helper opens an installed Chrome browser when available, without
-scraper-specific browser patches. Complete login, wait for the feed, then press
-Enter in the terminal. Session data is stored in `data/nyra/`.
+Export the `x.com` cookies from your normal browser and import them with
+`npm run import-cookies -- <file>`. The cookie file must contain `auth_token`.
+Session data is stored in `data/nyra/`.
 
-If X rejects interactive browser login, export the `x.com` cookies from your
-normal browser and import them with `npm run import-cookies -- <file>`. The
-cookie file must contain `auth_token`.
+`npm run login` remains available as a best-effort helper. It opens an
+installed Chrome browser without scraper-specific patches, but X may reject
+login from any Playwright-controlled browser.
 
 The first run for an account targets `INITIAL_POSTS_PER_ACCOUNT`; later runs
 target `POSTS_PER_ACCOUNT`. Extraction prefers intercepted profile timeline
 GraphQL responses for exact metrics and complete text, with DOM parsing
-retained as a fallback.
+retained as a fallback. The scraper opens the combined Posts + Replies
+route first and falls back to Posts when it is unavailable. X may expose the
+same limited dataset on both routes. The target is a combined chronological
+limit, not a required minimum. Returning fewer records is normal when X exposes
+fewer entries in the loaded profile timeline.
 
 ### GitHub
 
@@ -196,8 +200,8 @@ Use `npm run nyra -- <command>` when the `eanyra` binary is not globally linked.
 | `npm run nyra -- context show -k <key>` | Print one context key |
 | `npm run export` | Generate a Markdown content export |
 | `npm run export:dry` | Generate an export without marking records used |
-| `npm run login` | Create or refresh the persistent Twitter/X session |
-| `npm run import-cookies -- <file>` | Import browser cookies into the persistent session |
+| `npm run login` | Best-effort interactive Twitter/X login |
+| `npm run import-cookies -- <file>` | Recommended: import browser cookies into the persistent session |
 
 Important export options:
 
@@ -279,7 +283,8 @@ Runtime configuration is centralized in `src/config/app.config.js`.
 - MCP: `MCP_TRANSPORT`, `MCP_HOST`, `MCP_PORT`, routes and query defaults;
 - browser and Twitter/X: `BROWSER_*`, `TWITTER_*`;
 - scraper behavior: `POSTS_PER_ACCOUNT`, `INITIAL_POSTS_PER_ACCOUNT`,
-  `SCROLL_DELAY_MS`, account delay limits, scroll and timeout limits;
+  `SCROLL_DELAY_MS`, account delay limits, scroll, stagnation, and timeout
+  limits;
 - Markdown export: `EXPORT_DEFAULT_DAYS`, `EXPORT_MAX_RECORDS`;
 - GitHub: `GITHUB_TOKEN`, `GITHUB_LOOKBACK_DAYS`,
   `GITHUB_REPOS_PER_ACCOUNT`, release/commit limits;
@@ -296,6 +301,10 @@ Runtime configuration is centralized in `src/config/app.config.js`.
   and target agent workflows.
 - [Roadmap](docs/ROADMAP.md): confirmed defects, risks, and planned
   improvements.
+- [Code Style](docs/CODE_STYLE.md): source formatting, comments, and encoding
+  conventions.
+- [Twitter Scraping Status](docs/TWITTER_SCRAPING_STATUS.md): current
+  implementation state, verified behavior, and unresolved reply discovery.
 - [Agent skill](skills/eanyra/SKILL.md): intended AI-agent content workflow.
 
 ## Development Notes

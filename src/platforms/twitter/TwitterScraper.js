@@ -16,7 +16,7 @@ import { print }                                            from '../../shared/u
 import { humanScroll, simulatePageLanding }                 from './humanBehavior.js';
 import { TwitterResponseInterceptor }                       from './TwitterResponseInterceptor.js';
 
-// ─── Selectors ────────────────────────────────────────────────────────────────
+// Selectors
 
 const SEL = {
   tweet:        'article[data-testid="tweet"]',
@@ -32,10 +32,10 @@ const SEL = {
   retweetLabel: '[data-testid="socialContext"]',
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// Helpers
 
 /**
- * Parse abbreviated metric strings like "1.2K", "45M", "3" → integer.
+ * Parse abbreviated metric strings like "1.2K", "45M", "3" into integers.
  * @param {string|null|undefined} raw
  * @returns {number}
  */
@@ -50,7 +50,7 @@ function parseMetric(raw) {
 
 /**
  * Extract the numeric tweet ID from a status URL path.
- * "/user/status/1234567890" → "1234567890"
+ * Example: "/user/status/1234567890" becomes "1234567890".
  * @param {string|null|undefined} href
  * @returns {string|null}
  */
@@ -81,8 +81,6 @@ function mergePosts(domPosts, networkPosts) {
   return [...merged.values()];
 }
 
-// ─── TwitterScraper ──────────────────────────────────────────────────────────
-
 export class TwitterScraper {
   /**
    * @param {import('playwright').Page} page         Playwright page instance
@@ -93,8 +91,6 @@ export class TwitterScraper {
     this.postsTarget = postsTarget;
   }
 
-  // ── Public ────────────────────────────────────────────────────────────────
-
   /**
    * Navigate to a Twitter profile and collect up to postsTarget posts.
    *
@@ -102,30 +98,36 @@ export class TwitterScraper {
    * @returns {Promise<import('../../core/teapot/repositories/PostRepository.js').RawPost[]>}
    */
   async scrapeAccount(username) {
-    const url = `${TWITTER.baseUrl}/${username}`;
-    print(`Navigating to ${url}`, 'info');
+    const repliesUrl = `${TWITTER.baseUrl}/${username}/with_replies`;
+    const postsUrl = `${TWITTER.baseUrl}/${username}`;
     const interceptor = new TwitterResponseInterceptor(this.page, username);
     interceptor.start();
 
-    try {
-      await this.page.goto(url, {
-        waitUntil: 'domcontentloaded',
-        timeout:   SCRAPER.navigationTimeoutMs,
-      });
-    } catch (error) {
-      print(`Navigation failed for @${username}: ${error.message}`, 'error');
-      await interceptor.stop();
-      return interceptor.getPosts().slice(0, this.postsTarget);
+    const cookies = await this.page.context().cookies(TWITTER.baseUrl);
+    const hasAuthToken = cookies.some(cookie => cookie.name === 'auth_token');
+    if (!hasAuthToken) {
+      print(
+        'Twitter session has no auth_token. Replies and public posts may be unavailable; ' +
+        'refresh with `npm run import-cookies -- <file>`.',
+        'warning',
+      );
     }
 
-    try {
-      await this.page.waitForSelector(SEL.tweet, {
-        timeout: SCRAPER.selectorTimeoutMs,
-      });
-    } catch {
+    let timeline = 'replies';
+    let loaded = await this.#openTimeline(repliesUrl);
+    if (!loaded) {
+      print('Replies timeline did not load; falling back to the Posts timeline.', 'warning');
+      timeline = 'posts';
+      loaded = await this.#openTimeline(postsUrl);
+    }
+
+    if (!loaded) {
       const currentUrl = this.page.url();
       if (currentUrl.includes('/login') || currentUrl.includes('/i/flow/login')) {
-        print('Twitter session expired. Run `npm run login` to refresh it.', 'warning');
+        print(
+          'Twitter session expired. Refresh it with `npm run import-cookies -- <file>`.',
+          'warning',
+        );
       }
       print(
         `No tweets found for @${username} — account may be private, suspended, or rate-limited.`,
@@ -135,11 +137,14 @@ export class TwitterScraper {
       return interceptor.getPosts().slice(0, this.postsTarget);
     }
 
+    print(`Using ${timeline === 'replies' ? 'Posts + Replies' : 'Posts'} timeline.`, 'debug');
     await simulatePageLanding(this.page);
 
     // Map keyed on platform_id guarantees deduplication across scroll passes
     const collected      = new Map();
     let   scrollAttempts = 0;
+    let   stagnantScrolls = 0;
+    let   previousCount = 0;
 
     while (
       mergePosts([...collected.values()], interceptor.getPosts()).length < this.postsTarget &&
@@ -159,10 +164,25 @@ export class TwitterScraper {
         }
       }
 
-      if (collected.size >= this.postsTarget) break;
+      await interceptor.drain();
+      const currentCount = mergePosts([...collected.values()], interceptor.getPosts()).length;
+      if (currentCount >= this.postsTarget) break;
+
+      if (currentCount > previousCount) {
+        previousCount = currentCount;
+        stagnantScrolls = 0;
+      } else {
+        stagnantScrolls++;
+        if (stagnantScrolls >= SCRAPER.maxStagnantScrollAttempts) {
+          print(
+            `Stopping after ${stagnantScrolls} scroll(s) without new post IDs.`,
+            'debug',
+          );
+          break;
+        }
+      }
 
       await humanScroll(this.page, { scrollDelayMs: SCRAPER.scrollDelayMs });
-      await interceptor.drain();
       scrollAttempts++;
     }
 
@@ -170,15 +190,32 @@ export class TwitterScraper {
     const networkPosts = interceptor.getPosts();
     const posts = mergePosts([...collected.values()], networkPosts)
       .slice(0, this.postsTarget);
+    const replyCount = posts.filter(post => post.is_reply).length;
     print(
       `Collected ${posts.length} post(s) from @${username} ` +
-      `(${networkPosts.length} from GraphQL, ${collected.size} from DOM).`,
+      `(${networkPosts.length} from GraphQL, ${collected.size} from DOM, ` +
+      `${replyCount} replies).`,
       'data',
     );
     return posts;
   }
 
-  // ── Private ───────────────────────────────────────────────────────────────
+  async #openTimeline(url) {
+    print(`Navigating to ${url}`, 'info');
+    try {
+      await this.page.goto(url, {
+        waitUntil: 'domcontentloaded',
+        timeout:   SCRAPER.navigationTimeoutMs,
+      });
+      await this.page.waitForSelector(SEL.tweet, {
+        timeout: SCRAPER.selectorTimeoutMs,
+      });
+      return true;
+    } catch (error) {
+      print(`Timeline unavailable at ${url}: ${error.message}`, 'debug');
+      return false;
+    }
+  }
 
   /**
    * Extract structured data from a single <article> element.
