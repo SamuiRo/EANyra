@@ -40,7 +40,7 @@ flowchart LR
 | Entry point | Responsibility |
 |---|---|
 | `src/core/cli/index.js` | CLI bootstrap, model registration, schema sync, command routing |
-| `src/login.js` | Interactive Twitter/X login and persistent session creation |
+| `src/core/cli/login.js` | Interactive Twitter/X login and persistent session creation |
 | `src/core/mcp/server.js` | MCP tool registration and stdio/HTTP transport startup |
 | `src/core/cli/import-cookies.js` | Standalone cookie import helper used by `npm run import-cookies -- <file>` |
 
@@ -157,7 +157,7 @@ Files:
 - `platforms/twitter/TwitterScraper.js`
 - `platforms/twitter/humanBehavior.js`
 - `core/browser/Browser.js`
-- `login.js`
+- `core/cli/login.js`
 
 Twitter uses a persistent Playwright Chromium context stored in `data/nyra/`.
 The browser wrapper configures viewport, locale, timezone, launch flags,
@@ -168,17 +168,20 @@ Collection behavior:
 1. Navigate to `https://x.com/<username>`.
 2. Wait for tweet article elements.
 3. Simulate page landing and human-like scrolling.
-4. Extract visible DOM fields into normalized `RawPost` objects.
-5. Deduplicate collected results by tweet ID before persistence.
+4. Intercept profile timeline GraphQL responses and extract normalized
+   `RawPost` objects with exact metrics and complete text.
+5. Extract visible DOM fields as a fallback when network data is absent or
+   incomplete.
+6. Merge and deduplicate collected results by tweet ID before persistence.
 
 The orchestrator chooses scrape depth:
 
 - no prior Twitter post: `INITIAL_POSTS_PER_ACCOUNT`, default `200`;
 - existing Twitter data: `POSTS_PER_ACCOUNT`, default `20`.
 
-DOM extraction currently reads text, date, engagement, media URLs, language,
-repost label, and permalink. It is inherently fragile because Twitter/X may
-change selectors or abbreviate values.
+GraphQL extraction is preferred for complete text, exact engagement, media,
+language, and reply/repost state. DOM extraction remains a fallback because
+Twitter/X may change its internal GraphQL response shape or selectors.
 
 ### GitHub
 
@@ -449,5 +452,6 @@ The actual account list is separate in `src/config/accounts.json`.
 - GitHub collection depends on API rate limits and token access.
 - LinkedIn import depends on the shape of LinkedIn's export files.
 - SQLite is local and single-host; there is no distributed locking.
-- Automated tests and migrations are not currently present.
+- Automated coverage is currently limited to Twitter GraphQL parsing; versioned
+  migrations are not present.
 - Several confirmed defects are tracked in [ROADMAP.md](ROADMAP.md).

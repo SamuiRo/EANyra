@@ -25,6 +25,11 @@
 import { TwitterScraper }    from './TwitterScraper.js';
 
 export { TwitterScraper }    from './TwitterScraper.js';
+export { TwitterResponseInterceptor } from './TwitterResponseInterceptor.js';
+export {
+  parseGraphqlTweet,
+  parseTwitterGraphqlResponse,
+} from './twitterGraphqlParser.js';
 export {
   humanScroll,
   humanMouseMove,

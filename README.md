@@ -59,6 +59,9 @@ need:
 # Twitter/X only: open a browser and save a persistent login session
 npm run login
 
+# Alternative when X rejects automated-browser login
+npm run import-cookies -- path/to/cookies.json
+
 # LinkedIn only: place Shares.csv in data/imports/
 
 # Collect all configured platforms once
@@ -127,12 +130,18 @@ npm run login
 npm run scrape:twitter
 ```
 
-The login helper opens a visible browser. Complete login, wait for the feed,
-then press Enter in the terminal. Session data is stored in `data/nyra/`.
+The login helper opens an installed Chrome browser when available, without
+scraper-specific browser patches. Complete login, wait for the feed, then press
+Enter in the terminal. Session data is stored in `data/nyra/`.
+
+If X rejects interactive browser login, export the `x.com` cookies from your
+normal browser and import them with `npm run import-cookies -- <file>`. The
+cookie file must contain `auth_token`.
 
 The first run for an account targets `INITIAL_POSTS_PER_ACCOUNT`; later runs
-target `POSTS_PER_ACCOUNT`. Extraction is currently DOM-based and therefore
-sensitive to Twitter/X markup changes.
+target `POSTS_PER_ACCOUNT`. Extraction prefers intercepted profile timeline
+GraphQL responses for exact metrics and complete text, with DOM parsing
+retained as a fallback.
 
 ### GitHub
 
@@ -291,8 +300,9 @@ Runtime configuration is centralized in `src/config/app.config.js`.
 
 ## Development Notes
 
-There is currently no automated test suite, lint script, or versioned migration
-command. JavaScript syntax can be checked with:
+There is a small `node:test` suite for Twitter GraphQL parsing. Run it with
+`npm test`. There is currently no lint script or versioned migration command.
+JavaScript syntax can be checked with:
 
 ```powershell
 $files = rg --files -g '*.js'

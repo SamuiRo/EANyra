@@ -14,6 +14,7 @@
 import { SCRAPER, TWITTER }                                 from '../../config/app.config.js';
 import { print }                                            from '../../shared/utils.js';
 import { humanScroll, simulatePageLanding }                 from './humanBehavior.js';
+import { TwitterResponseInterceptor }                       from './TwitterResponseInterceptor.js';
 
 // ─── Selectors ────────────────────────────────────────────────────────────────
 
@@ -58,6 +59,28 @@ function extractTweetId(href) {
   return match ? match[1] : null;
 }
 
+function mergePosts(domPosts, networkPosts) {
+  const merged = new Map(domPosts.map(post => [post.platform_id, post]));
+
+  for (const networkPost of networkPosts) {
+    const domPost = merged.get(networkPost.platform_id);
+    merged.set(networkPost.platform_id, {
+      ...domPost,
+      ...networkPost,
+      text:       networkPost.text || domPost?.text || '',
+      lang:       networkPost.lang ?? domPost?.lang ?? null,
+      posted_at:  networkPost.posted_at ?? domPost?.posted_at ?? null,
+      media_urls: networkPost.media_urls?.length
+        ? networkPost.media_urls
+        : domPost?.media_urls ?? [],
+      raw_url:    networkPost.raw_url ?? domPost?.raw_url ?? null,
+      views:      networkPost.views ?? domPost?.views ?? null,
+    });
+  }
+
+  return [...merged.values()];
+}
+
 // ─── TwitterScraper ──────────────────────────────────────────────────────────
 
 export class TwitterScraper {
@@ -81,6 +104,8 @@ export class TwitterScraper {
   async scrapeAccount(username) {
     const url = `${TWITTER.baseUrl}/${username}`;
     print(`Navigating to ${url}`, 'info');
+    const interceptor = new TwitterResponseInterceptor(this.page, username);
+    interceptor.start();
 
     try {
       await this.page.goto(url, {
@@ -89,7 +114,8 @@ export class TwitterScraper {
       });
     } catch (error) {
       print(`Navigation failed for @${username}: ${error.message}`, 'error');
-      return [];
+      await interceptor.stop();
+      return interceptor.getPosts().slice(0, this.postsTarget);
     }
 
     try {
@@ -97,11 +123,16 @@ export class TwitterScraper {
         timeout: SCRAPER.selectorTimeoutMs,
       });
     } catch {
+      const currentUrl = this.page.url();
+      if (currentUrl.includes('/login') || currentUrl.includes('/i/flow/login')) {
+        print('Twitter session expired. Run `npm run login` to refresh it.', 'warning');
+      }
       print(
         `No tweets found for @${username} — account may be private, suspended, or rate-limited.`,
         'warning',
       );
-      return [];
+      await interceptor.stop();
+      return interceptor.getPosts().slice(0, this.postsTarget);
     }
 
     await simulatePageLanding(this.page);
@@ -111,7 +142,7 @@ export class TwitterScraper {
     let   scrollAttempts = 0;
 
     while (
-      collected.size < this.postsTarget &&
+      mergePosts([...collected.values()], interceptor.getPosts()).length < this.postsTarget &&
       scrollAttempts < SCRAPER.maxScrollAttempts
     ) {
       const articles = await this.page.$$(SEL.tweet);
@@ -131,11 +162,19 @@ export class TwitterScraper {
       if (collected.size >= this.postsTarget) break;
 
       await humanScroll(this.page, { scrollDelayMs: SCRAPER.scrollDelayMs });
+      await interceptor.drain();
       scrollAttempts++;
     }
 
-    const posts = [...collected.values()];
-    print(`Collected ${posts.length} post(s) from @${username}.`, 'data');
+    await interceptor.stop();
+    const networkPosts = interceptor.getPosts();
+    const posts = mergePosts([...collected.values()], networkPosts)
+      .slice(0, this.postsTarget);
+    print(
+      `Collected ${posts.length} post(s) from @${username} ` +
+      `(${networkPosts.length} from GraphQL, ${collected.size} from DOM).`,
+      'data',
+    );
     return posts;
   }
 

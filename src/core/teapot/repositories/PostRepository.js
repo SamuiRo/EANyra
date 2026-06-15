@@ -6,7 +6,7 @@
  *
  * saveBatch() is idempotent: (platform, platform_id) is a unique
  * constraint, so re-scraping or re-importing the same posts is safe.
- * Engagement metrics (likes, reposts, replies, views) are refreshed
+ * Mutable content, flags, media, links, and engagement are refreshed
  * on every scrape via updateOnDuplicate.
  */
 export class PostRepository {
@@ -20,7 +20,7 @@ export class PostRepository {
   /**
    * Bulk-insert posts for a given account.
    * Rows whose (platform, platform_id) already exist are updated
-   * (engagement metrics only) instead of duplicated.
+   * instead of duplicated.
    *
    * @param {number}    accountId
    * @param {RawPost[]} rawPosts
@@ -53,7 +53,22 @@ export class PostRepository {
     const before = await this.Post.count({ where: { account_id: accountId } });
 
     await this.Post.bulkCreate(rows, {
-      updateOnDuplicate: ['likes', 'reposts', 'replies', 'views', 'scraped_at'],
+      updateOnDuplicate: [
+        'text',
+        'lang',
+        'posted_at',
+        'media_urls',
+        'shared_url',
+        'raw_url',
+        'likes',
+        'reposts',
+        'replies',
+        'views',
+        'is_repost',
+        'is_reply',
+        'visibility',
+        'scraped_at',
+      ],
     });
 
     const after = await this.Post.count({ where: { account_id: accountId } });

@@ -17,8 +17,8 @@ the current repository state, not on the older README.
   collects all recent commits in a user's public repositories, including
   commits authored by collaborators. Either filter by author or document and
   rename the behavior.
-- [ ] **Fix Twitter reply detection.** The current URL-splitting heuristic does
-  not reliably identify replies.
+- [x] **Fix Twitter reply detection.** Network-response extraction now uses
+  Twitter's reply metadata, with DOM parsing retained as a fallback.
 - [ ] **Preserve LinkedIn media URLs.** `MediaUrl` is parsed from `Shares.csv`
   but is discarded when building the normalized post.
 - [ ] **Support multiple accounts with the same username on different
@@ -42,9 +42,8 @@ the current repository state, not on the older README.
 - [ ] **Preserve all authored context in Markdown exports.** The exporter omits
   `voice.example_post` and checks platform `frequency` while the documented
   field and examples use `posting_frequency`.
-- [ ] **Update full duplicate records where appropriate.** `PostRepository`
-  refreshes only engagement and scrape time, so edited text, links, media, and
-  flags stay stale.
+- [x] **Update full duplicate records where appropriate.** `PostRepository`
+  refreshes mutable content, links, media, flags, engagement, and scrape time.
 
 ## Priority 2: Reliability and Security
 
@@ -88,8 +87,8 @@ the current repository state, not on the older README.
 - [ ] **Generate supported-platform metadata from one registry.** Platform IDs
   and enums are duplicated across CLI validation, the orchestrator, MCP
   schemas, and documentation.
-- [ ] **Reduce duplicate browser stealth logic.** `src/login.js` and
-  `Browser.js` maintain similar patches separately.
+- [x] **Reduce duplicate browser stealth logic.** Interactive login now uses a
+  normal headful browser without scraper-specific API patches.
 - [ ] **Remove unused configuration and helpers or connect them to behavior.**
   Examples include `TWITTER.homeUrl`, parts of cookie configuration, and
   generic image/file helpers that are not used by the pipeline.
@@ -106,7 +105,7 @@ the current repository state, not on the older README.
   publishing activity with per-platform `posting_frequency` and expose the
   result to agents; add notification delivery only after the analysis contract
   is stable.
-- [ ] **Twitter network-response extraction with DOM fallback.** Intercept
+- [x] **Twitter network-response extraction with DOM fallback.** Intercept
   already-loaded GraphQL responses to obtain exact metrics, complete text, and
   richer metadata while preserving browser navigation and human-paced
   scrolling.

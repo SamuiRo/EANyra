@@ -88,6 +88,7 @@ export const BROWSER = {
   },
   locale:     process.env.BROWSER_LOCALE   ?? 'en-US',
   timezoneId: process.env.BROWSER_TIMEZONE ?? 'America/New_York',
+  loginChannel: process.env.BROWSER_LOGIN_CHANNEL ?? 'chrome',
   launchArgs: [
     '--no-sandbox',
     '--disable-blink-features=AutomationControlled',
@@ -113,7 +114,7 @@ export const BROWSER = {
 
 export const TWITTER = {
   baseUrl:  process.env.TWITTER_BASE_URL  ?? 'https://x.com',
-  loginUrl: process.env.TWITTER_LOGIN_URL ?? 'https://x.com',
+  loginUrl: process.env.TWITTER_LOGIN_URL ?? 'https://x.com/i/flow/login',
   homeUrl:  process.env.TWITTER_HOME_URL  ?? 'https://x.com/home',
 };
 
