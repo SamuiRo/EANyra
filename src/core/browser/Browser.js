@@ -5,8 +5,8 @@
  *
  * Auth strategy:
  *   Session data (cookies, localStorage, IndexedDB) persists automatically
- *   in BROWSER.dataPath after running `npm run login` once.
- *   No separate cookie file is needed with a PersistentContext.
+ *   in BROWSER.dataPath. A gitignored cookie cache restores Twitter auth when
+ *   Chromium drops auth_token while saving the persistent profile.
  *
  * Anti-detection layers:
  *   1. Chromium launch args disable automation signals at the process level.
@@ -17,6 +17,10 @@
 
 import { chromium }          from 'playwright';
 import { BROWSER }           from '../../config/app.config.js';
+import {
+  hasTwitterAuth,
+  restoreCachedTwitterAuth,
+} from './sessionCookies.js';
 import { print, ensureDir }  from '../../shared/utils.js';
 
 export class Browser {
@@ -47,6 +51,14 @@ export class Browser {
       permissions: ['geolocation', 'notifications'],
     });
 
+    try {
+      if (await restoreCachedTwitterAuth(this.#context)) {
+        print(`Restored Twitter session from ${BROWSER.cookiesPath}.`, 'success');
+      }
+    } catch (error) {
+      print(`Twitter cookie fallback unavailable: ${error.message}`, 'debug');
+    }
+
     await this.#applyStealthScripts();
     print(
       `Browser ready · ${BROWSER.viewport.width}x${BROWSER.viewport.height} · ${BROWSER.dataPath}`,
@@ -68,6 +80,16 @@ export class Browser {
 
   async close() {
     if (this.#context) {
+      try {
+        if (!await hasTwitterAuth(this.#context)) {
+          print(
+            'Twitter auth_token is absent before browser close; the next run will try the cookie fallback.',
+            'warning',
+          );
+        }
+      } catch (error) {
+        print(`Could not inspect Twitter session before browser close: ${error.message}`, 'debug');
+      }
       await this.#context.close();
       this.#context = null;
       print('Browser closed.', 'system');

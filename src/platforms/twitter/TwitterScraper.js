@@ -98,8 +98,6 @@ export class TwitterScraper {
    * @returns {Promise<import('../../core/teapot/repositories/PostRepository.js').RawPost[]>}
    */
   async scrapeAccount(username) {
-    const repliesUrl = `${TWITTER.baseUrl}/${username}/with_replies`;
-    const postsUrl = `${TWITTER.baseUrl}/${username}`;
     const interceptor = new TwitterResponseInterceptor(this.page, username);
     interceptor.start();
 
@@ -114,11 +112,11 @@ export class TwitterScraper {
     }
 
     let timeline = 'replies';
-    let loaded = await this.#openTimeline(repliesUrl);
+    let loaded = await this.#openRepliesTimeline(username);
     if (!loaded) {
       print('Replies timeline did not load; falling back to the Posts timeline.', 'warning');
       timeline = 'posts';
-      loaded = await this.#openTimeline(postsUrl);
+      loaded = await this.#openTimeline(`${TWITTER.baseUrl}/${username}`);
     }
 
     if (!loaded) {
@@ -140,20 +138,94 @@ export class TwitterScraper {
     print(`Using ${timeline === 'replies' ? 'Posts + Replies' : 'Posts'} timeline.`, 'debug');
     await simulatePageLanding(this.page);
 
-    // Map keyed on platform_id guarantees deduplication across scroll passes
-    const collected      = new Map();
-    let   scrollAttempts = 0;
-    let   stagnantScrolls = 0;
-    let   previousCount = 0;
+    // Map keyed on platform_id guarantees deduplication across discovery sources.
+    const collected = new Map();
+    await this.#collectTimeline(username, collected, interceptor);
+
+    if (this.#mergedCount(collected, interceptor) < this.postsTarget) {
+      const searchUrl = `${TWITTER.baseUrl}/search?` + new URLSearchParams({
+        q:   `from:${username}`,
+        src: 'typed_query',
+        f:   'live',
+      });
+      if (await this.#openTimeline(searchUrl)) {
+        print(`Using live search discovery for from:${username}.`, 'debug');
+        await this.#collectTimeline(username, collected, interceptor);
+      }
+    }
+
+    if (this.#mergedCount(collected, interceptor) < this.postsTarget) {
+      await this.#discoverConversations(collected, interceptor);
+    }
+    await interceptor.stop();
+    const networkPosts = interceptor.getPosts();
+    const posts = mergePosts([...collected.values()], networkPosts)
+      .sort((a, b) => (b.posted_at?.getTime?.() ?? 0) - (a.posted_at?.getTime?.() ?? 0))
+      .slice(0, this.postsTarget);
+    const replyCount = posts.filter(post => post.is_reply).length;
+    print(
+      `Collected ${posts.length} post(s) from @${username} ` +
+      `(${networkPosts.length} from GraphQL, ${collected.size} from DOM, ` +
+      `${replyCount} replies).`,
+      'data',
+    );
+    this.#printDiagnostics(interceptor);
+    return posts;
+  }
+
+  async #openRepliesTimeline(username) {
+    const postsUrl = `${TWITTER.baseUrl}/${username}`;
+    const repliesUrl = `${postsUrl}/with_replies`;
+
+    if (await this.#openTimeline(postsUrl)) {
+      const repliesTab = this.page.locator('a[href$="/with_replies"]').first();
+      try {
+        await repliesTab.click({ timeout: SCRAPER.selectorTimeoutMs });
+        await this.page.waitForURL(url => url.pathname.endsWith('/with_replies'), {
+          timeout: SCRAPER.navigationTimeoutMs,
+        });
+        await this.page.waitForSelector(SEL.tweet, {
+          timeout: SCRAPER.selectorTimeoutMs,
+        });
+        print('Opened Replies tab by clicking the profile navigation.', 'debug');
+        return true;
+      } catch (error) {
+        print(`Replies tab click unavailable: ${error.message}`, 'debug');
+      }
+    }
+
+    return this.#openTimeline(repliesUrl);
+  }
+
+  async #openTimeline(url) {
+    print(`Navigating to ${url}`, 'info');
+    try {
+      await this.page.goto(url, {
+        waitUntil: 'domcontentloaded',
+        timeout:   SCRAPER.navigationTimeoutMs,
+      });
+      await this.page.waitForSelector(SEL.tweet, {
+        timeout: SCRAPER.selectorTimeoutMs,
+      });
+      return true;
+    } catch (error) {
+      print(`Timeline unavailable at ${url}: ${error.message}`, 'debug');
+      return false;
+    }
+  }
+
+  async #collectTimeline(username, collected, interceptor) {
+    let scrollAttempts = 0;
+    let stagnantScrolls = 0;
+    let previousCount = this.#mergedCount(collected, interceptor);
 
     while (
-      mergePosts([...collected.values()], interceptor.getPosts()).length < this.postsTarget &&
+      this.#mergedCount(collected, interceptor) < this.postsTarget &&
       scrollAttempts < SCRAPER.maxScrollAttempts
     ) {
       const articles = await this.page.$$(SEL.tweet);
 
       for (const article of articles) {
-        if (collected.size >= this.postsTarget) break;
         try {
           const post = await this.#extractPost(article, username);
           if (post && !collected.has(post.platform_id)) {
@@ -165,7 +237,7 @@ export class TwitterScraper {
       }
 
       await interceptor.drain();
-      const currentCount = mergePosts([...collected.values()], interceptor.getPosts()).length;
+      const currentCount = this.#mergedCount(collected, interceptor);
       if (currentCount >= this.postsTarget) break;
 
       if (currentCount > previousCount) {
@@ -185,35 +257,57 @@ export class TwitterScraper {
       await humanScroll(this.page, { scrollDelayMs: SCRAPER.scrollDelayMs });
       scrollAttempts++;
     }
-
-    await interceptor.stop();
-    const networkPosts = interceptor.getPosts();
-    const posts = mergePosts([...collected.values()], networkPosts)
-      .slice(0, this.postsTarget);
-    const replyCount = posts.filter(post => post.is_reply).length;
-    print(
-      `Collected ${posts.length} post(s) from @${username} ` +
-      `(${networkPosts.length} from GraphQL, ${collected.size} from DOM, ` +
-      `${replyCount} replies).`,
-      'data',
-    );
-    return posts;
   }
 
-  async #openTimeline(url) {
-    print(`Navigating to ${url}`, 'info');
-    try {
-      await this.page.goto(url, {
-        waitUntil: 'domcontentloaded',
-        timeout:   SCRAPER.navigationTimeoutMs,
-      });
-      await this.page.waitForSelector(SEL.tweet, {
-        timeout: SCRAPER.selectorTimeoutMs,
-      });
-      return true;
-    } catch (error) {
-      print(`Timeline unavailable at ${url}: ${error.message}`, 'debug');
-      return false;
+  async #discoverConversations(collected, interceptor) {
+    const roots = mergePosts([...collected.values()], interceptor.getPosts())
+      .filter(post => !post.is_reply && !post.is_repost && post.raw_url)
+      .slice(0, SCRAPER.maxTwitterConversationRoots);
+
+    if (!roots.length) return;
+    print(`Inspecting ${roots.length} known conversation root(s).`, 'debug');
+
+    for (const root of roots) {
+      const before = interceptor.getPosts().length;
+      if (!await this.#openTimeline(root.raw_url)) continue;
+      await interceptor.drain();
+
+      let previous = interceptor.getPosts().length;
+      for (let i = 0; i < SCRAPER.maxTwitterConversationScrolls; i++) {
+        await humanScroll(this.page, { scrollDelayMs: SCRAPER.scrollDelayMs });
+        await interceptor.drain();
+        const current = interceptor.getPosts().length;
+        if (current === previous) break;
+        previous = current;
+      }
+
+      const discovered = interceptor.getPosts().length - before;
+      print(
+        `Conversation ${root.platform_id}: ${discovered} additional authored post(s).`,
+        'debug',
+      );
+    }
+  }
+
+  #mergedCount(collected, interceptor) {
+    return mergePosts([...collected.values()], interceptor.getPosts()).length;
+  }
+
+  #printDiagnostics(interceptor) {
+    for (const diagnostic of interceptor.getDiagnostics()) {
+      print(
+        `Twitter GraphQL ${diagnostic.operation}: ${diagnostic.responses} response(s), ` +
+        `${diagnostic.post_ids.length} authored post ID(s), ` +
+        `${diagnostic.bottom_cursors} unique bottom cursor(s).`,
+        'debug',
+      );
+      if (diagnostic.post_ids.length) {
+        print(
+          `Twitter GraphQL ${diagnostic.operation} authored IDs: ` +
+          diagnostic.post_ids.join(', '),
+          'debug',
+        );
+      }
     }
   }
 

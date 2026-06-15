@@ -165,17 +165,19 @@ blocked telemetry domains, and browser API patches.
 
 Collection behavior:
 
-1. Attempt `https://x.com/<username>/with_replies`, then fall back to the Posts
-   timeline if it is unavailable. The route may still expose the same limited
-   dataset as the Posts timeline.
+1. Open the profile and explicitly click the Replies tab, then fall back to
+   direct `/with_replies` navigation or the Posts timeline.
 2. Wait for tweet article elements.
 3. Simulate page landing and human-like scrolling.
-4. Intercept profile timeline GraphQL responses and extract normalized
-   `RawPost` objects with exact metrics and complete text.
-5. Extract visible DOM fields as a fallback when network data is absent or
+4. Intercept profile, live-search, and conversation GraphQL responses and
+   extract normalized `RawPost` objects with exact metrics and complete text.
+5. When the target is not reached, search `from:<username>`.
+6. When the target is still not reached, open known authored conversation
+   roots to recover thread parts omitted from profile timelines.
+7. Extract visible DOM fields as a fallback when network data is absent or
    incomplete.
-6. Merge and deduplicate collected results by tweet ID before persistence.
-7. Stop early when repeated scrolls load no new post IDs.
+8. Merge and deduplicate collected results by tweet ID before persistence.
+9. Stop early when repeated scrolls load no new post IDs.
 
 The orchestrator chooses scrape depth:
 

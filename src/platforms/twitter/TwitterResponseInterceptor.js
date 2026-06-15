@@ -5,19 +5,35 @@ const TIMELINE_OPERATIONS = new Set([
   'UserTweets',
   'UserTweetsAndReplies',
   'UserMedia',
+  'SearchTimeline',
+  'TweetDetail',
 ]);
 
-export function isTwitterTimelineResponse(response) {
+function getOperationName(response) {
   const url = response.url();
-  if (!url.includes('/i/api/graphql/')) return false;
+  if (!url.includes('/i/api/graphql/')) return null;
 
-  let operation;
   try {
-    operation = new URL(url).pathname.split('/').filter(Boolean).at(-1);
+    return new URL(url).pathname.split('/').filter(Boolean).at(-1) ?? null;
   } catch {
-    return false;
+    return null;
   }
-  return TIMELINE_OPERATIONS.has(operation);
+}
+
+function collectBottomCursors(value, cursors) {
+  if (!value || typeof value !== 'object') return;
+
+  if (value.cursorType === 'Bottom' && typeof value.value === 'string') {
+    cursors.add(value.value);
+  }
+
+  for (const child of Object.values(value)) {
+    if (child && typeof child === 'object') collectBottomCursors(child, cursors);
+  }
+}
+
+export function isTwitterTimelineResponse(response) {
+  return TIMELINE_OPERATIONS.has(getOperationName(response));
 }
 
 export class TwitterResponseInterceptor {
@@ -30,6 +46,7 @@ export class TwitterResponseInterceptor {
     this.username = username;
     this.posts = new Map();
     this.pending = new Set();
+    this.diagnostics = new Map();
     this.handler = response => {
       if (!isTwitterTimelineResponse(response)) return;
 
@@ -59,13 +76,36 @@ export class TwitterResponseInterceptor {
     return [...this.posts.values()];
   }
 
+  getDiagnostics() {
+    return [...this.diagnostics.entries()].map(([operation, diagnostic]) => ({
+      operation,
+      responses:      diagnostic.responses,
+      post_ids:       [...diagnostic.postIds],
+      bottom_cursors: diagnostic.bottomCursors.size,
+    }));
+  }
+
   async #consume(response) {
     if (!response.ok()) return;
 
+    const operation = getOperationName(response);
     const payload = await response.json();
-    for (const post of parseTwitterGraphqlResponse(payload, this.username)) {
+    const posts = parseTwitterGraphqlResponse(payload, this.username);
+    const cursors = new Set();
+    collectBottomCursors(payload, cursors);
+
+    const diagnostic = this.diagnostics.get(operation) ?? {
+      responses: 0,
+      postIds: new Set(),
+      bottomCursors: new Set(),
+    };
+    diagnostic.responses++;
+
+    for (const post of posts) {
       this.posts.set(post.platform_id, post);
+      diagnostic.postIds.add(post.platform_id);
     }
+    for (const cursor of cursors) diagnostic.bottomCursors.add(cursor);
+    this.diagnostics.set(operation, diagnostic);
   }
 }
-

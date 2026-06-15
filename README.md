@@ -132,7 +132,10 @@ npm run scrape:twitter
 
 Export the `x.com` cookies from your normal browser and import them with
 `npm run import-cookies -- <file>`. The cookie file must contain `auth_token`.
-Session data is stored in `data/nyra/`.
+Session data is stored in `data/nyra/`. A gitignored fallback copy is stored at
+`BROWSER_COOKIES_PATH` and restored automatically if X clears the cookie from
+the persistent browser profile. Re-import only when the fallback token itself
+is no longer accepted by X.
 
 `npm run login` remains available as a best-effort helper. It opens an
 installed Chrome browser without scraper-specific patches, but X may reject
@@ -141,11 +144,12 @@ login from any Playwright-controlled browser.
 The first run for an account targets `INITIAL_POSTS_PER_ACCOUNT`; later runs
 target `POSTS_PER_ACCOUNT`. Extraction prefers intercepted profile timeline
 GraphQL responses for exact metrics and complete text, with DOM parsing
-retained as a fallback. The scraper opens the combined Posts + Replies
-route first and falls back to Posts when it is unavailable. X may expose the
-same limited dataset on both routes. The target is a combined chronological
-limit, not a required minimum. Returning fewer records is normal when X exposes
-fewer entries in the loaded profile timeline.
+retained as a fallback. The scraper clicks the combined Posts + Replies tab,
+uses live `from:<username>` search when needed, and inspects known conversation
+roots to recover thread parts omitted from profile timelines. X may still omit
+records from every web dataset. The target is a combined chronological limit,
+not a required minimum. Returning fewer records is normal when X exposes fewer
+entries.
 
 ### GitHub
 

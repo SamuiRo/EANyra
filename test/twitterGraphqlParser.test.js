@@ -130,6 +130,8 @@ test('intercepts only supported Twitter profile timeline operations', () => {
 
   assert.equal(isTwitterTimelineResponse(response('UserTweets')), true);
   assert.equal(isTwitterTimelineResponse(response('UserTweetsAndReplies')), true);
+  assert.equal(isTwitterTimelineResponse(response('SearchTimeline')), true);
+  assert.equal(isTwitterTimelineResponse(response('TweetDetail')), true);
   assert.equal(isTwitterTimelineResponse(response('HomeTimeline')), false);
   assert.equal(isTwitterTimelineResponse({ url: () => 'https://example.com/UserTweets' }), false);
 });
@@ -142,6 +144,10 @@ test('response interceptor waits for pending JSON parsing before stopping', asyn
       timeline: {
         itemContent: {
           tweet_results: { result: tweetResult() },
+        },
+        cursor: {
+          cursorType: 'Bottom',
+          value: 'opaque-bottom-cursor',
         },
       },
     },
@@ -156,5 +162,11 @@ test('response interceptor waits for pending JSON parsing before stopping', asyn
   await interceptor.stop();
 
   assert.deepEqual(interceptor.getPosts().map(post => post.platform_id), ['123']);
+  assert.deepEqual(interceptor.getDiagnostics(), [{
+    operation: 'UserTweets',
+    responses: 1,
+    post_ids: ['123'],
+    bottom_cursors: 1,
+  }]);
   assert.equal(page.listenerCount('response'), 0);
 });
