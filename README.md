@@ -115,9 +115,10 @@ gitignored because it commonly contains personal account choices.
 Supported platform IDs are `twitter`, `github`, and `linkedin`. When
 `platform` is omitted, it defaults to `twitter`.
 
-On each scrape, configured accounts are upserted into SQLite. Removing an entry
-from the JSON file does not currently deactivate its existing database row; set
-`"active": false` explicitly.
+On each scrape, configured accounts are upserted into SQLite. Set
+`"archive": true` to explicitly archive an account. Accounts removed from the
+JSON file are also archived during the next sync. Archived accounts remain in
+SQLite with their historical posts and signals, but are inactive.
 
 ## Platform Setup
 
@@ -211,11 +212,11 @@ Important export options:
 
 | Option | Meaning |
 |---|---|
-| `--days <n>` | Date window for recent used records; default `7` |
+| `--days <n>` | Date window for recent records; default `7` |
 | `--sections <list>` | Any of `context,projects,posts,signals` |
 | `--platform <name>` | Filter exported posts by platform |
-| `--unused-only` | Include only records not marked as used |
-| `--no-mark` | Do not update `used_for_content` timestamps |
+| `--unused-only` | Include only records not exported before |
+| `--no-mark` | Do not update `exported_at` timestamps |
 | `--out <path>` | Write to a custom file |
 
 Exports are written to `data/exports/` by default.
@@ -322,8 +323,9 @@ $files = rg --files -g '*.js'
 foreach ($file in $files) { node --check $file }
 ```
 
-EANyra uses Sequelize with SQLite and calls `sequelize.sync({ alter: true })`
-during CLI startup. Back up `data/pot.sqlite` before schema-level development.
+EANyra uses Sequelize with SQLite and applies versioned schema migrations during
+CLI startup. Runtime startup does not call `sequelize.sync()`. Back up
+`data/pot.sqlite` before schema-level development.
 
 ## License
 

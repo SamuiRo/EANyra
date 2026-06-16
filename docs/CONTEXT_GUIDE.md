@@ -30,8 +30,8 @@ npm run nyra -- context show
 ```
 
 `eanyra start` and scrape commands do not currently sync context
-automatically. The sync is additive: deleting a YAML file does not remove its
-existing database record.
+automatically. Deleting a project YAML file archives its existing database
+record during the next explicit sync; it does not delete project history.
 
 ## Initial Setup
 
@@ -45,11 +45,8 @@ Copy-Item src/context/projects/_template.yaml src/context/projects/my-project.ya
 ```
 
 Replace every placeholder before syncing. Real context files may contain
-personal information and are intentionally gitignored.
-
-> Current limitation: project sync reads every `projects/*.yaml` file whose
-> name does not start with `_`. This includes committed `.example.yaml` files.
-> Until that is fixed, check `context show` for unwanted example projects.
+personal information and are intentionally gitignored. Project sync ignores
+templates beginning with `_` and committed `.example.yaml` files.
 
 ## `voice.yaml`
 
@@ -133,6 +130,7 @@ exports include only projects whose status is `active`.
 slug: "my-project"
 name: "My Project"
 status: "active"
+archive: false
 
 description: |
   What it is, how it works at a high level, and why it exists.
@@ -157,6 +155,7 @@ posting_rules:
 | `slug` | string | Stable project key. Prefer lowercase kebab-case matching the filename. |
 | `name` | string | Human-readable project name. Defaults to the slug when omitted. |
 | `status` | `active`, `paused`, or `archived` | Controls inclusion in full context and exports. Defaults to `active`. |
+| `archive` | boolean | When `true`, archives the project regardless of `status`. Removing the YAML file also archives it on the next sync. |
 | `description` | string or `null` | Technical background the agent needs to write accurately. |
 | `tech_stack` | string[] | Runtime, storage, frameworks, protocols, and important libraries. |
 | `links` | object | Relevant project URLs. |
@@ -175,7 +174,8 @@ does not currently enforce that it matches the filename.
 3. Upserts top-level objects into `user_context`.
 4. Upserts projects into `projects` and duplicates each raw project object as
    `user_context` key `project.<slug>`.
-5. Prints updated, skipped, and failed entries.
+5. Archives projects whose YAML files were removed.
+6. Prints updated, skipped, and failed entries.
 
 The current implementation validates YAML syntax and database constraints, but
 does not perform complete schema validation. Before syncing, check that arrays,

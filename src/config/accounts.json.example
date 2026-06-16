@@ -1,13 +1,20 @@
 [
-    {
-      "username": "elonmask",
-      "display_name": "Elon Mask",
-      "active": true
-    },
-    {
-      "username": "elonmask",
-      "display_name": "Elon Mask",
-      "active": true
-    },
-    { "username": "torvalds", "display_name": "Linus Torvalds", "platform": "github","active": true }
-  ]
+  {
+    "username": "example-twitter-user",
+    "display_name": "Example",
+    "platform": "twitter",
+    "active": true
+  },
+  {
+    "username": "example-github-user",
+    "display_name": "Example",
+    "platform": "github",
+    "active": true
+  },
+  {
+    "username": "old-account",
+    "display_name": "Archived example",
+    "platform": "linkedin",
+    "archive": true
+  }
+]

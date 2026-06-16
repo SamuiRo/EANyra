@@ -246,11 +246,11 @@ function renderPosts(posts, requestedSections) {
     return parts.join('\n');
   }
 
-  const unused = posts.filter(p => !p.used);
-  const used   = posts.filter(p => p.used);
+  const unused = posts.filter(p => !p.exported);
+  const used   = posts.filter(p => p.exported);
 
   if (unused.length) {
-    parts.push(`### New (not yet used for content)`);
+    parts.push(`### New (not previously exported)`);
     parts.push(``);
 
     // Group by platform for readability
@@ -274,7 +274,7 @@ function renderPosts(posts, requestedSections) {
   }
 
   if (used.length) {
-    parts.push(`### Already used ✅`);
+    parts.push(`### Previously exported ✅`);
     parts.push(``);
     for (const p of used) {
       const emoji = PLATFORM_EMOJI[p.platform] ?? '•';
@@ -304,8 +304,8 @@ function renderSignals(signals, requestedSections) {
     return parts.join('\n');
   }
 
-  const unused = signals.filter(s => !s.used);
-  const used   = signals.filter(s => s.used);
+  const unused = signals.filter(s => !s.exported && !s.used);
+  const used   = signals.filter(s => s.exported || s.used);
 
   if (unused.length) {
     // Group by source, then by signal_type with priority ordering
@@ -347,7 +347,7 @@ function renderSignals(signals, requestedSections) {
   }
 
   if (used.length) {
-    parts.push(`### Already used ✅`);
+    parts.push(`### Previously exported or used ✅`);
     parts.push(``);
     for (const s of used) {
       const emoji = SIGNAL_EMOJI[s.signal_type] ?? '•';
@@ -428,7 +428,7 @@ function renderSystemPrompt(context, requestedSections) {
     ``,
     `## How to use this file`,
     `- "Your Posts" section: shows what I've already published. Use it to understand my writing style and avoid repeating topics.`,
-    `- "Already used" posts and signals: skip them — they've been covered.`,
+    `- Previously exported items are reference context; signals marked used already became published content.`,
     `- "Signals" section: raw material from GitHub activity and other sources. Turn these into post ideas — they are NOT ready content.`,
     `- For each session: suggest 3–5 concrete post drafts per platform. Each draft must follow the platform constraints above.`,
     ``,

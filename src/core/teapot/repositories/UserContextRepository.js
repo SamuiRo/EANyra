@@ -1,11 +1,10 @@
 import fs   from 'node:fs';
 import path  from 'node:path';
+import { Op } from 'sequelize';
 import { parse as parseYaml } from 'yaml';
 import { PATHS }              from '../../../config/app.config.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-
-const CONTEXT_DIR = PATHS.contextDir;
 
 /**
  * UserContextRepository
@@ -23,9 +22,10 @@ const CONTEXT_DIR = PATHS.contextDir;
  */
 export class UserContextRepository {
   /** @param {{ UserContext, Project }} models */
-  constructor({ UserContext, Project }) {
+  constructor({ UserContext, Project }, contextDir = PATHS.contextDir) {
     this.UserContext = UserContext;
     this.Project     = Project;
+    this.contextDir  = contextDir;
   }
 
   // ── Sync ──────────────────────────────────────────────────────────────────
@@ -87,7 +87,7 @@ export class UserContextRepository {
   // ── Private helpers ───────────────────────────────────────────────────────
 
   async #syncFile(filename, key, results, now) {
-    const filePath = path.join(CONTEXT_DIR, filename);
+    const filePath = path.join(this.contextDir, filename);
 
     if (!fs.existsSync(filePath)) {
       results.skipped.push(`${filename} (not found)`);
@@ -106,7 +106,7 @@ export class UserContextRepository {
   }
 
   async #syncProjects(results, now) {
-    const projectsDir = path.join(CONTEXT_DIR, 'projects');
+    const projectsDir = path.join(this.contextDir, 'projects');
 
     if (!fs.existsSync(projectsDir)) {
       results.skipped.push('projects/ (directory not found)');
@@ -114,9 +114,12 @@ export class UserContextRepository {
     }
 
     const files = fs.readdirSync(projectsDir)
-      .filter(f => f.endsWith('.yaml') && !f.startsWith('_'));
+      .filter(f => f.endsWith('.yaml') && !f.startsWith('_') && !f.endsWith('.example.yaml'));
+    const syncedSlugs = [];
+    const initialErrorCount = results.errors.length;
 
     for (const file of files) {
+      syncedSlugs.push(path.basename(file, '.yaml'));
       const filePath = path.join(projectsDir, file);
       try {
         const raw  = fs.readFileSync(filePath, 'utf8');
@@ -124,11 +127,12 @@ export class UserContextRepository {
 
         // slug falls back to filename without extension
         const slug = data.slug ?? path.basename(file, '.yaml');
+        const archived = data.archive === true;
 
         await this.Project.upsert({
           slug,
           name:           data.name           ?? slug,
-          status:         data.status          ?? 'active',
+          status:         archived ? 'archived' : (data.status ?? 'active'),
           description:    data.description     ?? null,
           tech_stack:     data.tech_stack      ?? [],
           links:          data.links           ?? {},
@@ -140,14 +144,45 @@ export class UserContextRepository {
         // Also write a flat user_context row for quick key lookup
         await this.UserContext.upsert({
           key:       `project.${slug}`,
-          value:     data,
+          value:     archived ? { ...data, status: 'archived', archive: true } : data,
           synced_at: now,
         });
 
+        if (!syncedSlugs.includes(slug)) syncedSlugs.push(slug);
         results.updated.push(`project.${slug}`);
       } catch (err) {
         results.errors.push(`projects/${file}: ${err.message}`);
       }
+    }
+
+    if (results.errors.length > initialErrorCount) {
+      results.skipped.push('project deletion reconciliation (project sync errors)');
+      return;
+    }
+
+    const missingProjects = await this.Project.findAll({
+      where: syncedSlugs.length
+        ? { slug: { [Op.notIn]: syncedSlugs } }
+        : {},
+    });
+
+    for (const project of missingProjects) {
+      await project.update({ status: 'archived', synced_at: now });
+
+      const key = `project.${project.slug}`;
+      const existing = await this.UserContext.findOne({ where: { key } });
+      await this.UserContext.upsert({
+        key,
+        value: {
+          ...(existing?.value ?? {}),
+          slug: project.slug,
+          name: project.name,
+          status: 'archived',
+          archive: true,
+        },
+        synced_at: now,
+      });
+      results.updated.push(`${key} (archived)`);
     }
   }
 }

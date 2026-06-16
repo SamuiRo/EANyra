@@ -18,6 +18,7 @@ import database                       from '../teapot/database.js';
 import { registerContextCommands }    from './contextCommands.js';
 import { registerExportCommands }     from './exportCommands.js';
 import { registerModels }             from '../teapot/models/index.js';
+import { SchemaMigrator }             from '../teapot/SchemaMigrator.js';
 import { ScraperOrchestrator }        from '../orchestrator/ScraperOrchestrator.js';
 import { Scheduler }                  from '../scheduler/Scheduler.js';
 import { PKG, NODE_ENV, SUPPORTED_PLATFORMS } from '../../config/app.config.js';
@@ -50,39 +51,14 @@ class Nyra {
   }
 
   async #syncSchema() {
-    const isSqlite = database.sequelize.getDialect() === 'sqlite';
-
-    print('Synchronising schema (ALTER)…', 'system');
-    if (isSqlite) {
-      print('SQLite detected: temporarily disabling FK checks for ALTER sync.', 'system');
-      await database.sequelize.query('PRAGMA foreign_keys = OFF;');
+    print('Applying schema migrations...', 'system');
+    const completed = await new SchemaMigrator(database.sequelize).migrate();
+    if (completed.length) {
+      print(`Applied ${completed.length} schema migration(s).`, 'success');
+    } else {
+      print('Schema is up to date.', 'system');
     }
 
-    try {
-      await database.sequelize.sync({ alter: true });
-    } catch (error) {
-      const isSqliteConstraint =
-        isSqlite &&
-        (
-          error?.name?.includes('ConstraintError') ||
-          error?.name?.includes('ValidationError') ||
-          String(error?.message ?? '').includes('SQLITE_CONSTRAINT') ||
-          String(error?.original?.code ?? '').includes('SQLITE_CONSTRAINT') ||
-          String(error?.parent?.code ?? '').includes('SQLITE_CONSTRAINT')
-        );
-
-      if (!isSqliteConstraint) throw error;
-
-      print(
-        'SQLite ALTER sync failed on constraints. Falling back to safe sync without ALTER.',
-        'warning',
-      );
-      await database.sequelize.sync();
-    } finally {
-      if (isSqlite) {
-        await database.sequelize.query('PRAGMA foreign_keys = ON;');
-      }
-    }
   }
 
   // ── Run modes ─────────────────────────────────────────────────────────────

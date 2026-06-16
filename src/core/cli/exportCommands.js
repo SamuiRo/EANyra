@@ -9,7 +9,7 @@
  *   eanyra export --sections posts,signals  # specific sections
  *   eanyra export --platform twitter        # only twitter posts
  *   eanyra export --unused-only             # only posts/signals not yet exported
- *   eanyra export --no-mark                 # don't stamp used_for_content
+ *   eanyra export --no-mark                 # don't stamp exported_at
  *   eanyra export --out ./my-export.md      # custom output path
  *
  * Available sections: context, projects, posts, signals
@@ -39,8 +39,8 @@ export function registerExportCommands(program, models) {
       '  eanyra export --days 14              → last 14 days\n' +
       '  eanyra export --sections posts,signals\n' +
       '  eanyra export --platform twitter     → only twitter posts\n' +
-      '  eanyra export --unused-only          → only posts/signals not yet used\n' +
-      '  eanyra export --no-mark              → skip marking as used',
+      '  eanyra export --unused-only          → only posts/signals not yet exported\n' +
+      '  eanyra export --no-mark              → skip recording export timestamps',
     )
     .option(
       '--days <n>',
@@ -69,7 +69,7 @@ export function registerExportCommands(program, models) {
       'Filter posts by platform (twitter, linkedin, telegram, …)',
     )
     .option('--unused-only', 'Only include posts/signals that have not been exported before', false)
-    .option('--no-mark',     'Do not mark exported items as used (dry-run mode)', false)
+    .option('--no-mark',     'Do not record exported_at timestamps (dry-run mode)', false)
     .option(
       '--out <path>',
       'Output file path. Defaults to data/exports/export-YYYY-MM-DD.md',
@@ -139,31 +139,31 @@ async function runExport(models, opts) {
 
   print(`Export saved: ${outPath}`, 'success');
 
-  // ── Mark as used ───────────────────────────────────────────────────────────
+  // ── Record export ──────────────────────────────────────────────────────────
   //
-  // Only items that were NOT previously used get stamped — this preserves
+  // Only items that were NOT previously exported get stamped — this preserves
   // the original first-export timestamp for items that appear in multiple
   // exports (e.g. when using --no-mark for dry runs and then exporting again).
   //
-  // We capture the "new" counts BEFORE calling markAsUsed so the summary
+  // We capture the "new" counts before recording export timestamps so the summary
   // reflects what was actually new in this export run.
 
-  const newPostIds   = posts.filter(p => !p.used).map(p => p.id);
-  const newSignalIds = signals.filter(s => !s.used).map(s => s.id);
+  const newPostIds   = posts.filter(p => !p.exported).map(p => p.id);
+  const newSignalIds = signals.filter(s => !s.exported).map(s => s.id);
 
   if (mark) {
     if (newPostIds.length || newSignalIds.length) {
-      await repo.markAsUsed({
+      await repo.markAsExported({
         postIds:   newPostIds,
         signalIds: newSignalIds,
       });
       print(
-        `Marked as used: ${newPostIds.length} posts · ${newSignalIds.length} signals`,
+        `Recorded as exported: ${newPostIds.length} posts · ${newSignalIds.length} signals`,
         'system',
       );
     }
   } else {
-    print('--no-mark active: items were NOT marked as used.', 'warning');
+    print('--no-mark active: export timestamps were NOT recorded.', 'warning');
   }
 
   // ── Summary ────────────────────────────────────────────────────────────────

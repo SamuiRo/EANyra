@@ -77,11 +77,10 @@ export class ExportRepository {
    * Fetch posts for export, optionally filtered by platform.
    *
    * Selection strategy (matches PLAN.md §4.4):
-   *   - Always include unused posts (used_for_content IS NULL)
-   *   - Also include already-used posts that fall within the date window
-   *     (gives the AI context about recent voice even if already exported)
+   *   - Always include posts that have never been exported
+   *   - Also include recently published posts that were exported before
    *   - Excludes reposts — original content only
-   *   - `unusedOnly` flag restricts to strictly unused posts only
+   *   - `unusedOnly` flag restricts to never-exported posts only
    *
    * @param {{ days?: number, unusedOnly?: boolean, platform?: string }} opts
    * @returns {Promise<object[]>}
@@ -93,11 +92,11 @@ export class ExportRepository {
     if (platform) where.platform = platform;
 
     if (unusedOnly) {
-      where.used_for_content = null;
+      where.exported_at = null;
     } else {
-      // Unused always included; used only if within the time window
+      // Never-exported always included; exported only if within the time window
       where[Op.or] = [
-        { used_for_content: null },
+        { exported_at: null },
         { posted_at: { [Op.gte]: cutoff } },
       ];
     }
@@ -129,6 +128,7 @@ export class ExportRepository {
       raw_url:     r.raw_url,
       visibility:  r.visibility,
       used:        !!r.used_for_content,
+      exported:    !!r.exported_at,
     }));
   }
 
@@ -138,12 +138,12 @@ export class ExportRepository {
    * Fetch signals for export.
    *
    * Selection strategy (mirrors getPosts logic, matches PLAN.md §4.4):
-   *   - Always include unused signals (used_for_content IS NULL)
-   *   - Also include already-used signals within the date window
-   *   - `unusedOnly` flag restricts to strictly unused signals only
+   *   - Always include signals that have never been exported
+   *   - Also include already-exported signals within the date window
+   *   - `unusedOnly` flag restricts to never-exported signals only
    *
    * Note: unlike posts, signals use `occurred_at` as the time anchor.
-   * Signals where occurred_at is NULL are included when unused — they
+   * Signals where occurred_at is NULL are included when never exported — they
    * should not be silently dropped just because the timestamp is missing.
    *
    * @param {{ days?: number, unusedOnly?: boolean, source?: string }} opts
@@ -156,12 +156,12 @@ export class ExportRepository {
     if (source) where.source = source;
 
     if (unusedOnly) {
-      where.used_for_content = null;
+      where.exported_at = null;
     } else {
-      // Unused always included (even if occurred_at is NULL);
-      // used only if within the time window
+      // Never-exported always included (even if occurred_at is NULL);
+      // exported only if within the time window
       where[Op.or] = [
-        { used_for_content: null },
+        { exported_at: null },
         { occurred_at: { [Op.gte]: cutoff } },
       ];
     }
@@ -188,30 +188,31 @@ export class ExportRepository {
       occurred_at: r.occurred_at,
       metadata:    r.metadata,
       used:        !!r.used_for_content,
+      exported:    !!r.exported_at,
     }));
   }
 
-  // ── Mark as used ──────────────────────────────────────────────────────────
+  // ── Mark as exported ──────────────────────────────────────────────────────
 
   /**
-   * Stamp used_for_content = now on the given post and signal IDs.
+   * Stamp exported_at = now on the given post and signal IDs.
    * Called after the Markdown file is written successfully.
    *
-   * Only stamps items that are not yet marked (used_for_content IS NULL)
+   * Only stamps items that are not yet marked (exported_at IS NULL)
    * so that the first-export timestamp is preserved on subsequent runs.
    *
    * @param {{ postIds?: number[], signalIds?: number[] }} ids
    */
-  async markAsUsed({ postIds = [], signalIds = [] }) {
+  async markAsExported({ postIds = [], signalIds = [] }) {
     const now = new Date();
 
     if (postIds.length) {
       await this.Post.update(
-        { used_for_content: now },
+        { exported_at: now },
         {
           where: {
             id:               { [Op.in]: postIds },
-            used_for_content: null,   // preserve original export timestamp
+            exported_at: null,
           },
         },
       );
@@ -219,11 +220,11 @@ export class ExportRepository {
 
     if (signalIds.length) {
       await this.Signal.update(
-        { used_for_content: now },
+        { exported_at: now },
         {
           where: {
             id:               { [Op.in]: signalIds },
-            used_for_content: null,   // preserve original export timestamp
+            exported_at: null,
           },
         },
       );

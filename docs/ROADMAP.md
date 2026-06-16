@@ -13,10 +13,8 @@ the current repository state, not on the older README.
 - [ ] **Persist the first observed GitHub README SHA.** README change detection
   only reads prior `readme_change` signals. The first SHA is never stored, so
   later changes cannot reliably be detected.
-- [ ] **Clarify and fix GitHub commit ownership.** The current commits endpoint
-  collects all recent commits in a user's public repositories, including
-  commits authored by collaborators. Either filter by author or document and
-  rename the behavior.
+- [x] **Clarify and fix GitHub commit ownership.** Commit collection now filters
+  the GitHub commits endpoint by the configured account author.
 - [x] **Fix Twitter reply detection.** Network-response extraction now uses
   Twitter's reply metadata, with DOM parsing retained as a fallback.
 - [ ] **Complete Twitter reply discovery.** Reply classification works, but the
@@ -32,18 +30,15 @@ the current repository state, not on the older README.
 - [ ] **Define multi-account LinkedIn import behavior.** Every LinkedIn account
   currently reads the same `Shares.csv`; global post deduplication means the
   first account can claim all imported rows.
-- [ ] **Resolve `used_for_content` semantics.** CLI export marks records as used
-  when exported, while the agent skill says signals should be marked only
-  after publication. Split concepts such as `exported_at` and
-  `published_from_signal_at`, or choose one documented meaning.
+- [x] **Resolve `used_for_content` semantics.** CLI export now records
+  `exported_at`; `used_for_content` is reserved for confirmed publication.
 - [ ] **Correct scraper run metrics.** `scraper_runs.posts_saved` also counts
   saved signals. Rename it or store post and signal counts separately.
-- [ ] **Make account/context sync reconcile deletions.** Removed accounts and
-  deleted project YAML files currently remain active in SQLite unless manually
-  changed.
-- [ ] **Exclude example project YAML from context sync.** Project discovery
-  currently imports files such as `eanyra.example.yaml`, so examples can
-  overwrite or duplicate real project context.
+- [x] **Make account/project sync reconcile deletions.** Removed accounts and
+  deleted project YAML files are archived without deleting historical data.
+  Explicit `archive: true` is supported in account JSON and project YAML.
+- [x] **Exclude example project YAML from context sync.** Project discovery
+  ignores committed `.example.yaml` files.
 - [ ] **Preserve all authored context in Markdown exports.** The exporter omits
   `voice.example_post` and checks platform `frequency` while the documented
   field and examples use `posting_frequency`.
@@ -52,9 +47,9 @@ the current repository state, not on the older README.
 
 ## Priority 2: Reliability and Security
 
-- [ ] **Replace startup schema alteration with versioned migrations.**
-  `sequelize.sync({ alter: true })` runs on each CLI startup and temporarily
-  disables SQLite foreign-key checks.
+- [x] **Replace startup schema alteration with versioned migrations.**
+  Startup schema creation and upgrades now run exclusively through idempotent
+  versioned migrations.
 - [ ] **Add automated tests.** Minimum coverage should include CSV parsing,
   model/repository deduplication, context sync, export selection, MCP tools,
   GitHub mapping, and Twitter DOM parsing fixtures.

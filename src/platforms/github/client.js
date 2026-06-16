@@ -89,9 +89,12 @@ export class GithubClient {
    */
   async getCommitsSince(username, repo, since, perPage = GITHUB.commitsPerRepo) {
     const sinceStr = since instanceof Date ? since.toISOString() : since;
-    return this.#request(
-      `/repos/${username}/${repo}/commits?since=${sinceStr}&per_page=${perPage}`
-    );
+    const params = new URLSearchParams({
+      since:    sinceStr,
+      per_page: String(perPage),
+      author:   username,
+    });
+    return this.#request(`/repos/${username}/${repo}/commits?${params}`);
   }
 
   // ── README ────────────────────────────────────────────────────────────────

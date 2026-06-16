@@ -4,6 +4,7 @@
 slug: "my-project"           # унікальний ключ, латиниця, без пробілів
 name: "Назва проекту"
 status: "active"             # active | paused | archived
+archive: false               # true archives the project during context sync
 
 description: |
   Одне речення що це таке і навіщо.

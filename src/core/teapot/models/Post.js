@@ -154,11 +154,15 @@ export function definePostModel(sequelize) {
 
     // ── Workflow ─────────────────────────────────────────────────────────────
 
-    /**
-     * Timestamp of when this post was first included in a content export.
-     * NULL = not yet used for content creation.
-     */
+    /** Timestamp set only after confirmed publication from this source post. */
     used_for_content: {
+      type:         DataTypes.DATE,
+      allowNull:    true,
+      defaultValue: null,
+    },
+
+    /** Timestamp of when this post was first included in a content export. */
+    exported_at: {
       type:         DataTypes.DATE,
       allowNull:    true,
       defaultValue: null,
@@ -181,6 +185,7 @@ export function definePostModel(sequelize) {
       { fields: ['platform'] },
       { fields: ['posted_at'] },
       { fields: ['used_for_content'] },
+      { fields: ['exported_at'] },
     ],
   });
 }

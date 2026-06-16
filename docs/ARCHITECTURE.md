@@ -99,15 +99,17 @@ Every normal CLI command follows this startup sequence:
 2. Resolve configuration in `src/config/app.config.js`.
 3. Connect Sequelize to the configured SQLite file.
 4. Register all Sequelize models and associations.
-5. Run schema synchronization.
+5. Apply pending schema migrations.
 6. Parse and execute the Commander command.
 
-Schema synchronization currently uses `sequelize.sync({ alter: true })`. On
-SQLite, foreign-key checks are temporarily disabled. If an SQLite constraint
-error occurs, startup falls back to `sequelize.sync()` without `alter`.
+Schema creation and changes use the versioned runner in
+`core/teapot/SchemaMigrator.js`. Startup applies pending migrations only. It
+does not run `sequelize.sync()`, `sequelize.sync({ alter: true })`, or disable
+SQLite foreign-key checks.
 
-This makes startup convenient during development but is not a substitute for
-versioned migrations.
+Applied migration names are recorded in the `schema_migrations` table.
+Changing a Sequelize model does not change the database automatically; every
+schema change must include a new migration.
 
 ## Collection Flow
 
@@ -250,6 +252,7 @@ erDiagram
       string username UK
       string platform
       boolean is_active
+      boolean is_archived
       datetime last_scraped_at
     }
     POST {
@@ -257,6 +260,7 @@ erDiagram
       string platform
       string platform_id
       integer account_id FK
+      datetime exported_at
       datetime used_for_content
     }
     SIGNAL {
@@ -264,6 +268,7 @@ erDiagram
       string source
       string source_id
       integer account_id FK
+      datetime exported_at
       datetime used_for_content
     }
 ```
@@ -278,7 +283,7 @@ Stores monitored accounts. `username` is globally unique in the current schema,
 not unique per platform.
 
 Important fields: `username`, `display_name`, `platform`, `is_active`,
-`last_scraped_at`.
+`is_archived`, `last_scraped_at`.
 
 #### `posts`
 
@@ -291,7 +296,7 @@ Important fields:
 - links/media: `media_urls`, `shared_url`, `raw_url`;
 - engagement: `likes`, `reposts`, `replies`, `views`;
 - flags: `is_repost`, `is_reply`, `visibility`;
-- workflow: `used_for_content`, `scraped_at`.
+- workflow: `exported_at`, `used_for_content`, `scraped_at`.
 
 Deduplication constraint: unique `(platform, platform_id)`.
 
@@ -307,7 +312,7 @@ Important fields:
 - identity: `source`, `source_id`, optional `account_id`;
 - classification: `signal_type`;
 - content: `title`, `body`, `url`, `occurred_at`, JSON `metadata`;
-- workflow: `used_for_content`, `scraped_at`.
+- workflow: `exported_at`, `used_for_content`, `scraped_at`.
 
 Deduplication constraint: unique `(source, source_id)`.
 
@@ -346,16 +351,17 @@ Top-level files are upserted into `user_context`. Each project is upserted into
 `projects` and duplicated as `user_context` key `project.<slug>` for direct
 lookup.
 
-Only active projects are returned by the full context API. The sync is
-additive: deleting a YAML file does not remove or archive its existing database
-record. Sync is currently explicit through `eanyra context sync`; daemon startup
-and scrape commands do not invoke it.
+Only active projects are returned by the full context API. Project sync
+reconciles removals without deleting history. A project with `archive: true`,
+or a project YAML file removed since the previous sync, is marked `archived` in
+SQLite. Sync is currently explicit through `eanyra context sync`; daemon
+startup and scrape commands do not invoke it.
 
 YAML syntax and database constraints are enforced, but there is no complete
-context schema validation. Project discovery currently includes any `.yaml`
-file not beginning with `_`, which unintentionally includes `.example.yaml`
-files. See the [Author Context Guide](CONTEXT_GUIDE.md) for the user-facing
-contract and the roadmap for known defects.
+context schema validation. Project discovery ignores templates beginning with
+`_` and committed `.example.yaml` files. See the
+[Author Context Guide](CONTEXT_GUIDE.md) for the user-facing contract and the
+roadmap for known defects.
 
 ## Markdown Export
 
@@ -367,11 +373,18 @@ The `export` CLI command uses:
 Default behavior:
 
 - include context, active projects, posts, and signals;
-- include all unused records plus recently used records in a 7-day window;
+- include all never-exported records plus recent records in a 7-day window;
 - exclude reposts;
 - cap posts and signals at 100 each;
 - write to `data/exports/export-<timestamp>.md`;
-- mark previously unused included posts and signals with `used_for_content`.
+- mark newly included posts and signals with `exported_at`.
+
+`used_for_content` is separate and is set only after confirmed publication
+based on a signal or other source record.
+
+Historical `used_for_content` values are not rewritten automatically because
+the system cannot distinguish old export timestamps from confirmed-use
+timestamps safely.
 
 Use `--no-mark` for a read-only export.
 

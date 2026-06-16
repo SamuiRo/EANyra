@@ -8,13 +8,15 @@
  */
 
 import fs   from 'fs/promises';
+import { Op } from 'sequelize';
 import { print } from '../../../shared/utils.js';
 import { PATHS } from '../../../config/app.config.js';
 
 export class AccountRepository {
   /** @param {import('sequelize').ModelStatic} AccountModel */
-  constructor(AccountModel) {
-    this.Account = AccountModel;
+  constructor(AccountModel, accountsConfigPath = PATHS.accountsConfig) {
+    this.Account            = AccountModel;
+    this.accountsConfigPath = accountsConfigPath;
   }
 
   // ── Public API ────────────────────────────────────────────────────────────
@@ -30,14 +32,32 @@ export class AccountRepository {
     const entries = await this.#loadJson();
     print(`Syncing ${entries.length} account(s) from accounts.json…`, 'system');
 
+    const configuredIds = [];
+
     for (const entry of entries) {
+      const username = entry.username.toLowerCase().replace(/^@/, '');
+      const archived = entry.archive === true;
+
       await this.Account.upsert({
-        username:     entry.username.toLowerCase().replace(/^@/, ''),
+        username,
         display_name: entry.display_name ?? entry.username,
         platform:     entry.platform ?? 'twitter',
-        is_active:    entry.active ?? true,
+        is_active:    archived ? false : (entry.active ?? true),
+        is_archived:  archived,
       });
+
+      const account = await this.Account.findOne({ where: { username } });
+      configuredIds.push(account.id);
     }
+
+    await this.Account.update(
+      { is_active: false, is_archived: true },
+      {
+        where: configuredIds.length
+          ? { id: { [Op.notIn]: configuredIds } }
+          : {},
+      },
+    );
 
     print('Account sync complete.', 'success');
   }
@@ -48,7 +68,7 @@ export class AccountRepository {
    */
   async findAllActive() {
     return this.Account.findAll({
-      where:   { is_active: true },
+      where:   { is_active: true, is_archived: false },
       order:   [['username', 'ASC']],
     });
   }
@@ -69,15 +89,15 @@ export class AccountRepository {
 
   /**
    * Read and parse accounts.json; throw a clear error when missing.
-   * @returns {Promise<Array<{username: string, display_name?: string, platform?: string, active?: boolean}>>}
+   * @returns {Promise<Array<{username: string, display_name?: string, platform?: string, active?: boolean, archive?: boolean}>>}
    */
   async #loadJson() {
     try {
-      const raw = await fs.readFile(PATHS.accountsConfig, 'utf-8');
+      const raw = await fs.readFile(this.accountsConfigPath, 'utf-8');
       return JSON.parse(raw);
     } catch (error) {
       throw new Error(
-        `Cannot load accounts config from ${PATHS.accountsConfig}: ${error.message}`,
+        `Cannot load accounts config from ${this.accountsConfigPath}: ${error.message}`,
       );
     }
   }

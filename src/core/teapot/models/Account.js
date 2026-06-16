@@ -36,6 +36,11 @@ export function defineAccountModel(sequelize) {
       allowNull:    false,
       defaultValue: true,
     },
+    is_archived: {
+      type:         DataTypes.BOOLEAN,
+      allowNull:    false,
+      defaultValue: false,
+    },
     last_scraped_at: {
       type:      DataTypes.DATE,
       allowNull: true,
@@ -47,6 +52,7 @@ export function defineAccountModel(sequelize) {
     indexes: [
       { fields: ['platform'] },
       { fields: ['is_active'] },
+      { fields: ['is_archived'] },
     ],
   });
 }

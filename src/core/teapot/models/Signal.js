@@ -133,11 +133,15 @@ export function defineSignalModel(sequelize) {
 
     // ── Workflow ─────────────────────────────────────────────────────────────
 
-    /**
-     * Timestamp of when this signal was first included in a content export.
-     * NULL = not yet used for content creation.
-     */
+    /** Timestamp set only after confirmed publication based on this signal. */
     used_for_content: {
+      type:         DataTypes.DATE,
+      allowNull:    true,
+      defaultValue: null,
+    },
+
+    /** Timestamp of when this signal was first included in a content export. */
+    exported_at: {
       type:         DataTypes.DATE,
       allowNull:    true,
       defaultValue: null,
@@ -161,6 +165,7 @@ export function defineSignalModel(sequelize) {
       { fields: ['signal_type'] },
       { fields: ['occurred_at'] },
       { fields: ['used_for_content'] },
+      { fields: ['exported_at'] },
       // Fast README sha lookup
       { fields: ['source', 'signal_type', 'account_id'] },
     ],
