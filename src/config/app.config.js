@@ -34,7 +34,7 @@ function envPath(name, fallback) {
 export const NODE_ENV = process.env.NODE_ENV ?? 'production';
 export const PKG      = pkg;
 
-export const SUPPORTED_PLATFORMS = ['twitter', 'github', 'linkedin'];
+export const SUPPORTED_PLATFORMS = ['twitter', 'github', 'linkedin', 'telegram'];
 
 const DATA_DIR = envPath('DATA_DIR', path.join(PROJECT_ROOT, 'data'));
 
@@ -186,4 +186,27 @@ export const LINKEDIN = {
 
   /** Expected filename for the profile export inside importsDir. */
   profileFile: process.env.LINKEDIN_PROFILE_FILE ?? 'Profile.csv',
+};
+
+export const TELEGRAM = {
+  apiId:            envNumber('TELEGRAM_API_ID', 0),
+  apiHash:          process.env.TELEGRAM_API_HASH ?? '',
+  session:          process.env.TELEGRAM_SESSION ?? '',
+
+  /** Messages fetched per Telegram history page. */
+  fetchLimit:         envNumber('TELEGRAM_FETCH_LIMIT', 100),
+
+  /** How many recent posts to import on the first run for a new channel. */
+  initialPostsPerAccount: envNumber('TELEGRAM_INITIAL_POSTS_PER_ACCOUNT', 20),
+
+  /** Safety cap for one account scrape; prevents unbounded history walks. */
+  maxPagesPerAccount: envNumber('TELEGRAM_MAX_PAGES_PER_ACCOUNT', 20),
+
+  /**
+   * Re-read a small recent window on each run. Post upserts keep this
+   * idempotent and reduce the chance of missing messages near run boundaries.
+   */
+  overlapMinutes: envNumber('TELEGRAM_OVERLAP_MINUTES', 60),
+
+  connectionRetries: envNumber('TELEGRAM_CONNECTION_RETRIES', 5),
 };

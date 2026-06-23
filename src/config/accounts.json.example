@@ -12,6 +12,12 @@
     "active": true
   },
   {
+    "username": "example-telegram-channel",
+    "display_name": "Example Telegram Channel",
+    "platform": "telegram",
+    "active": true
+  },
+  {
     "username": "old-account",
     "display_name": "Archived example",
     "platform": "linkedin",

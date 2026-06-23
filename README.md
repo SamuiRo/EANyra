@@ -7,6 +7,7 @@ It collects:
 
 - published posts from Twitter/X through Playwright;
 - published LinkedIn posts from a LinkedIn CSV export;
+- published Telegram channel posts through MTProto polling;
 - GitHub activity through the GitHub REST API.
 
 EANyra normalizes that data into SQLite, combines it with author context stored
@@ -20,6 +21,7 @@ as YAML, and exposes it through a CLI, Markdown exports, and an MCP server.
 ```text
 Twitter/X profile -- Playwright scraper --+
 LinkedIn export --- CSV importer ---------+--> posts ----+
+Telegram channel -- MTProto polling ------+
 GitHub API -------- REST collector ----------> signals --+--> SQLite
 YAML context ------ context sync ------------------------+
                                                             |
@@ -34,7 +36,7 @@ The central distinction is:
 - **signals** are raw material that may become future content.
 
 GitHub releases, commit batches, new repositories, and README changes are
-signals. Twitter and LinkedIn publications are posts.
+signals. Twitter, LinkedIn, and Telegram publications are posts.
 
 ## Requirements
 
@@ -43,6 +45,7 @@ signals. Twitter and LinkedIn publications are posts.
 - a GitHub Personal Access Token for GitHub collection
 - a persistent Twitter/X login session for Twitter collection
 - LinkedIn `Shares.csv` for LinkedIn import
+- Telegram API credentials and a saved MTProto session for Telegram polling
 
 ## Quick Start
 
@@ -63,6 +66,9 @@ npm run import-cookies -- path/to/cookies.json
 npm run login
 
 # LinkedIn only: place Shares.csv in data/imports/
+
+# Telegram only: configure TELEGRAM_API_ID / TELEGRAM_API_HASH, then create a session
+npm run login:telegram
 
 # Collect all configured platforms once
 npm run scrape
@@ -108,11 +114,17 @@ gitignored because it commonly contains personal account choices.
     "display_name": "Example",
     "platform": "linkedin",
     "active": true
+  },
+  {
+    "username": "example-telegram-channel",
+    "display_name": "Example Telegram Channel",
+    "platform": "telegram",
+    "active": true
   }
 ]
 ```
 
-Supported platform IDs are `twitter`, `github`, and `linkedin`. When
+Supported platform IDs are `twitter`, `github`, `linkedin`, and `telegram`. When
 `platform` is omitted, it defaults to `twitter`.
 
 On each scrape, configured accounts are upserted into SQLite. Set
@@ -188,6 +200,36 @@ npm run nyra -- scrape linkedin
 Import is idempotent. Engagement metrics are not present in LinkedIn's export,
 so imported posts use zero or null values for those fields.
 
+### Telegram
+
+Telegram collection uses GramJS/MTProto polling. Add credentials to `.env`:
+
+```env
+TELEGRAM_API_ID=123456
+TELEGRAM_API_HASH=your_api_hash
+TELEGRAM_SESSION=your_saved_string_session
+```
+
+If you do not have a session yet, run `npm run login:telegram` and save the
+printed session string as `TELEGRAM_SESSION`.
+
+Configure channel usernames in `accounts.json` without `@`:
+
+```json
+{
+  "username": "example_channel",
+  "display_name": "Example Channel",
+  "platform": "telegram",
+  "active": true
+}
+```
+
+The first run for a new Telegram account imports the latest
+`TELEGRAM_INITIAL_POSTS_PER_ACCOUNT` posts, default `20`, and then uses the
+newest imported post as the future polling baseline. Later daily runs poll
+recent history pages, re-read a small overlap window, and persist only new
+messages through the same post upsert path used by other publishing platforms.
+
 ## CLI
 
 Use `npm run nyra -- <command>` when the `eanyra` binary is not globally linked.
@@ -199,6 +241,7 @@ Use `npm run nyra -- <command>` when the `eanyra` binary is not globally linked.
 | `npm run scrape:twitter` | Collect Twitter/X accounts once |
 | `npm run scrape:github` | Collect GitHub accounts once |
 | `npm run scrape:linkedin` | Import LinkedIn accounts once |
+| `npm run scrape:telegram` | Poll Telegram accounts once |
 | `npm run nyra -- scrape <platform>` | Collect one platform once |
 | `npm run context:sync` | Sync YAML author context into SQLite |
 | `npm run nyra -- context show` | Print all context currently stored in SQLite |
@@ -206,6 +249,7 @@ Use `npm run nyra -- <command>` when the `eanyra` binary is not globally linked.
 | `npm run export` | Generate a Markdown content export |
 | `npm run export:dry` | Generate an export without marking records used |
 | `npm run login` | Best-effort interactive Twitter/X login |
+| `npm run login:telegram` | Generate a Telegram MTProto session string |
 | `npm run import-cookies -- <file>` | Recommended: import browser cookies into the persistent session |
 
 Important export options:
@@ -294,7 +338,10 @@ Runtime configuration is centralized in `src/config/app.config.js`.
 - GitHub: `GITHUB_TOKEN`, `GITHUB_LOOKBACK_DAYS`,
   `GITHUB_REPOS_PER_ACCOUNT`, release/commit limits;
 - LinkedIn: `LINKEDIN_IMPORTS_DIR`, `LINKEDIN_SHARES_FILE`,
-  `LINKEDIN_PROFILE_FILE`.
+  `LINKEDIN_PROFILE_FILE`;
+- Telegram: `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, `TELEGRAM_SESSION`,
+  `TELEGRAM_FETCH_LIMIT`, `TELEGRAM_INITIAL_POSTS_PER_ACCOUNT`,
+  `TELEGRAM_MAX_PAGES_PER_ACCOUNT`, and overlap options.
 
 ## Documentation
 

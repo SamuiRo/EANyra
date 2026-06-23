@@ -12,7 +12,8 @@
  *        twitter  → Browser + TwitterScraper (Playwright, human-behaviour delays)
  *        github   → GithubScraper (REST API, no browser)  → signals table
  *        linkedin → LinkedinImporter (CSV import)         → posts table
- *   5. Close the browser (if opened)
+ *        telegram → TelegramScraper (MTProto polling)     → posts table
+ *   5. Close runtime clients (if opened)
  *   6. Finalise the ScraperRun record (success / partial / failed)
  *
  * Adding a new platform:
@@ -25,11 +26,12 @@ import { Browser }                                  from '../browser/Browser.js'
 import { createScraper as createTwitterScraper }   from '../../platforms/twitter/index.js';
 import { createScraper as createGithubScraper }    from '../../platforms/github/index.js';
 import { createScraper as createLinkedinImporter } from '../../platforms/linkedin/index.js';
+import { createScraper as createTelegramScraper }  from '../../platforms/telegram/index.js';
 import { AccountRepository }    from '../teapot/repositories/AccountRepository.js';
 import { PostRepository }       from '../teapot/repositories/PostRepository.js';
 import { SignalRepository }     from '../teapot/repositories/SignalRepository.js';
 import { ScraperRunRepository } from '../teapot/repositories/ScraperRunRepository.js';
-import { SCRAPER, GITHUB, LINKEDIN } from '../../config/app.config.js';
+import { SCRAPER, GITHUB, LINKEDIN, TELEGRAM } from '../../config/app.config.js';
 import { print, sleep }         from '../../shared/utils.js';
 
 export class ScraperOrchestrator {
@@ -85,6 +87,7 @@ export class ScraperOrchestrator {
     const failed     = [];
 
     this.#activeBrowser = null;
+    this.#activeTelegramScraper = null;
 
     try {
       const hasTwitter = accounts.some(a => a.platform === 'twitter');
@@ -120,6 +123,7 @@ export class ScraperOrchestrator {
       }
     } finally {
       if (this.#activeBrowser) await this.#activeBrowser.close();
+      if (this.#activeTelegramScraper) await this.#activeTelegramScraper.disconnect();
     }
 
     if (failed.length === 0) {
@@ -141,6 +145,7 @@ export class ScraperOrchestrator {
   // ── Private ───────────────────────────────────────────────────────────────
 
   #activeBrowser = null;
+  #activeTelegramScraper = null;
 
   async #ensureBrowser() {
     if (!this.#activeBrowser) {
@@ -148,6 +153,14 @@ export class ScraperOrchestrator {
       await this.#activeBrowser.launch();
     }
     return this.#activeBrowser;
+  }
+
+  async #ensureTelegramScraper() {
+    if (!this.#activeTelegramScraper) {
+      this.#activeTelegramScraper = createTelegramScraper({ config: TELEGRAM });
+      await this.#activeTelegramScraper.connect();
+    }
+    return this.#activeTelegramScraper;
   }
 
   /**
@@ -211,6 +224,31 @@ export class ScraperOrchestrator {
         return saved;
       }
 
+      case 'telegram': {
+        const scrapeStartedAt = new Date();
+        const since           = account.last_scraped_at
+          ?? await this.postRepo.newestPostDate(account.id, 'telegram');
+        const isInitial       = since === null;
+
+        print(
+          `  -> ${isInitial ? `INITIAL harvest (target: ${TELEGRAM.initialPostsPerAccount} posts)` : 'daily top-up'} (polling mode)`,
+          'system',
+        );
+
+        const scraper  = await this.#ensureTelegramScraper();
+        const rawPosts = await scraper.scrapeAccount(account.username, {
+          since,
+          initialLimit: TELEGRAM.initialPostsPerAccount,
+        });
+        const saved    = await this.postRepo.saveBatch(account.id, rawPosts);
+        await this.accountRepo.markScraped(
+          account.id,
+          this.#telegramBaselineTimestamp(rawPosts, scrapeStartedAt, since),
+        );
+        print(`  -> ${rawPosts.length} messages parsed, ${saved} new saved.`, 'data');
+        return saved;
+      }
+
       default:
         throw new Error(`Unknown platform: "${account.platform}"`);
     }
@@ -220,6 +258,25 @@ export class ScraperOrchestrator {
     if (!account.last_scraped_at) return true;
     const oldest = await this.postRepo.oldestPostDate(account.id, 'twitter');
     return oldest === null;
+  }
+
+  #telegramBaselineTimestamp(rawPosts, fallback, previousBoundary = null) {
+    const latestPostAt = rawPosts.reduce((latest, post) => {
+      if (!(post.posted_at instanceof Date)) return latest;
+      return latest === null || post.posted_at > latest ? post.posted_at : latest;
+    }, null);
+
+    if (previousBoundary) {
+      const previous = previousBoundary instanceof Date
+        ? previousBoundary
+        : new Date(previousBoundary);
+
+      if (!Number.isNaN(previous.getTime())) {
+        return latestPostAt && latestPostAt > previous ? latestPostAt : fallback;
+      }
+    }
+
+    return latestPostAt ?? fallback;
   }
 
   async #humanPause() {

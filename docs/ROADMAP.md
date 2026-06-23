@@ -116,8 +116,6 @@ the current repository state, not on the older README.
   which signals instead of relying on one timestamp flag.
 - [ ] **Incremental LinkedIn import management.** Track import files, account
   ownership, and import history explicitly.
-- [ ] **Telegram collection.** Evaluate Bot API versus an authenticated client,
-  then normalize channel posts and engagement into the existing data model.
 - [ ] **Optional community feedback sources.** Evaluate Discord and similar
   sources as signals after manual signal ingestion and attribution are stable.
 - [ ] **Per-platform health and run metrics.**
@@ -133,6 +131,7 @@ the current repository state, not on the older README.
 - [x] GitHub REST collection for releases, commits, repositories, and README
   metadata.
 - [x] LinkedIn CSV post import.
+- [x] Telegram MTProto polling for channel posts.
 - [x] YAML author context and project synchronization.
 - [x] Markdown export for AI-assisted content sessions.
 - [x] Intended unified MCP tool design with stdio and HTTP transport code.

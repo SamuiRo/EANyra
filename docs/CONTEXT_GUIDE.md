@@ -93,7 +93,7 @@ Only include platforms that are useful to your content workflow.
 
 Defines how the same idea should be adapted per publishing platform. Platform
 slugs in context are not restricted to the currently collected platforms, so
-rules may also describe planned channels such as Telegram.
+rules may also describe planned channels such as Discord.
 
 ```yaml
 twitter:

@@ -8,6 +8,7 @@
  *   eanyra scrape twitter       → Twitter/X only
  *   eanyra scrape github        → GitHub only
  *   eanyra scrape linkedin      → LinkedIn CSV import only
+ *   eanyra scrape telegram      → Telegram polling only
  *   eanyra context sync         → sync YAML context files into DB
  *   eanyra context show         → print current context from DB
  *   eanyra export               → export data to Markdown for AI content creation
@@ -131,7 +132,8 @@ function buildCLI(nyra) {
       '  eanyra scrape            → all platforms\n' +
       '  eanyra scrape twitter    → Twitter/X only\n' +
       '  eanyra scrape github     → GitHub only\n' +
-      '  eanyra scrape linkedin   → LinkedIn CSV import only',
+      '  eanyra scrape linkedin   → LinkedIn CSV import only\n' +
+      '  eanyra scrape telegram   → Telegram polling only',
     )
     .action(async (platform) => {
       if (platform && !SUPPORTED_PLATFORMS.includes(platform)) {

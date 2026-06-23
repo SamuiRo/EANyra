@@ -41,6 +41,7 @@ The original project plan has largely reached its first two phases:
 - Twitter/X posts are collected through Playwright.
 - GitHub activity is normalized into reusable signals.
 - LinkedIn posts are imported from the platform's CSV export.
+- Telegram channel posts are collected through authenticated MTProto polling.
 - Published posts share one normalized table.
 - Signals are separated from already-published posts.
 - Author voice, platform rules, and project context are maintained as YAML.
@@ -84,9 +85,9 @@ Platform integrations should favor reliable, maintainable access:
 - user-provided exports when scraping is fragile or unnecessary;
 - authenticated browser collection only where no suitable alternative exists.
 
-Potential future publishing sources include Telegram and Discord. They should
-use the same normalized post and signal contracts rather than introducing
-platform-specific agent workflows.
+Potential future publishing sources include Discord and similar communities.
+They should use the same normalized post and signal contracts rather than
+introducing platform-specific agent workflows.
 
 ## Design Principles
 

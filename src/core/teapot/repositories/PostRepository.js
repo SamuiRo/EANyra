@@ -98,6 +98,25 @@ export class PostRepository {
   }
 
   /**
+   * Newest posted_at for an account+platform combo, or null if none.
+   *
+   * @param {number} accountId
+   * @param {string} [platform]
+   * @returns {Promise<Date|null>}
+   */
+  async newestPostDate(accountId, platform) {
+    const where = { account_id: accountId };
+    if (platform) where.platform = platform;
+
+    const row = await this.Post.findOne({
+      where,
+      order:      [['posted_at', 'DESC']],
+      attributes: ['posted_at'],
+    });
+    return row?.posted_at ?? null;
+  }
+
+  /**
    * Count all posts for an account (optionally filtered by platform).
    *
    * @param {number} accountId

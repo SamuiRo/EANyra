@@ -24,8 +24,10 @@ flowchart LR
     ORCH --> TW["TwitterScraper"]
     ORCH --> GH["GithubScraper"]
     ORCH --> LI["LinkedinImporter"]
+    ORCH --> TG["TelegramScraper"]
     TW --> PR["PostRepository"]
     LI --> PR
+    TG --> PR
     GH --> SR["SignalRepository"]
     PR --> DB[("SQLite")]
     SR --> DB
@@ -41,6 +43,7 @@ flowchart LR
 |---|---|
 | `src/core/cli/index.js` | CLI bootstrap, model registration, schema sync, command routing |
 | `src/core/cli/login.js` | Interactive Twitter/X login and persistent session creation |
+| `src/core/cli/telegram-login.js` | Interactive Telegram MTProto login and session string generation |
 | `src/core/mcp/server.js` | MCP tool registration and stdio/HTTP transport startup |
 | `src/core/cli/import-cookies.js` | Standalone cookie import helper used by `npm run import-cookies -- <file>` |
 
@@ -85,6 +88,7 @@ EANyra/
       twitter/
       github/
       linkedin/
+      telegram/
     shared/                     logging and generic utilities
 ```
 
@@ -119,10 +123,12 @@ schema change must include a new migration.
 2. Read `src/config/accounts.json` and upsert configured accounts.
 3. Load active accounts and optionally filter by platform.
 4. Lazily open one persistent browser if Twitter accounts exist.
-5. Dispatch each account to its platform module.
-6. Persist normalized posts or signals through repositories.
-7. Update each successful account's `last_scraped_at`.
-8. Close the browser and finalize the run as `success`, `partial`, or `failed`.
+5. Lazily connect one Telegram MTProto client if Telegram accounts exist.
+6. Dispatch each account to its platform module.
+7. Persist normalized posts or signals through repositories.
+8. Update each successful account's `last_scraped_at`.
+9. Close runtime clients and finalize the run as `success`, `partial`, or
+   `failed`.
 
 The `posts_saved` field in `scraper_runs` is currently used for the total number
 of newly persisted records, including GitHub signals.
@@ -232,6 +238,35 @@ line endings.
 `Shares.csv` rows are converted to normalized `RawPost` objects. `Profile.csv`
 is optional and only logged. LinkedIn exports do not provide engagement
 metrics, so those values are stored as zero or null.
+
+### Telegram
+
+Files:
+
+- `platforms/telegram/TelegramClient.js`
+- `platforms/telegram/TelegramScraper.js`
+- `platforms/telegram/TelegramMessageParser.js`
+
+Telegram uses an authenticated GramJS/MTProto client configured by
+`TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, and `TELEGRAM_SESSION`. The integration
+uses polling only; the listener/event-bus mode from the source modules is not
+part of EANyra.
+
+Collection behavior:
+
+1. The first run for a new Telegram account imports the latest
+   `TELEGRAM_INITIAL_POSTS_PER_ACCOUNT` posts, default `20`.
+2. The orchestrator stores the newest imported Telegram post timestamp as the
+   future polling baseline.
+3. Later runs fetch recent channel history pages.
+4. Pagination stops when a message at or before the prior scrape boundary is
+   reached, with a configurable overlap window for safety.
+5. Messages are normalized to `RawPost` objects with stable IDs in the form
+   `<channel>:<message_id>`.
+6. Engagement maps Telegram reactions to `likes`, forwards to `reposts`,
+   replies to `replies`, and views to `views`.
+7. Persistence uses `PostRepository.saveBatch()`, so overlap and re-runs are
+   idempotent.
 
 ## Persistence Layer
 
@@ -437,6 +472,7 @@ Major configuration objects:
 - `EXPORT`
 - `GITHUB`
 - `LINKEDIN`
+- `TELEGRAM`
 - `SUPPORTED_PLATFORMS`
 
 The actual account list is separate in `src/config/accounts.json`.
@@ -474,7 +510,9 @@ The actual account list is separate in `src/config/accounts.json`.
 - Twitter/X scraping depends on an authenticated persistent browser session.
 - GitHub collection depends on API rate limits and token access.
 - LinkedIn import depends on the shape of LinkedIn's export files.
+- Telegram collection depends on Telegram API credentials and a saved MTProto
+  session string.
 - SQLite is local and single-host; there is no distributed locking.
-- Automated coverage is currently limited to Twitter GraphQL parsing; versioned
-  migrations are not present.
+- Automated coverage is still focused on parser, migration, and repository
+  boundaries rather than live platform access.
 - Several confirmed defects are tracked in [ROADMAP.md](ROADMAP.md).
