@@ -10,7 +10,7 @@ import { PATHS }              from '../../../config/app.config.js';
  * UserContextRepository
  *
  * Responsible for:
- *  - Reading YAML files from src/context/
+ *  - Reading YAML files from instance/context/
  *  - Syncing them into the `user_context` table (upsert by key)
  *  - Reading context back for MCP tools and CLI display
  *

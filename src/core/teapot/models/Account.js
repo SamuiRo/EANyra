@@ -18,7 +18,6 @@ export function defineAccountModel(sequelize) {
     username: {
       type:      DataTypes.STRING(128),
       allowNull: false,
-      unique:    true,
     },
     display_name: {
       type:      DataTypes.STRING(256),
@@ -50,6 +49,7 @@ export function defineAccountModel(sequelize) {
     timestamps:  true,
     underscored: true,
     indexes: [
+      { unique: true, fields: ['platform', 'username'] },
       { fields: ['platform'] },
       { fields: ['is_active'] },
       { fields: ['is_archived'] },

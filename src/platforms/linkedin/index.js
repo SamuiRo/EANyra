@@ -4,7 +4,7 @@
  * Standard module interface for the LinkedIn platform.
  * Mirrors src/platforms/twitter/index.js and src/platforms/github/index.js.
  *
- * Current implementation: CSV import from data/imports/
+ * Current implementation: CSV import from instance/data/imports/
  * Future: could be extended with browser-based scraping or API calls
  * without changing this interface or anything in the orchestrator.
  *
@@ -33,7 +33,7 @@ export const displayName = 'LinkedIn';
 /**
  * Create a LinkedinImporter instance.
  *
- * @param {string} importsDir  Absolute path to the imports folder (data/imports/)
+ * @param {string} importsDir  Absolute path to the imports folder (instance/data/imports/)
  * @returns {LinkedinImporter}
  */
 export function createScraper(importsDir) {

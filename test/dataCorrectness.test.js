@@ -6,6 +6,8 @@ import test from 'node:test';
 
 import { Sequelize } from 'sequelize';
 
+import { parsePlatformList, resolvePlatforms } from '../src/core/cli/exportCommands.js';
+import { buildMarkdown } from '../src/core/export/MarkdownExporter.js';
 import { registerModels } from '../src/core/teapot/models/index.js';
 import { SchemaMigrator } from '../src/core/teapot/SchemaMigrator.js';
 import { AccountRepository } from '../src/core/teapot/repositories/AccountRepository.js';
@@ -48,6 +50,73 @@ test('exports record exported_at without changing used_for_content', async t => 
   assert.deepEqual(await repository.getSignals({ unusedOnly: true }), []);
 });
 
+test('export platform lists are normalized, deduplicated, and validated', () => {
+  assert.deepEqual(parsePlatformList(' Twitter,telegram,twitter '), ['twitter', 'telegram']);
+  assert.deepEqual(
+    resolvePlatforms({ platform: 'twitter', platforms: ['telegram', 'twitter'] }),
+    ['twitter', 'telegram'],
+  );
+  assert.throws(
+    () => parsePlatformList('twitter,bad platform!'),
+    /Invalid platform slug\(s\): bad platform!/,
+  );
+});
+
+test('exports filter posts and platform context by multiple platforms', async t => {
+  const models = await createModels(t);
+  const accounts = await models.Account.bulkCreate([
+    { username: 'twitter-user', platform: 'twitter' },
+    { username: 'telegram-user', platform: 'telegram' },
+    { username: 'linkedin-user', platform: 'linkedin' },
+  ]);
+
+  await models.Post.bulkCreate([
+    { platform: 'twitter', platform_id: 'tw-1', account_id: accounts[0].id, text: 'Twitter' },
+    { platform: 'telegram', platform_id: 'tg-1', account_id: accounts[1].id, text: 'Telegram' },
+    { platform: 'linkedin', platform_id: 'li-1', account_id: accounts[2].id, text: 'LinkedIn' },
+  ]);
+  await models.UserContext.bulkCreate([
+    {
+      key: 'bio',
+      value: {
+        twitter: { short: 'Twitter bio' },
+        telegram: { short: 'Telegram bio' },
+        linkedin: { short: 'LinkedIn bio' },
+      },
+    },
+    {
+      key: 'platforms',
+      value: {
+        twitter: { max_length: 280 },
+        telegram: { max_length: 4096 },
+        linkedin: { max_length: 3000 },
+      },
+    },
+  ]);
+
+  const repository = new ExportRepository(models);
+  const platforms = ['twitter', 'telegram'];
+  const posts = await repository.getPosts({ platforms });
+  const context = await repository.getContext({ platforms });
+
+  assert.deepEqual(posts.map(post => post.platform).sort(), ['telegram', 'twitter']);
+  assert.deepEqual(Object.keys(context.bio), platforms);
+  assert.deepEqual(Object.keys(context.platforms), platforms);
+  const markdown = buildMarkdown({
+    context,
+    posts,
+    platforms,
+    sections: ['context', 'posts'],
+    generatedAt: new Date('2026-06-29T00:00:00Z'),
+  });
+  assert.match(markdown, /\*\*Platforms:\*\* twitter, telegram/);
+  assert.doesNotMatch(markdown, /LinkedIn bio/);
+  assert.deepEqual(
+    (await repository.getPosts({ platform: 'twitter' })).map(post => post.platform),
+    ['twitter'],
+  );
+});
+
 test('schema migrations repair the legacy database without repeated ALTER sync', async t => {
   const sequelize = new Sequelize({
     dialect: 'sqlite',
@@ -68,7 +137,7 @@ test('schema migrations repair the legacy database without repeated ALTER sync',
   await sequelize.query('CREATE TABLE accounts_backup AS SELECT * FROM accounts');
 
   const migrator = new SchemaMigrator(sequelize);
-  assert.equal((await migrator.migrate()).length, 3);
+  assert.equal((await migrator.migrate()).length, 5);
   assert.deepEqual(await migrator.migrate(), []);
 
   const tables = await sequelize.getQueryInterface().showAllTables();
@@ -93,7 +162,7 @@ test('schema migrations fully bootstrap a clean database for every model', async
   const models = registerModels(sequelize);
   const migrator = new SchemaMigrator(sequelize);
 
-  assert.equal((await migrator.migrate()).length, 3);
+  assert.equal((await migrator.migrate()).length, 5);
   assert.deepEqual(await migrator.migrate(), []);
 
   const tables = await sequelize.getQueryInterface().showAllTables();

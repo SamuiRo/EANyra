@@ -21,7 +21,7 @@ export function registerContextCommands(program, models) {
   // ── eanyra context sync ───────────────────────────────────────────────────
   ctx
     .command('sync')
-    .description('Read YAML files from src/context/ and sync into the database')
+    .description('Read YAML files from instance/context/ and sync into the database')
     .action(async () => {
       print('Syncing context from YAML files…', 'system');
 

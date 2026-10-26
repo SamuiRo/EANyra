@@ -15,6 +15,19 @@
     "username": "example-telegram-channel",
     "display_name": "Example Telegram Channel",
     "platform": "telegram",
+    "active": true,
+    "publish_enabled": false
+  },
+  {
+    "username": "second_twitter_profile",
+    "display_name": "Second Twitter profile",
+    "platform": "twitter",
+    "active": true
+  },
+  {
+    "username": "second_telegram_channel",
+    "display_name": "Second Telegram channel",
+    "platform": "telegram",
     "active": true
   },
   {

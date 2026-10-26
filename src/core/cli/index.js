@@ -64,9 +64,9 @@ class Nyra {
 
   // ── Run modes ─────────────────────────────────────────────────────────────
 
-  async #scrapeOnce({ platform } = {}) {
+  async #scrapeOnce({ platform, account } = {}) {
     const orchestrator = new ScraperOrchestrator(this.#models);
-    await orchestrator.run({ platform });
+    await orchestrator.run({ platform, account });
   }
 
   async runOnce(opts = {}) {
@@ -127,6 +127,7 @@ function buildCLI(nyra) {
 
   program
     .command('scrape [platform]')
+    .option('--account <username>', 'Collect one configured account (requires platform)')
     .description(
       'Run a single scrape then exit.\n' +
       '  eanyra scrape            → all platforms\n' +
@@ -135,7 +136,7 @@ function buildCLI(nyra) {
       '  eanyra scrape linkedin   → LinkedIn CSV import only\n' +
       '  eanyra scrape telegram   → Telegram polling only',
     )
-    .action(async (platform) => {
+    .action(async (platform, options) => {
       if (platform && !SUPPORTED_PLATFORMS.includes(platform)) {
         print(
           `Unknown platform "${platform}". Valid options: ${SUPPORTED_PLATFORMS.join(', ')}`,
@@ -143,7 +144,7 @@ function buildCLI(nyra) {
         );
         process.exit(1);
       }
-      await nyra.runOnce({ platform });
+      await nyra.runOnce({ platform, account: options.account });
     });
 
   registerContextCommands(program, nyra.models);

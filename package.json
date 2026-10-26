@@ -22,7 +22,10 @@
     "login": "node src/core/cli/login.js",
     "login:telegram": "node src/core/cli/telegram-login.js",
     "import-cookies": "node src/core/cli/import-cookies.js",
-    "test": "node --test"
+    "test": "node --test",
+    "mcp": "node src/core/mcp/start.js",
+    "instance:init": "node src/core/instance/cli.js init",
+    "instance:migrate": "node src/core/instance/cli.js migrate"
   },
   "repository": {
     "type": "git",
@@ -43,6 +46,7 @@
     "gradient-string": "^2.0.2",
     "node-cron": "^3.0.3",
     "playwright": "^1.44.1",
+    "qrcode": "1.5.4",
     "sequelize": "^6.37.3",
     "sharp": "^0.33.4",
     "sqlite3": "^5.1.7",

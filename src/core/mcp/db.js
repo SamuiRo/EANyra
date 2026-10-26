@@ -11,24 +11,39 @@ import { DB }   from '../../config/app.config.js';
 const DB_PATH = DB.storagePath;
 
 let _db = null;
+let opening = null;
 
-function getDb() {
-  if (_db) return _db;
+async function getDb() {
+  if (!opening) {
+    opening = new Promise((resolve, reject) => {
+      _db = new sqlite3.Database(DB_PATH, sqlite3.OPEN_READWRITE, error => {
+        if (error) {
+          _db = null;
+          opening = null;
+          reject(new Error('Cannot open EANyra database. Run a CLI scrape to initialize it first.'));
+        } else {
+          _db.configure('busyTimeout', DB.busyTimeoutMs);
+          resolve(_db);
+        }
+      });
+    });
+  }
+  return opening;
+}
 
-  _db = new sqlite3.Database(DB_PATH, sqlite3.OPEN_READWRITE, (err) => {
-    if (err) {
-      process.stderr.write(`[eanyra-mcp] Failed to open DB at ${DB_PATH}: ${err.message}\n`);
-      process.exit(1);
-    }
-  });
-
-  return _db;
+export async function closeDb() {
+  if (!opening) return;
+  const db = await opening;
+  await new Promise((resolve, reject) => db.close(error => error ? reject(error) : resolve()));
+  _db = null;
+  opening = null;
 }
 
 /** Run a SELECT, return all rows. */
-export function query(sql, params = []) {
+export async function query(sql, params = []) {
+  const db = await getDb();
   return new Promise((resolve, reject) => {
-    getDb().all(sql, params, (err, rows) => {
+    db.all(sql, params, (err, rows) => {
       if (err) reject(err);
       else     resolve(rows ?? []);
     });
@@ -36,9 +51,10 @@ export function query(sql, params = []) {
 }
 
 /** Run a SELECT, return the first row or null. */
-export function queryOne(sql, params = []) {
+export async function queryOne(sql, params = []) {
+  const db = await getDb();
   return new Promise((resolve, reject) => {
-    getDb().get(sql, params, (err, row) => {
+    db.get(sql, params, (err, row) => {
       if (err) reject(err);
       else     resolve(row ?? null);
     });
@@ -46,9 +62,10 @@ export function queryOne(sql, params = []) {
 }
 
 /** Run an INSERT / UPDATE / DELETE, return { lastID, changes }. */
-export function run(sql, params = []) {
+export async function run(sql, params = []) {
+  const db = await getDb();
   return new Promise((resolve, reject) => {
-    getDb().run(sql, params, function (err) {
+    db.run(sql, params, function (err) {
       if (err) reject(err);
       else     resolve({ lastID: this.lastID, changes: this.changes });
     });

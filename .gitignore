@@ -3,9 +3,12 @@
 /cookies_export.json
 /cookies.json
 /data
+/instance/
+/.instance-migration.lock
 /src/config/accounts.json
 /PLAN.md
-/src/context/projects/eanyra.yaml
+/src/context/projects/*.yaml
+!/src/context/projects/_template.yaml
 /src/context/platforms.yaml
 /src/context/voice.yaml
 /src/context/bio.yaml

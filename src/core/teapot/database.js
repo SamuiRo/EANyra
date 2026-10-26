@@ -27,6 +27,17 @@ export class Database {
         underscored:     false,
       },
     });
+
+    // CLI, scrape and publish workers share one file. Every connection,
+    // including the separate one Sequelize opens per transaction, waits for
+    // a concurrent writer instead of failing immediately with SQLITE_BUSY.
+    const manager = this.sequelize.connectionManager;
+    const getConnection = manager.getConnection.bind(manager);
+    manager.getConnection = async options => {
+      const connection = await getConnection(options);
+      connection.configure('busyTimeout', DB.busyTimeoutMs);
+      return connection;
+    };
   }
 
   // ── Public API ────────────────────────────────────────────────────────────
@@ -38,6 +49,8 @@ export class Database {
     }
     try {
       await this.sequelize.authenticate();
+      // Persistent per file: readers no longer block the active writer.
+      await this.sequelize.query('PRAGMA journal_mode = WAL');
       print(`Database connected: ${DB.storagePath}`, 'success');
       this.#isConnected = true;
     } catch (error) {

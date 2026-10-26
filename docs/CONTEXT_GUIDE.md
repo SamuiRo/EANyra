@@ -1,6 +1,6 @@
 # Author Context Guide
 
-This guide explains how to maintain the YAML files under `src/context/`.
+This guide explains how to maintain the YAML files under `instance/context/`.
 For setup and commands, see the repository [README](../README.md). For the
 implementation details and known sync limitations, see
 [ARCHITECTURE.md](ARCHITECTURE.md) and [ROADMAP.md](ROADMAP.md).
@@ -12,7 +12,7 @@ content rules. They are not read directly by the MCP server or Markdown
 exporter.
 
 ```text
-src/context/*.yaml
+instance/context/*.yaml
         |
         | npm run context:sync
         v
@@ -38,15 +38,30 @@ record during the next explicit sync; it does not delete project history.
 Create the real, gitignored files from the committed examples:
 
 ```powershell
-Copy-Item src/context/voice.example.yaml src/context/voice.yaml
-Copy-Item src/context/bio.example.yaml src/context/bio.yaml
-Copy-Item src/context/platforms.example.yaml src/context/platforms.yaml
-Copy-Item src/context/projects/_template.yaml src/context/projects/my-project.yaml
+npm run instance:init
+Copy-Item instance/context/projects/_template.yaml instance/context/projects/my-project.yaml
 ```
 
 Replace every placeholder before syncing. Real context files may contain
-personal information and are intentionally gitignored. Project sync ignores
-templates beginning with `_` and committed `.example.yaml` files.
+personal information and are intentionally gitignored. All of `instance/` is
+ignored. Versioned examples and `_template.yaml` live in `instance_example/`;
+initialization copies them into the selected instance. Project sync ignores templates beginning with `_` and any
+`.example.yaml` files.
+
+## AI-Assisted Project Setup
+
+For a self-contained instruction that can be handed directly to an AI agent,
+use [AI Project Context Instructions](PROJECT_CONTEXT_PROMPT.md). It tells the
+agent what evidence to inspect, which facts must not be invented, how to write
+specific content angles, and how to validate the result through context sync.
+
+A short handoff is enough when the agent can access this repository:
+
+```text
+Follow docs/PROJECT_CONTEXT_PROMPT.md to create or update the project context.
+Inspect the target project, do not invent missing facts, and complete the
+validation workflow before reporting the result.
+```
 
 ## `voice.yaml`
 
@@ -127,50 +142,57 @@ Each project file describes one source of content ideas. Full context and
 exports include only projects whose status is `active`.
 
 ```yaml
-slug: "my-project"
-name: "My Project"
+slug: "local-content-pipeline"
+name: "Local Content Pipeline"
 status: "active"
 archive: false
 
 description: |
-  What it is, how it works at a high level, and why it exists.
+  A local pipeline that stores normalized publishing data and verified project
+  activity for AI-assisted content creation. SQLite is the integration boundary
+  between collectors, Markdown exports, and MCP tools.
 
 tech_stack:
   - "Node.js"
   - "SQLite"
+  - "Model Context Protocol"
 
 links:
   github: null
   website: null
 
 content_angles:
-  - "Why this project uses SQLite"
+  - "Why SQLite is the integration boundary for a local single-user workflow"
+  - "How separating published posts from raw signals prevents duplicate ideas"
 
 posting_rules:
-  - "Prefer technical insights over feature announcements"
+  - "Ground every claim in repository evidence or stored data"
+  - "Prefer one concrete architecture tradeoff per post"
 ```
 
 | Field | Type | Guidance |
 |---|---|---|
-| `slug` | string | Stable project key. Prefer lowercase kebab-case matching the filename. |
+| `slug` | string | Stable lowercase kebab-case key. It must exactly match the filename without `.yaml`. |
 | `name` | string | Human-readable project name. Defaults to the slug when omitted. |
 | `status` | `active`, `paused`, or `archived` | Controls inclusion in full context and exports. Defaults to `active`. |
 | `archive` | boolean | When `true`, archives the project regardless of `status`. Removing the YAML file also archives it on the next sync. |
-| `description` | string or `null` | Technical background the agent needs to write accurately. |
-| `tech_stack` | string[] | Runtime, storage, frameworks, protocols, and important libraries. |
-| `links` | object | Relevant project URLs. |
-| `content_angles` | string[] | Specific decisions, lessons, constraints, or stories worth publishing. |
-| `posting_rules` | string[] | Project-specific content strategy. |
+| `description` | string or `null` | Verified explanation of what it is, who it serves, the problem, approach, current stage, and important constraints. |
+| `tech_stack` | string[] | Meaningful runtimes, storage, frameworks, protocols, and infrastructure actually used by the project. |
+| `links` | object | Verified project URLs under descriptive keys; use `null` or omit a key when no URL is known. |
+| `content_angles` | string[] | Five to ten concrete post hooks grounded in a decision, tradeoff, problem, result, constraint, or lesson. |
+| `posting_rules` | string[] | Two to six enforceable rules specific to publishing about this project. |
 
 The `slug` field becomes the `project.<slug>` database key. The implementation
-does not currently enforce that it matches the filename.
+does not currently enforce that it matches the filename, so the author or AI
+agent must check this explicitly. Use only the fields above: extra YAML fields
+are not preserved by the structured project model and Markdown export.
 
 ## Sync Semantics And Validation
 
 `npm run context:sync`:
 
 1. Parses `voice.yaml`, `bio.yaml`, and `platforms.yaml` when present.
-2. Reads project YAML files from `src/context/projects/`.
+2. Reads project YAML files from `instance/context/projects/`.
 3. Upserts top-level objects into `user_context`.
 4. Upserts projects into `projects` and duplicates each raw project object as
    `user_context` key `project.<slug>`.
@@ -198,5 +220,9 @@ npm run nyra -- context show --key project.my-project
 - Add at least one representative `example_post`.
 - Describe meaningful differences between platform styles.
 - Write content angles as actual hooks, not broad topics.
+- Keep project filenames and `slug` values identical.
+- Verify project facts from current documentation and implementation; ask the
+  author instead of inventing missing features, results, metrics, or URLs.
+- Use only supported project fields and preserve the documented YAML types.
 - Keep inactive projects as `paused` or `archived`.
 - Run `context:sync`, inspect `context show`, and review any sync errors.

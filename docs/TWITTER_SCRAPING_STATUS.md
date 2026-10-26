@@ -84,7 +84,8 @@ Conversation discovery is bounded by:
 Runs `#16` through `#19` were executed on 2026-06-15 without a manual cookie
 import:
 
-- Run `#16` logged `Restored Twitter session from data/cookies.json`, proving
+- Run `#16` logged `Restored Twitter session from data/cookies.json` (the legacy
+  path, now `instance/data/cookies.json`), proving
   the cookie fallback restores `auth_token` when the persistent profile loses
   it. Its navigation was blocked by sandbox network access.
 - Run `#17` used the restored authenticated session with network access,

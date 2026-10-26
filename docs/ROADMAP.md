@@ -24,9 +24,9 @@ the current repository state, not on the older README.
   Exhaustive historical reply discovery remains unproven.
 - [ ] **Preserve LinkedIn media URLs.** `MediaUrl` is parsed from `Shares.csv`
   but is discarded when building the normalized post.
-- [ ] **Support multiple accounts with the same username on different
-  platforms.** `accounts.username` is globally unique; it should likely be
-  unique by `(platform, username)`.
+- [x] **Support multiple accounts with the same username on different
+  platforms.** Composite `(platform, username)` identity, migration preserving
+  child records, and platform-aware account sync are implemented.
 - [ ] **Define multi-account LinkedIn import behavior.** Every LinkedIn account
   currently reads the same `Shares.csv`; global post deduplication means the
   first account can claim all imported rows.
@@ -38,7 +38,9 @@ the current repository state, not on the older README.
   deleted project YAML files are archived without deleting historical data.
   Explicit `archive: true` is supported in account JSON and project YAML.
 - [x] **Exclude example project YAML from context sync.** Project discovery
-  ignores committed `.example.yaml` files.
+  ignores templates beginning with `_` and any `.example.yaml` files. Reusable
+  templates and the original examples are committed under `instance_example/`;
+  real project YAML under `instance/` is gitignored.
 - [ ] **Preserve all authored context in Markdown exports.** The exporter omits
   `voice.example_post` and checks platform `frequency` while the documented
   field and examples use `posting_frequency`.
@@ -55,7 +57,7 @@ the current repository state, not on the older README.
   GitHub mapping, and Twitter DOM parsing fixtures.
 - [ ] **Add linting and formatting checks.** There is currently no repeatable
   code-quality command in `package.json`.
-- [ ] **Validate account configuration.** Reject missing usernames, unsupported
+- [x] **Validate account configuration.** Reject missing usernames, unsupported
   platforms, duplicate account keys, and malformed JSON with actionable
   messages.
 - [ ] **Validate author context YAML.** Add schemas and actionable errors for
@@ -64,8 +66,9 @@ the current repository state, not on the older README.
 - [ ] **Validate normalized records before persistence.** For example,
   LinkedIn rows without a stable `platform_id` should be skipped explicitly
   rather than reaching a database constraint error.
-- [ ] **Improve scheduler concurrency behavior.** Prevent overlapping runs when
-  one scrape lasts beyond the next cron tick.
+- [x] **Improve scheduler concurrency behavior.** A database-scoped file lock
+  prevents overlapping scheduler, CLI, and MCP collection. Crash recovery of
+  stale lock files remains manual.
 - [ ] **Handle orphaned `running` scraper runs.** A hard process termination can
   leave runs permanently marked as running.
 - [ ] **Improve freshness reporting.** `scraper_status` calculates age from the
@@ -101,6 +104,17 @@ the current repository state, not on the older README.
 
 ## Planned Features
 
+- [x] **Telegram text publishing.** Explicitly enabled channels, Bot API identity
+  lookup and admin checks, durable prepare/publish/get workflow and duplicate
+  suppression. Twitter remains collection-only.
+
+- [x] **Agent-triggered collection.** MCP background jobs with platform/account
+  selection and a Telegram message reader. See [MCP_GUIDE.md](MCP_GUIDE.md).
+- [ ] **Telegram backfill checkpoints.** Persist pagination progress so reaching
+  the page cap cannot skip an older unread interval.
+- [ ] **Separate brand identities.** Per-brand author context and independent
+  login sessions, beyond the current list of monitored accounts.
+
 - [ ] **Posting-gap analysis and proactive reminders.** Compare recent
   publishing activity with per-platform `posting_frequency` and expose the
   result to agents; add notification delivery only after the analysis contract
@@ -124,6 +138,12 @@ the current repository state, not on the older README.
 
 ## Completed Foundations
 
+- [x] Telegram QR login with automatic refresh, hidden 2FA prompt, cancellation
+  cleanup and direct root `.env` session persistence; phone login remains optional.
+
+- [x] Instance-specific settings, context and runtime data isolated under
+  `instance/`, with safe initialization, legacy migration and external selection.
+
 - [x] Commander-based CLI and UTC cron scheduler.
 - [x] Unified `posts` table for published social content.
 - [x] Unified `signals` table for GitHub activity and future sources.
@@ -135,7 +155,7 @@ the current repository state, not on the older README.
 - [x] YAML author context and project synchronization.
 - [x] Markdown export for AI-assisted content sessions.
 - [x] Intended unified MCP tool design with stdio and HTTP transport code.
-- [x] Centralized runtime configuration and complete `.env.example`.
+- [x] Centralized runtime configuration and complete `instance_example/.env.example`.
 - [x] Working MCP startup imports and cross-platform configured export paths.
 - [x] Repaired npm scripts: working export, context sync, platform scrape, and
   cookie import commands; removed the nonexistent migration entry point.

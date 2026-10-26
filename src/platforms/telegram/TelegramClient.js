@@ -16,32 +16,24 @@ export class TelegramClient {
 
     this.#validateConfig();
 
-    const { MTProtoClient, StringSession } = await loadGramJs();
-    const session = new StringSession(this.config.session ?? '');
-
-    this.client = new MTProtoClient(
-      session,
-      this.config.apiId,
-      this.config.apiHash,
-      {
-        deviceModel:       `${PKG.name}@${os.hostname()}`,
-        systemVersion:     os.version() || 'unknown',
-        appVersion:        PKG.version,
-        useWSS:            true,
-        testServers:       false,
-        connectionRetries: this.config.connectionRetries,
-      },
-    );
+    this.client = await createMTProtoClient(this.config);
 
     print('[Telegram] Connecting via MTProto...', 'system');
-    await this.client.start({
-      phoneNumber: () => this.#readCredential('Phone number: '),
-      password:    () => this.#readCredential('Password (if enabled): '),
-      phoneCode:   () => this.#readCredential('Verification code: '),
-      onError:     error => {
-        print(`[Telegram] Authentication error: ${error.message}`, 'error');
-      },
-    });
+    try {
+      await this.client.start({
+        phoneNumber: () => this.#readCredential('Phone number: '),
+        password:    () => this.#readCredential('Password (if enabled): '),
+        phoneCode:   () => this.#readCredential('Verification code: '),
+        onError:     error => {
+          print(`[Telegram] Authentication error: ${error.message}`, 'error');
+          return !this.config.interactiveLogin;
+        },
+      });
+    } catch (error) {
+      await closeMTProtoClient(this.client);
+      this.client = null;
+      throw error;
+    }
 
     this.isConnected = true;
     print('[Telegram] MTProto client connected.', 'success');
@@ -54,23 +46,20 @@ export class TelegramClient {
   }
 
   async disconnect() {
-    if (!this.client || !this.isConnected) return;
-    await this.client.disconnect();
+    if (!this.client) return;
+    await closeMTProtoClient(this.client);
+    this.client = null;
     this.isConnected = false;
     print('[Telegram] MTProto client disconnected.', 'system');
   }
 
   #validateConfig() {
-    if (!this.config.apiId || !this.config.apiHash) {
-      throw new Error(
-        'TELEGRAM_API_ID and TELEGRAM_API_HASH are required for Telegram scraping.',
-      );
-    }
+    validateTelegramApiConfig(this.config);
 
     if (!this.config.session && !this.config.interactiveLogin) {
       throw new Error(
-        'TELEGRAM_SESSION is not set. Run `npm run login:telegram` to generate one, ' +
-        'then save the printed session string in .env.',
+        'TELEGRAM_SESSION is not set. Run `npm run login:telegram` for QR login; ' +
+        'the session is saved to the root .env automatically.',
       );
     }
   }
@@ -93,6 +82,35 @@ export class TelegramClient {
     } finally {
       rl.close();
     }
+  }
+}
+
+export function validateTelegramApiConfig(config) {
+  if (!Number.isInteger(config.apiId) || config.apiId <= 0 || !config.apiHash) {
+    throw new Error('TELEGRAM_API_ID and TELEGRAM_API_HASH are required. Configure them in the root .env (my.telegram.org/apps).');
+  }
+}
+
+export async function createMTProtoClient(config = TELEGRAM) {
+  validateTelegramApiConfig(config);
+  const { MTProtoClient, StringSession } = await loadGramJs();
+  return new MTProtoClient(new StringSession(config.session ?? ''), config.apiId, config.apiHash, {
+    deviceModel: `${PKG.name}@${os.hostname()}`,
+    systemVersion: os.version() || 'unknown',
+    appVersion: PKG.version,
+    useWSS: true,
+    testServers: false,
+    connectionRetries: config.connectionRetries,
+  });
+}
+
+export async function closeMTProtoClient(client) {
+  try {
+    await client?.disconnect();
+  } catch {
+    // Authentication can fail before the connection is fully established.
+  } finally {
+    await client?.destroy?.().catch(() => {});
   }
 }
 

@@ -2,7 +2,7 @@
  * src/core/teapot/repositories/AccountRepository.js
  *
  * Responsible for:
- *   - Loading the monitored-accounts list from src/config/accounts.json
+ *   - Loading the monitored-accounts list from instance/accounts.json
  *   - Upserting those accounts into the `accounts` table
  *   - Providing query helpers used by the orchestrator
  */
@@ -11,6 +11,7 @@ import fs   from 'fs/promises';
 import { Op } from 'sequelize';
 import { print } from '../../../shared/utils.js';
 import { PATHS } from '../../../config/app.config.js';
+import { validateAccounts } from '../../../config/accountConfig.js';
 
 export class AccountRepository {
   /** @param {import('sequelize').ModelStatic} AccountModel */
@@ -46,7 +47,7 @@ export class AccountRepository {
         is_archived:  archived,
       });
 
-      const account = await this.Account.findOne({ where: { username } });
+      const account = await this.Account.findOne({ where: { username, platform: entry.platform } });
       configuredIds.push(account.id);
     }
 
@@ -94,7 +95,7 @@ export class AccountRepository {
   async #loadJson() {
     try {
       const raw = await fs.readFile(this.accountsConfigPath, 'utf-8');
-      return JSON.parse(raw);
+      return validateAccounts(JSON.parse(raw));
     } catch (error) {
       throw new Error(
         `Cannot load accounts config from ${this.accountsConfigPath}: ${error.message}`,

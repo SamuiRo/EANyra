@@ -31,7 +31,7 @@ flowchart LR
     GH --> SR["SignalRepository"]
     PR --> DB[("SQLite")]
     SR --> DB
-    YAML["src/context/*.yaml"] --> CR["UserContextRepository"]
+    YAML["instance/context/*.yaml"] --> CR["UserContextRepository"]
     CR --> DB
     DB --> EX["Markdown Export"]
     DB --> MCP["MCP Server"]
@@ -55,27 +55,34 @@ process running `Scheduler`.
 ```text
 EANyra/
   package.json
-  .env.example
   README.md
+  .env                          local credentials and runtime settings, gitignored
   docs/
     ARCHITECTURE.md
     CONTEXT_GUIDE.md
+    PROJECT_CONTEXT_PROMPT.md
     PRODUCT_VISION.md
     ROADMAP.md
     old/                         archived source documents, not authoritative
   skills/eanyra/SKILL.md
-  data/                         runtime-only, gitignored
-    pot.sqlite
-    nyra/                       persistent Playwright profile
-    imports/                    LinkedIn CSV files
-    exports/                    generated Markdown exports
-  src/
-    config/
-      app.config.js             environment parsing and defaults
-      accounts.json.example
+  instance_example/           versioned defaults; no personal data
+    .env.example
+    accounts.json.example
     context/
       *.example.yaml
       projects/_template.yaml
+  instance/                     instance-specific, entirely gitignored
+    accounts.json
+    context/                    editable voice, bio, rules and projects
+    data/
+      pot.sqlite
+      nyra/                     persistent Playwright profile
+      imports/                  LinkedIn CSV files
+      exports/                  generated Markdown exports
+  src/
+    config/
+      app.config.js             environment parsing and defaults
+      instance.js               instance selection and environment loading
     core/
       browser/                  Playwright context and stealth patches
       cli/                      Commander commands
@@ -99,7 +106,7 @@ service.
 
 Every normal CLI command follows this startup sequence:
 
-1. Load environment variables through `dotenv/config`.
+1. Load the root `.env` and select INSTANCE_DIR through `config/instance.js`.
 2. Resolve configuration in `src/config/app.config.js`.
 3. Connect Sequelize to the configured SQLite file.
 4. Register all Sequelize models and associations.
@@ -120,7 +127,7 @@ schema change must include a new migration.
 `ScraperOrchestrator.run({ platform? })` coordinates one collection run:
 
 1. Create a `scraper_runs` row with status `running`.
-2. Read `src/config/accounts.json` and upsert configured accounts.
+2. Read `instance/accounts.json` and upsert configured accounts.
 3. Load active accounts and optionally filter by platform.
 4. Lazily open one persistent browser if Twitter accounts exist.
 5. Lazily connect one Telegram MTProto client if Telegram accounts exist.
@@ -167,7 +174,7 @@ Files:
 - `core/browser/Browser.js`
 - `core/cli/login.js`
 
-Twitter uses a persistent Playwright Chromium context stored in `data/nyra/`.
+Twitter uses a persistent Playwright Chromium context stored in `instance/data/nyra/`.
 The browser wrapper configures viewport, locale, timezone, launch flags,
 blocked telemetry domains, and browser API patches.
 
@@ -246,11 +253,21 @@ Files:
 - `platforms/telegram/TelegramClient.js`
 - `platforms/telegram/TelegramScraper.js`
 - `platforms/telegram/TelegramMessageParser.js`
+- `platforms/telegram/TelegramLogin.js`
+- `platforms/telegram/sessionEnv.js`
 
 Telegram uses an authenticated GramJS/MTProto client configured by
 `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, and `TELEGRAM_SESSION`. The integration
 uses polling only; the listener/event-bus mode from the source modules is not
 part of EANyra.
+
+The separate `login:telegram` CLI uses QR login by default through
+`signInUserWithQrCode`, with automatic QR refresh and a hidden 2FA prompt.
+Phone/code login is available with `--phone`. Login and collection share the
+same device settings through `createMTProtoClient`; login starts with an empty
+session. After authorization is confirmed, the session is saved atomically to
+the root `.env`, preserving unrelated values. Login never prints the session.
+Cancellation and failures disconnect and destroy the client.
 
 Collection behavior:
 
@@ -314,8 +331,8 @@ erDiagram
 
 #### `accounts`
 
-Stores monitored accounts. `username` is globally unique in the current schema,
-not unique per platform.
+Stores monitored accounts. `(platform, username)` is unique, so the same
+username can be monitored on different platforms. Config is validated before sync.
 
 Important fields: `username`, `display_name`, `platform`, `is_active`,
 `is_archived`, `last_scraped_at`.
@@ -376,10 +393,10 @@ JSON-backed `tech_stack`, `links`, `content_angles`, `posting_rules`, and
 `UserContextRepository.sync()` reads:
 
 ```text
-src/context/voice.yaml
-src/context/bio.yaml
-src/context/platforms.yaml
-src/context/projects/*.yaml
+instance/context/voice.yaml
+instance/context/bio.yaml
+instance/context/platforms.yaml
+instance/context/projects/*.yaml
 ```
 
 Top-level files are upserted into `user_context`. Each project is upserted into
@@ -411,8 +428,14 @@ Default behavior:
 - include all never-exported records plus recent records in a 7-day window;
 - exclude reposts;
 - cap posts and signals at 100 each;
-- write to `data/exports/export-<timestamp>.md`;
+- write to `instance/data/exports/export-<timestamp>.md`;
 - mark newly included posts and signals with `exported_at`.
+
+`--platform <name>` selects one publishing platform. `--platforms <list>`
+selects several comma-separated platforms, for example
+`--platforms twitter,telegram`. Both options filter posts and the corresponding
+bio/platform-rule context. Voice, active projects, and signals remain shared
+across platform-filtered exports.
 
 `used_for_content` is separate and is set only after confirmed publication
 based on a signal or other source record.
@@ -425,9 +448,10 @@ Use `--no-mark` for a read-only export.
 
 ## MCP Layer
 
-The MCP layer intentionally uses direct `sqlite3` queries instead of Sequelize.
-This keeps the agent-facing process lightweight and independent from CLI
-bootstrap/schema synchronization.
+The MCP query layer uses direct `sqlite3` queries instead of Sequelize.
+Collection runs in a separate worker that initializes Sequelize, migrates the
+schema, and invokes the same orchestrator used by the CLI. A file lock for each
+database prevents overlapping CLI, cron, and MCP collection.
 
 Intended tools:
 
@@ -442,11 +466,30 @@ Intended tools:
 | `signals_get` | Query content signals |
 | `signals_mark_used` | Mark signals as used |
 | `scraper_status` | Read collection run health/history |
+| `scraper_run` | Start a background collection for all sources, a platform, or one account |
+| `scraper_job_get` | Read the background job outcome |
+| `telegram_messages_get` | Read stored Telegram messages, including forwards/replies, with an insertion cursor |
+| `telegram_publisher_info` | Identify the configured publishing bot without sending |
+| `telegram_publish_targets` | List explicitly enabled publication channels |
+| `telegram_post_prepare` | Persist an exact immutable publication draft |
+| `telegram_post_publish` | Claim a draft and publish once with bot or explicit MTProto transport |
+| `telegram_post_get` | Read durable publication state and receipt |
 
 Supported transports:
 
 - `stdio`, default, for local MCP clients;
-- `http`, Streamable HTTP on `/mcp`, with `/health`.
+- `http`, Streamable HTTP on `/mcp`, with `/health`, restricted to loopback.
+
+Each HTTP session has its own MCP server, sharing one collection job manager.
+Telegram publishing runs in isolated request workers, keeping all runtime logging
+off MCP stdout. `telegram_outbox` stores the request ID, exact draft and content
+hash, claim state and receipt. Bot API is the default publishing transport;
+historical collection continues to use MTProto. Local allowlists and Telegram
+channel admin rights are checked before claiming a draft. Uncertain delivery
+never automatically resets to draft or resends.
+Browser origins are rejected. Job history is bounded and process-local; run
+history is persisted in SQLite. `core/mcp/start.js` loads project-relative paths
+consistently even if the MCP client starts in another working directory.
 
 MCP paths, transport settings, routes, and query defaults come from
 `src/config/app.config.js`.
@@ -475,7 +518,7 @@ Major configuration objects:
 - `TELEGRAM`
 - `SUPPORTED_PLATFORMS`
 
-The actual account list is separate in `src/config/accounts.json`.
+The actual account list is separate in `instance/accounts.json`.
 
 ## Extension Guide
 

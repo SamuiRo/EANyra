@@ -33,6 +33,9 @@ import { SignalRepository }     from '../teapot/repositories/SignalRepository.js
 import { ScraperRunRepository } from '../teapot/repositories/ScraperRunRepository.js';
 import { SCRAPER, GITHUB, LINKEDIN, TELEGRAM } from '../../config/app.config.js';
 import { print, sleep }         from '../../shared/utils.js';
+import { SUPPORTED_PLATFORMS } from '../../config/app.config.js';
+import { normalizeAccount } from '../../config/accountConfig.js';
+import { acquireScrapeLock } from './ScrapeLock.js';
 
 export class ScraperOrchestrator {
   /**
@@ -57,17 +60,34 @@ export class ScraperOrchestrator {
    *
    * @param {{ platform?: string }} [opts]
    */
-  async run({ platform } = {}) {
-    const scraperRun = await this.scraperRunRepo.start();
+  async run({ platform, account } = {}) {
+    if (platform && !SUPPORTED_PLATFORMS.includes(platform)) throw new Error(`Unknown platform: ${platform}`);
+    if (account && !platform) throw new Error('A platform is required when selecting an account.');
+    const username = account ? normalizeAccount(account, platform) : null;
+    const release = await acquireScrapeLock();
+    let scraperRun;
+    try {
+      scraperRun = await this.scraperRunRepo.start();
+      await this.#runAccounts(scraperRun, { platform, username });
+      return scraperRun.toJSON();
+    } catch (error) {
+      if (scraperRun) await this.scraperRunRepo.fail(scraperRun, error);
+      throw error;
+    } finally {
+      await release();
+    }
+  }
+
+  async #runAccounts(scraperRun, { platform, username }) {
 
     await this.accountRepo.syncFromConfig();
     const allActive = await this.accountRepo.findAllActive();
 
-    const accounts = platform
-      ? allActive.filter(a => a.platform === platform)
-      : allActive;
+    const accounts = allActive.filter(a =>
+      (!platform || a.platform === platform) && (!username || a.username === username));
 
     if (!accounts.length) {
+      if (username) throw new Error(`No active configured account: ${platform}/${username}`);
       const reason = platform
         ? `No active accounts for platform "${platform}".`
         : 'No active accounts found — nothing to scrape.';
@@ -122,8 +142,11 @@ export class ScraperOrchestrator {
         }
       }
     } finally {
-      if (this.#activeBrowser) await this.#activeBrowser.close();
-      if (this.#activeTelegramScraper) await this.#activeTelegramScraper.disconnect();
+      try {
+        if (this.#activeBrowser) await this.#activeBrowser.close();
+      } finally {
+        if (this.#activeTelegramScraper) await this.#activeTelegramScraper.disconnect();
+      }
     }
 
     if (failed.length === 0) {
@@ -202,7 +225,7 @@ export class ScraperOrchestrator {
       case 'github': {
         if (!GITHUB.token) {
           throw new Error(
-            'GITHUB_TOKEN is not set. Add it to .env — see .env.example for details.',
+            'GITHUB_TOKEN is not set. Add it to .env — see instance_example/.env.example for details.',
           );
         }
         const readmeShas  = await this.signalRepo.getGithubReadmeShas(account.username);

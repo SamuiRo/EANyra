@@ -166,7 +166,7 @@ export const postTools = [
                 SELECT p2.id
                 FROM   posts p2
                 JOIN   accounts a2 ON a2.id = p2.account_id
-                WHERE  ${where}
+                WHERE  ${where.replace(/\bp\./g, 'p2.').replace(/\ba\./g, 'a2.')}
                 ORDER  BY p2.likes + COALESCE(p2.reposts, 0) DESC
                 LIMIT  ?
               )
@@ -175,13 +175,14 @@ export const postTools = [
                 SELECT p3.id
                 FROM   posts p3
                 JOIN   accounts a3 ON a3.id = p3.account_id
-                WHERE  ${where}
+                WHERE  ${where.replace(/\bp\./g, 'p3.').replace(/\ba\./g, 'a3.')}
                 ORDER  BY p3.posted_at DESC
                 LIMIT  ?
               )
             )
           ORDER  BY p.posted_at DESC
-        `, [...params, ...params, half, ...params, half]);
+          LIMIT ?
+        `, [...params, ...params, half, ...params, half, cap]);
       } else {
         rows = await query(`
           SELECT ${SELECT}

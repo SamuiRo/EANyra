@@ -15,6 +15,16 @@ import { EXPORT } from '../../../config/app.config.js';
 // them here to avoid double-loading.
 const TOP_LEVEL_CONTEXT_KEYS = ['voice', 'bio', 'platforms'];
 
+function selectPlatformEntries(value, platforms) {
+  if (!value || !platforms?.length) return value;
+
+  return Object.fromEntries(
+    platforms
+      .filter(platform => Object.hasOwn(value, platform))
+      .map(platform => [platform, value[platform]]),
+  );
+}
+
 export class ExportRepository {
   /**
    * @param {{
@@ -42,7 +52,7 @@ export class ExportRepository {
    * project.* keys are intentionally excluded here — projects come from
    * the Project model so we get proper structured objects with all fields.
    */
-  async getContext() {
+  async getContext({ platforms } = {}) {
     const rows = await this.UserContext.findAll({
       where: { key: { [Op.in]: TOP_LEVEL_CONTEXT_KEYS } },
     });
@@ -51,6 +61,9 @@ export class ExportRepository {
     for (const row of rows) {
       ctx[row.key] = row.value;
     }
+
+    ctx.bio = selectPlatformEntries(ctx.bio, platforms);
+    ctx.platforms = selectPlatformEntries(ctx.platforms, platforms);
 
     // Active projects — full structured objects
     const projects = await this.Project.findAll({
@@ -82,14 +95,27 @@ export class ExportRepository {
    *   - Excludes reposts — original content only
    *   - `unusedOnly` flag restricts to never-exported posts only
    *
-   * @param {{ days?: number, unusedOnly?: boolean, platform?: string }} opts
+   * @param {{
+   *   days?: number,
+   *   unusedOnly?: boolean,
+   *   platform?: string,
+   *   platforms?: string[],
+   * }} opts
    * @returns {Promise<object[]>}
    */
-  async getPosts({ days = EXPORT.defaultDays, unusedOnly = false, platform } = {}) {
+  async getPosts({ days = EXPORT.defaultDays, unusedOnly = false, platform, platforms } = {}) {
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1_000);
     const where  = { is_repost: false };
 
-    if (platform) where.platform = platform;
+    const selectedPlatforms = [...new Set(
+      platforms?.length ? platforms : (platform ? [platform] : []),
+    )];
+
+    if (selectedPlatforms.length === 1) {
+      [where.platform] = selectedPlatforms;
+    } else if (selectedPlatforms.length > 1) {
+      where.platform = { [Op.in]: selectedPlatforms };
+    }
 
     if (unusedOnly) {
       where.exported_at = null;

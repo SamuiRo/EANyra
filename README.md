@@ -51,11 +51,10 @@ signals. Twitter, LinkedIn, and Telegram publications are posts.
 
 ```bash
 npm install
-cp .env.example .env
-cp src/config/accounts.json.example src/config/accounts.json
+npm run instance:init
 ```
 
-Edit `.env` and `src/config/accounts.json`, then initialize the data sources you
+Edit `.env` and `instance/accounts.json`, then initialize the data sources you
 need:
 
 ```bash
@@ -65,7 +64,7 @@ npm run import-cookies -- path/to/cookies.json
 # Best-effort alternative; X may reject automated-browser login
 npm run login
 
-# LinkedIn only: place Shares.csv in data/imports/
+# LinkedIn only: place Shares.csv in instance/data/imports/
 
 # Telegram only: configure TELEGRAM_API_ID / TELEGRAM_API_HASH, then create a session
 npm run login:telegram
@@ -73,7 +72,7 @@ npm run login:telegram
 # Collect all configured platforms once
 npm run scrape
 
-# Sync author context from src/context/*.yaml into SQLite
+# Sync author context from instance/context/*.yaml into SQLite
 npm run context:sync
 
 # Generate a Markdown context export without marking records as used
@@ -83,16 +82,23 @@ npm run export:dry
 npm start
 ```
 
-Windows PowerShell equivalents for the initial copies:
+The same commands work in Windows PowerShell. When upgrading an existing
+checkout with settings under `src/` and root `.env`/`data/`, stop the daemon
+and run migration **before** initializing a new instance:
 
 ```powershell
-Copy-Item .env.example .env
-Copy-Item src/config/accounts.json.example src/config/accounts.json
+npm run instance:migrate
 ```
 
 ## Account Configuration
 
-`src/config/accounts.json` is the input list for monitored accounts. It is
+The root `.env` contains credentials and runtime settings. Editable accounts,
+context and data live in `instance/`: `accounts.json`, `context/`, and `data/`.
+Source code contains no instance-specific files.
+See [Instance layout and migration](docs/INSTANCE_GUIDE.md) for the complete
+structure, path rules, and selecting another instance with `INSTANCE_DIR`.
+
+`instance/accounts.json` is the input list for monitored accounts. It is
 gitignored because it commonly contains personal account choices.
 
 ```json
@@ -145,7 +151,7 @@ npm run scrape:twitter
 
 Export the `x.com` cookies from your normal browser and import them with
 `npm run import-cookies -- <file>`. The cookie file must contain `auth_token`.
-Session data is stored in `data/nyra/`. A gitignored fallback copy is stored at
+Session data is stored in `instance/data/nyra/`. A gitignored fallback copy is stored at
 `BROWSER_COOKIES_PATH` and restored automatically if X clears the cookie from
 the persistent browser profile. Re-import only when the fallback token itself
 is no longer accepted by X.
@@ -184,7 +190,7 @@ in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ### LinkedIn
 
-Request a LinkedIn data export and place these files in `data/imports/`:
+Request a LinkedIn data export and place these files in `instance/data/imports/`:
 
 ```text
 Shares.csv     required for posts
@@ -210,8 +216,25 @@ TELEGRAM_API_HASH=your_api_hash
 TELEGRAM_SESSION=your_saved_string_session
 ```
 
-If you do not have a session yet, run `npm run login:telegram` and save the
-printed session string as `TELEGRAM_SESSION`.
+Run `npm run login:telegram` for QR login, following the same GramJS flow as
+Inemuri. On your phone, open Telegram > Settings > Devices > Link Desktop Device
+and scan the QR displayed in the terminal. The QR refreshes automatically; no
+SMS or verification code is required. If 2FA is enabled, enter its password in
+the terminal's hidden prompt.
+
+After Telegram confirms authorization, the command saves `TELEGRAM_SESSION`
+directly to the root `.env` without printing it or changing other keys. Restart
+running MCP/daemon processes to load the saved session. Run this command in an
+interactive terminal; Ctrl+C cancels login and closes the connection.
+
+Phone/code login remains available:
+
+```powershell
+npm run login:telegram -- --phone
+```
+
+Both login methods require your own `TELEGRAM_API_ID` and `TELEGRAM_API_HASH`.
+Bot API posting does not require this user session.
 
 Configure channel usernames in `accounts.json` without `@`:
 
@@ -249,7 +272,8 @@ Use `npm run nyra -- <command>` when the `eanyra` binary is not globally linked.
 | `npm run export` | Generate a Markdown content export |
 | `npm run export:dry` | Generate an export without marking records used |
 | `npm run login` | Best-effort interactive Twitter/X login |
-| `npm run login:telegram` | Generate a Telegram MTProto session string |
+| `npm run login:telegram` | QR login and automatic session save to root `.env` |
+| `npm run login:telegram -- --phone` | Alternative login by phone and verification code |
 | `npm run import-cookies -- <file>` | Recommended: import browser cookies into the persistent session |
 
 Important export options:
@@ -258,29 +282,41 @@ Important export options:
 |---|---|
 | `--days <n>` | Date window for recent records; default `7` |
 | `--sections <list>` | Any of `context,projects,posts,signals` |
-| `--platform <name>` | Filter exported posts by platform |
+| `--platform <name>` | Filter posts, bio, and platform rules by one platform |
+| `--platforms <list>` | Filter posts, bio, and platform rules by a comma-separated platform list |
 | `--unused-only` | Include only records not exported before |
 | `--no-mark` | Do not update `exported_at` timestamps |
 | `--out <path>` | Write to a custom file |
 
-Exports are written to `data/exports/` by default.
+Exports are written to `instance/data/exports/` by default.
 For custom options, use `node src/core/cli/index.js export [options]` or the
 globally linked `eanyra export [options]` command.
+
+For example, generate one export for Twitter/X and Telegram:
+
+```bash
+npm run nyra -- export --platforms twitter,telegram
+```
+
+Platform filters do not remove voice, active projects, or signals. Those are
+shared source material rather than platform-specific publishing records.
 
 ## Author Context
 
 Context files are the editable source of truth:
 
 ```text
-src/context/
+instance/context/
   voice.yaml
   bio.yaml
   platforms.yaml
   projects/*.yaml
 ```
 
-Only `.example.yaml` files and the project template are committed. Create the
-real files from those examples, edit them, then sync:
+All real instance files are gitignored. Versioned examples and the project
+template live in `instance_example/`; `npm run instance:init` copies missing
+files without overwriting your edits. Edit the files in `instance/context/`,
+then sync:
 
 ```bash
 npm run nyra -- context sync
@@ -291,13 +327,15 @@ both `projects` and `user_context`.
 
 See the [Author Context Guide](docs/CONTEXT_GUIDE.md) for every supported field,
 writing guidance, sync semantics, and current validation limitations.
+To delegate creation of one project file to an AI agent, give it the
+[AI Project Context Instructions](docs/PROJECT_CONTEXT_PROMPT.md).
 
 ## MCP Server
 
 The intended MCP entry point is:
 
 ```bash
-node src/core/mcp/server.js
+node src/core/mcp/start.js
 ```
 
 It supports local stdio and Streamable HTTP transports:
@@ -314,7 +352,22 @@ The registered MCP API is designed to expose:
 - `context_get`, `export_get`;
 - `posts_get`, `posts_search`, `posts_stats`, `accounts_list`;
 - `signals_get`, `signals_mark_used`;
-- `scraper_status`.
+- `scraper_status`;
+- `scraper_run`, `scraper_job_get` for background collection;
+- `telegram_messages_get` for channel messages, including forwards and replies;
+- `telegram_publisher_info`, `telegram_publish_targets`;
+- `telegram_post_prepare`, `telegram_post_publish`, `telegram_post_get` for
+  explicit Telegram publishing with durable draft and delivery state.
+
+Configuration loads `.env` and resolves relative runtime paths from
+the selected instance even when an MCP client starts elsewhere. Use `npm run mcp` for a
+terminal launch. See [MCP and multiple accounts](docs/MCP_GUIDE.md) for connection
+configuration and agent workflows, and [the implementation audit](docs/REVIEW_2026-10-24.md)
+for remaining limitations.
+
+HTTP transport is restricted to loopback addresses and rejects browser origins.
+Each HTTP session has its own MCP server instance. Remote HTTP deployment needs
+an authenticated transport design before it can be enabled.
 
 The server reads all runtime paths, transport settings, routes, and query limits
 from `src/config/app.config.js`.
@@ -322,10 +375,12 @@ from `src/config/app.config.js`.
 ## Configuration
 
 Runtime configuration is centralized in `src/config/app.config.js`.
-`.env.example` documents every supported environment variable. The groups are:
+`instance_example/.env.example` documents every supported environment variable. The groups are:
 
 - general: `NODE_ENV`;
-- runtime paths: `DATA_DIR`, `ACCOUNTS_CONFIG_PATH`, `CONTEXT_DIR`,
+- instance selection: `INSTANCE_DIR` in root `.env` or the process environment
+  (default `<project>/instance`);
+- runtime paths relative to the instance: `DATA_DIR`, `ACCOUNTS_CONFIG_PATH`, `CONTEXT_DIR`,
   `EXPORTS_DIR`;
 - scheduler: `CRON_SCHEDULE`, `RUN_ON_STARTUP`;
 - database: `DB_PATH`, `DB_POOL_*`;
@@ -340,15 +395,21 @@ Runtime configuration is centralized in `src/config/app.config.js`.
 - LinkedIn: `LINKEDIN_IMPORTS_DIR`, `LINKEDIN_SHARES_FILE`,
   `LINKEDIN_PROFILE_FILE`;
 - Telegram: `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, `TELEGRAM_SESSION`,
+  `TELEGRAM_PUBLISH_TRANSPORT` (default `bot`), `TELEGRAM_BOT_TOKEN`,
   `TELEGRAM_FETCH_LIMIT`, `TELEGRAM_INITIAL_POSTS_PER_ACCOUNT`,
   `TELEGRAM_MAX_PAGES_PER_ACCOUNT`, and overlap options.
 
 ## Documentation
 
+- [Instance layout](docs/INSTANCE_GUIDE.md): editable files, initialization,
+  migration from the legacy layout, and isolated instance selection.
+
 - [Architecture](docs/ARCHITECTURE.md): module boundaries, runtime flows, data
   model, and extension points.
 - [Author Context Guide](docs/CONTEXT_GUIDE.md): how to write and synchronize
   voice, biography, platform, and project YAML files.
+- [AI Project Context Instructions](docs/PROJECT_CONTEXT_PROMPT.md): a
+  self-contained handoff for creating or updating one verified project YAML.
 - [Product Vision](docs/PRODUCT_VISION.md): durable product purpose, boundaries,
   and target agent workflows.
 - [Roadmap](docs/ROADMAP.md): confirmed defects, risks, and planned
@@ -361,8 +422,10 @@ Runtime configuration is centralized in `src/config/app.config.js`.
 
 ## Development Notes
 
-There is a small `node:test` suite for Twitter GraphQL parsing. Run it with
-`npm test`. There is currently no lint script or versioned migration command.
+The `node:test` suite covers parsers, repositories, migrations, export behavior,
+account validation, collection jobs, and MCP stdio/HTTP integration. Run it with
+`npm test`; HTTP integration needs local loopback networking. There is currently
+no lint script or separate versioned migration command.
 JavaScript syntax can be checked with:
 
 ```powershell
@@ -372,7 +435,7 @@ foreach ($file in $files) { node --check $file }
 
 EANyra uses Sequelize with SQLite and applies versioned schema migrations during
 CLI startup. Runtime startup does not call `sequelize.sync()`. Back up
-`data/pot.sqlite` before schema-level development.
+`instance/data/pot.sqlite` before schema-level development.
 
 ## License
 

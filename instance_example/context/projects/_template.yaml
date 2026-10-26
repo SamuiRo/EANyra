@@ -1,0 +1,33 @@
+# Template for a real project context file.
+# Copy this file to <slug>.yaml. The filename and slug must match exactly.
+# Before filling it, follow docs/PROJECT_CONTEXT_PROMPT.md.
+
+slug: "my-project"           # lowercase kebab-case; must match my-project.yaml
+name: "Project Name"
+status: "active"             # active | paused | archived
+archive: false               # true overrides status and archives the project
+
+description: |
+  Explain what the project is, who it serves, and the problem it solves.
+  Describe how it works, its current stage, and any important constraints.
+  Include only facts verified from the project or confirmed by the author.
+
+tech_stack:
+  - "Primary runtime or language"
+  - "Important framework, storage, or protocol"
+
+links:
+  github: null               # verified URL or null
+  website: null              # verified URL or null
+
+# Add 5-10 concrete, evidence-based post hooks. Each item should name a
+# decision, tradeoff, problem, result, constraint, or lesson from this project.
+content_angles:
+  - "Why the project chose <verified technology> for <specific constraint>"
+  - "How <specific implementation> solved <specific problem>"
+  - "What changed after <specific mistake, test, migration, or release>"
+
+# Add 2-6 rules that are specific to publishing about this project.
+posting_rules:
+  - "Do not claim results or metrics that are not present in project evidence"
+  - "Prefer a concrete implementation detail over a generic feature announcement"

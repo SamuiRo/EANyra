@@ -1,18 +1,18 @@
 /**
  * src/platforms/linkedin/LinkedinImporter.js
  *
- * Imports LinkedIn posts from CSV exports placed in data/imports/.
+ * Imports LinkedIn posts from CSV exports placed in instance/data/imports/.
  * Returns RawPost[] compatible with the unified PostRepository.
  *
  * Expected files (all optional — missing files are skipped with a warning):
- *   data/imports/Shares.csv   — published posts
- *   data/imports/Profile.csv  — account profile metadata
+ *   instance/data/imports/Shares.csv   — published posts
+ *   instance/data/imports/Profile.csv  — account profile metadata
  *
  * How to get these files:
  *   1. Go to linkedin.com → Me → Settings & Privacy → Data Privacy
  *   2. "Get a copy of your data" → select "Posts" (and optionally "Profile")
  *   3. LinkedIn emails a download link within ~10 minutes
- *   4. Unzip and place Shares.csv (and Profile.csv) into data/imports/
+ *   4. Unzip and place Shares.csv (and Profile.csv) into instance/data/imports/
  *   5. Run: eanyra scrape linkedin
  */
 
@@ -24,7 +24,7 @@ import { print }                             from '../../shared/utils.js';
 
 export class LinkedinImporter {
   /**
-   * @param {string} importsDir  Absolute path to the imports folder (data/imports/)
+   * @param {string} importsDir  Absolute path to the imports folder (instance/data/imports/)
    */
   constructor(importsDir) {
     this.importsDir = importsDir;

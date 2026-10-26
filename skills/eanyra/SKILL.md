@@ -37,7 +37,7 @@ Add this to your OpenClaw MCP configuration (`~/.openclaw/config.json`):
   "mcpServers": {
     "eanyra": {
       "command": "node",
-      "args": ["/absolute/path/to/EANyra/src/core/mcp/server.js"],
+      "args": ["/absolute/path/to/EANyra/src/core/mcp/start.js"],
       "env": {
         "DB_PATH": "${DB_PATH}"
       }
@@ -46,7 +46,7 @@ Add this to your OpenClaw MCP configuration (`~/.openclaw/config.json`):
 }
 ```
 
-`DB_PATH` must point to the SQLite file, typically `<project-root>/data/pot.sqlite`.
+`DB_PATH` must point to the SQLite file, typically `<project-root>/instance/data/pot.sqlite`.
 
 ---
 
@@ -207,7 +207,7 @@ Returns: username, display name, platform, last scrape time,
 
 ### `export_get` — full context in one call
 
-Returns the latest export Markdown file from `data/exports/`.
+Returns the latest export Markdown file from `instance/data/exports/`.
 Contains voice, platform rules, active projects, recent posts, and pending signals
 in one document — everything needed for a content session without multiple round-trips.
 

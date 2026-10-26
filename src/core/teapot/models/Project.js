@@ -1,7 +1,7 @@
 import { DataTypes } from 'sequelize';
 
 /**
- * Project — metadata for projects loaded from src/context/projects/*.yaml
+ * Project — metadata for projects loaded from instance/context/projects/*.yaml
  *
  * Fields:
  *   id               – auto-increment PK

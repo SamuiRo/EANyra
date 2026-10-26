@@ -36,4 +36,4 @@ existing local patterns unless a rule below explicitly replaces them.
 
 - Update relevant docs when commands, configuration, or runtime behavior
   changes.
-- Keep examples executable and consistent with `.env.example`.
+- Keep examples executable and consistent with `instance_example/.env.example`.

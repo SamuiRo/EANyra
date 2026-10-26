@@ -1,14 +1,9 @@
-import 'dotenv/config';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { PROJECT_ROOT, INSTANCE_DIR, INSTANCE_ENV_PATH, instancePath as envPath } from './instance.js';
 
 import pkg from '../../package.json' with { type: 'json' };
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename);
-
-/** Absolute path to the project root (two levels up from src/config/) */
-export const PROJECT_ROOT = path.resolve(__dirname, '../../');
+export { PROJECT_ROOT, INSTANCE_DIR, INSTANCE_ENV_PATH };
 
 const DEFAULT_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
@@ -26,22 +21,19 @@ function envBoolean(name, fallback = false) {
   return raw.toLowerCase() === 'true';
 }
 
-function envPath(name, fallback) {
-  const raw = process.env[name];
-  return raw ? path.resolve(process.cwd(), raw) : fallback;
-}
-
 export const NODE_ENV = process.env.NODE_ENV ?? 'production';
 export const PKG      = pkg;
 
 export const SUPPORTED_PLATFORMS = ['twitter', 'github', 'linkedin', 'telegram'];
 
-const DATA_DIR = envPath('DATA_DIR', path.join(PROJECT_ROOT, 'data'));
+const DATA_DIR = envPath('DATA_DIR', path.join(INSTANCE_DIR, 'data'));
 
 export const PATHS = {
+  instanceDir:    INSTANCE_DIR,
+  envFile:        INSTANCE_ENV_PATH,
   dataDir:         DATA_DIR,
-  accountsConfig: envPath('ACCOUNTS_CONFIG_PATH', path.join(PROJECT_ROOT, 'src', 'config', 'accounts.json')),
-  contextDir:      envPath('CONTEXT_DIR', path.join(PROJECT_ROOT, 'src', 'context')),
+  accountsConfig: envPath('ACCOUNTS_CONFIG_PATH', path.join(INSTANCE_DIR, 'accounts.json')),
+  contextDir:      envPath('CONTEXT_DIR', path.join(INSTANCE_DIR, 'context')),
   exportsDir:      envPath('EXPORTS_DIR', path.join(DATA_DIR, 'exports')),
 };
 
@@ -67,6 +59,7 @@ export const SCHEDULER = {
 
 export const DB = {
   storagePath: envPath('DB_PATH', path.join(DATA_DIR, 'pot.sqlite')),
+  busyTimeoutMs: envNumber('DB_BUSY_TIMEOUT_MS', 5000),
   pool: {
     max:     envNumber('DB_POOL_MAX', 5),
     min:     envNumber('DB_POOL_MIN', 0),
@@ -172,7 +165,7 @@ export const GITHUB = {
 export const LINKEDIN = {
   /**
    * Directory where LinkedIn CSV export files are placed.
-   * Default: <project_root>/data/imports/
+   * Default: <instance>/data/imports/
    *
    * How to get the files:
    *   linkedin.com → Me → Settings & Privacy → Data Privacy
@@ -189,6 +182,8 @@ export const LINKEDIN = {
 };
 
 export const TELEGRAM = {
+  publishTransport: process.env.TELEGRAM_PUBLISH_TRANSPORT ?? 'bot',
+  botToken:         process.env.TELEGRAM_BOT_TOKEN ?? '',
   apiId:            envNumber('TELEGRAM_API_ID', 0),
   apiHash:          process.env.TELEGRAM_API_HASH ?? '',
   session:          process.env.TELEGRAM_SESSION ?? '',

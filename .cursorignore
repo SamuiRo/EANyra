@@ -10,5 +10,6 @@
 *.db
 /cookies_export.json
 /data
+/instance/data/
 /test
 /nyra_test_docs

@@ -7,7 +7,8 @@
  *   eanyra export                           # all sections, last 7 days
  *   eanyra export --days 14                 # last 14 days
  *   eanyra export --sections posts,signals  # specific sections
- *   eanyra export --platform twitter        # only twitter posts
+ *   eanyra export --platform twitter        # only Twitter content
+ *   eanyra export --platforms twitter,telegram
  *   eanyra export --unused-only             # only posts/signals not yet exported
  *   eanyra export --no-mark                 # don't stamp exported_at
  *   eanyra export --out ./my-export.md      # custom output path
@@ -26,6 +27,41 @@ import { print }            from '../../shared/utils.js';
 const ALL_SECTIONS = EXPORT.sections;
 const DEFAULT_OUT  = PATHS.exportsDir;
 
+export function parsePlatformList(value) {
+  const requested = [...new Set(
+    value
+      .split(',')
+      .map(platform => platform.trim().toLowerCase())
+      .filter(Boolean),
+  )];
+
+  if (!requested.length) {
+    throw new Error('--platforms must contain at least one platform');
+  }
+
+  const invalid = requested.filter(platform => !/^[a-z0-9][a-z0-9._-]*$/.test(platform));
+  if (invalid.length) {
+    throw new Error(`Invalid platform slug(s): ${invalid.join(', ')}`);
+  }
+
+  return requested;
+}
+
+function parseSinglePlatform(value) {
+  const requested = parsePlatformList(value);
+  if (requested.length !== 1) {
+    throw new Error('--platform accepts one value; use --platforms for a comma-separated list');
+  }
+  return requested[0];
+}
+
+export function resolvePlatforms({ platform, platforms } = {}) {
+  return [...new Set([
+    ...(platform ? [platform] : []),
+    ...(platforms ?? []),
+  ])];
+}
+
 /**
  * @param {import('commander').Command} program
  * @param {object} models   — Sequelize model map from registerModels()
@@ -38,7 +74,8 @@ export function registerExportCommands(program, models) {
       `  eanyra export                        → all sections, last ${EXPORT.defaultDays} days\n` +
       '  eanyra export --days 14              → last 14 days\n' +
       '  eanyra export --sections posts,signals\n' +
-      '  eanyra export --platform twitter     → only twitter posts\n' +
+      '  eanyra export --platform twitter     → only Twitter content\n' +
+      '  eanyra export --platforms twitter,telegram\n' +
       '  eanyra export --unused-only          → only posts/signals not yet exported\n' +
       '  eanyra export --no-mark              → skip recording export timestamps',
     )
@@ -66,13 +103,19 @@ export function registerExportCommands(program, models) {
     )
     .option(
       '--platform <name>',
-      'Filter posts by platform (twitter, linkedin, telegram, …)',
+      'Filter content by one platform (twitter, linkedin, telegram)',
+      parseSinglePlatform,
+    )
+    .option(
+      '--platforms <list>',
+      'Filter content by a comma-separated platform list (twitter,telegram)',
+      parsePlatformList,
     )
     .option('--unused-only', 'Only include posts/signals that have not been exported before', false)
     .option('--no-mark',     'Do not record exported_at timestamps (dry-run mode)', false)
     .option(
       '--out <path>',
-      'Output file path. Defaults to data/exports/export-YYYY-MM-DD.md',
+      'Output file path. Defaults to instance/data/exports/export-YYYY-MM-DD.md',
     )
     .action(async (opts) => {
       await runExport(models, opts);
@@ -86,12 +129,18 @@ async function runExport(models, opts) {
     days       = EXPORT.defaultDays,
     sections   = ALL_SECTIONS,
     platform,
+    platforms,
     unusedOnly = false,
     mark       = true,
     out,
   } = opts;
 
-  print(`Starting export — sections: [${sections.join(', ')}], days: ${days}`, 'system');
+  const selectedPlatforms = resolvePlatforms({ platform, platforms });
+
+  const platformLabel = selectedPlatforms.length
+    ? `, platforms: [${selectedPlatforms.join(', ')}]`
+    : '';
+  print(`Starting export — sections: [${sections.join(', ')}], days: ${days}${platformLabel}`, 'system');
 
   const repo        = new ExportRepository(models);
   const generatedAt = new Date();
@@ -100,11 +149,11 @@ async function runExport(models, opts) {
 
   const [context, posts, signals] = await Promise.all([
     (sections.includes('context') || sections.includes('projects'))
-      ? repo.getContext()
+      ? repo.getContext({ platforms: selectedPlatforms })
       : Promise.resolve({}),
 
     sections.includes('posts')
-      ? repo.getPosts({ days, unusedOnly, platform })
+      ? repo.getPosts({ days, unusedOnly, platforms: selectedPlatforms })
       : Promise.resolve([]),
 
     sections.includes('signals')
@@ -125,6 +174,7 @@ async function runExport(models, opts) {
     signals,
     days,
     sections,
+    platforms: selectedPlatforms,
     generatedAt,
   });
 

@@ -1,4 +1,5 @@
 import { DataTypes, QueryTypes } from 'sequelize';
+import { migrateAccountIdentity } from './migrateAccountIdentity.js';
 
 const MIGRATION_TABLE = 'schema_migrations';
 
@@ -42,6 +43,24 @@ const migrations = [
       }
     },
   },
+  {
+    name: '20261024_telegram_outbox',
+    async up({ queryInterface, transaction }) {
+      await createTableIfMissing(queryInterface, 'telegram_outbox', {
+        request_id: { type: DataTypes.STRING(128), primaryKey: true, allowNull: false },
+        account: { type: DataTypes.STRING(128), allowNull: false },
+        text: { type: DataTypes.TEXT, allowNull: false },
+        content_hash: { type: DataTypes.STRING(64), allowNull: false },
+        random_id: { type: DataTypes.STRING(16), allowNull: false },
+        disable_preview: { type: DataTypes.BOOLEAN, allowNull: false },
+        status: { type: DataTypes.STRING(16), allowNull: false, defaultValue: 'draft' },
+        receipt: { type: DataTypes.TEXT, allowNull: true },
+        error: { type: DataTypes.TEXT, allowNull: true },
+        created_at: { type: DataTypes.DATE, allowNull: false },
+        updated_at: { type: DataTypes.DATE, allowNull: false },
+      }, transaction);
+    },
+  },
 ];
 
 export class SchemaMigrator {
@@ -74,6 +93,11 @@ export class SchemaMigrator {
       completed.push(migration.name);
     }
 
+    const identityMigration = '20261024_accounts_platform_username';
+    if (!applied.has(identityMigration)) {
+      await migrateAccountIdentity(this.sequelize, identityMigration);
+      completed.push(identityMigration);
+    }
     return completed;
   }
 
