@@ -104,8 +104,12 @@ test('orchestrator validates selection before opening a run', async () => {
 });
 
 test('selection merges one and several accounts into a normalized unique list', () => {
-  assert.deepEqual(normalizeSelection({ platform: 'twitter', account: '@First', accounts: ['second', 'first'] }),
-    { platform: 'twitter', accounts: ['second', 'first'] });
+  assert.deepEqual(normalizeSelection({ platform: 'twitter', account: '@First', accounts: ['second', 'twitter/first'] }),
+    { platform: 'twitter', accounts: ['twitter/second', 'twitter/first'] });
+  // A persona spans platforms: refs carry their own platform.
+  assert.deepEqual(normalizeSelection({ accounts: ['twitter/One', 'linkedin/two', 'telegram/@three'] }),
+    { platform: undefined, accounts: ['twitter/one', 'linkedin/two', 'telegram/three'] });
+  assert.throws(() => normalizeSelection({ platform: 'twitter', accounts: ['linkedin/two'] }), /not on the selected platform/);
   assert.deepEqual(normalizeSelection({ platform: 'twitter' }), { platform: 'twitter', accounts: undefined });
   assert.throws(() => normalizeSelection({ platform: 'twitter', accounts: ['bad name'] }), /Invalid twitter username/);
 });
@@ -136,7 +140,7 @@ test('MCP collection jobs report actual partial/failure outcomes and allow the n
     return child;
   } });
   const first = jobs.start({ platform: 'telegram', account: '@Example' });
-  assert.deepEqual(first.accounts, ['example']);
+  assert.deepEqual(first.accounts, ['telegram/example']);
   assert.throws(() => jobs.start(), /already running/);
   child.emit('message', { result: { status: 'partial', accounts_processed: 1 } });
   assert.equal(jobs.get(first.job_id).status, 'running');

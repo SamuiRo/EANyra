@@ -48,7 +48,7 @@ test('legacy migration preserves account/context/database bytes and credentials 
   const originalEnv = '# private settings\nGITHUB_TOKEN="fake-test-value"\nDATA_DIR=data\nDB_PATH=data/pot.sqlite\nCONTEXT_DIR=src/context\nACCOUNTS_CONFIG_PATH=src/config/accounts.json\nBROWSER_DATA_PATH=data/nyra\nBROWSER_COOKIES_PATH=data/cookies.json\nEXPORTS_DIR=data/exports\nLINKEDIN_IMPORTS_DIR=data/imports\n';
   const files = {
     '.env': originalEnv,
-    'src/config/accounts.json': '[{"username":"eclipsisaureum","platform":"telegram"}]',
+    'src/config/accounts.json': '[{"username":"example_channel","platform":"telegram"}]',
     'src/context/voice.yaml': 'tone: original\n',
     'src/context/projects/personal.yaml': 'name: personal\n',
     'data/pot.sqlite': Buffer.from([0, 1, 3, 8, 255]),

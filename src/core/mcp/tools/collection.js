@@ -1,12 +1,13 @@
 import { SUPPORTED_PLATFORMS, MCP } from '../../../config/app.config.js';
-import { normalizeAccount } from '../../../config/accountConfig.js';
+import { normalizeAccount, accountKey } from '../../../config/accountConfig.js';
+import { getPersona } from '../personas.js';
 import { query } from '../db.js';
 
 export function buildCollectionTools(jobs) {
   return [
     {
       name: 'scraper_run',
-      description: 'Start background collection of configured active accounts. Optionally select platform and one or several accounts. Returns job_id immediately; poll scraper_job_get, then query posts. Twitter profiles are collected sequentially with human-like pauses of several minutes, so a multi-profile Twitter job can take a long time. Does not publish or send messages. Concurrent collection is rejected.',
+      description: 'Start background collection of configured active accounts. Optionally select a persona (all its accounts across platforms), a platform, or one or several accounts. Returns job_id immediately; poll scraper_job_get, then query posts. Twitter profiles are collected sequentially with human-like pauses of several minutes, so a multi-profile Twitter job can take a long time. Does not publish or send messages. Concurrent collection is rejected.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -14,11 +15,23 @@ export function buildCollectionTools(jobs) {
           account: { type: 'string', minLength: 1, description: 'Configured username; requires platform.' },
           accounts: {
             type: 'array', items: { type: 'string', minLength: 1 },
-            description: 'Several configured usernames of the same platform; requires platform.',
+            description: 'Several configured accounts: usernames of platform, or "platform/username" refs across platforms.',
+          },
+          persona: {
+            type: 'string', minLength: 1,
+            description: 'Collect every account of this persona (combine with platform to limit it). Not combinable with account/accounts.',
           },
         },
       },
-      handler: args => jobs.start(args),
+      async handler({ persona, ...args } = {}) {
+        if (!persona) return jobs.start(args);
+        if (args.account || args.accounts) throw new Error('Use either persona or account/accounts, not both.');
+        const keys = (await getPersona(persona)).accounts
+          .filter(entry => !args.platform || entry.platform === args.platform)
+          .map(accountKey);
+        if (!keys.length) throw new Error(`Persona "${persona}" has no ${args.platform} accounts.`);
+        return { persona, ...jobs.start({ platform: args.platform, accounts: keys }) };
+      },
     },
     {
       name: 'scraper_job_get',

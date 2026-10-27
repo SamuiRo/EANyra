@@ -20,6 +20,7 @@ export async function initializeInstance({ projectRoot, instanceDir = path.join(
     ['context/bio.example.yaml', 'context/bio.yaml'],
     ['context/platforms.example.yaml', 'context/platforms.yaml'],
     ['context/projects/_template.yaml', 'context/projects/_template.yaml'],
+    ['context/personas/_template.yaml', 'context/personas/_template.yaml'],
   ];
   const created = [];
   for (const [source, destination] of copies) {

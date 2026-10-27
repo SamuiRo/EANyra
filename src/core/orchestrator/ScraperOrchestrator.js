@@ -36,7 +36,7 @@ import { SignalRepository }     from '../teapot/repositories/SignalRepository.js
 import { ScraperRunRepository } from '../teapot/repositories/ScraperRunRepository.js';
 import { SCRAPER, GITHUB, LINKEDIN, TELEGRAM } from '../../config/app.config.js';
 import { print, sleep }         from '../../shared/utils.js';
-import { normalizeSelection } from '../../config/accountConfig.js';
+import { normalizeSelection, accountKey } from '../../config/accountConfig.js';
 import { acquireScrapeLock } from './ScrapeLock.js';
 
 export class ScraperOrchestrator {
@@ -63,12 +63,12 @@ export class ScraperOrchestrator {
    * @param {{ platform?: string, account?: string, accounts?: string[] }} [opts]
    */
   async run(opts = {}) {
-    const { platform, accounts: usernames } = normalizeSelection(opts);
+    const { platform, accounts: targets } = normalizeSelection(opts);
     const release = await acquireScrapeLock();
     let scraperRun;
     try {
       scraperRun = await this.scraperRunRepo.start();
-      await this.#runAccounts(scraperRun, { platform, usernames });
+      await this.#runAccounts(scraperRun, { platform, targets });
       return scraperRun.toJSON();
     } catch (error) {
       if (scraperRun) await this.scraperRunRepo.fail(scraperRun, error);
@@ -78,18 +78,18 @@ export class ScraperOrchestrator {
     }
   }
 
-  async #runAccounts(scraperRun, { platform, usernames }) {
+  async #runAccounts(scraperRun, { platform, targets }) {
 
     await this.accountRepo.syncFromConfig();
     const allActive = await this.accountRepo.findAllActive();
 
     const accounts = allActive.filter(a =>
-      (!platform || a.platform === platform) && (!usernames || usernames.includes(a.username)));
+      (!platform || a.platform === platform) && (!targets || targets.includes(accountKey(a))));
 
     // Fail before collecting anything, so a typo does not cost a long run.
-    const missing = (usernames ?? []).filter(name => !accounts.some(a => a.username === name));
+    const missing = (targets ?? []).filter(key => !accounts.some(a => accountKey(a) === key));
     if (missing.length) {
-      throw new Error(`No active configured account: ${missing.map(name => `${platform}/${name}`).join(', ')}`);
+      throw new Error(`No active configured account: ${missing.join(', ')}`);
     }
 
     if (!accounts.length) {

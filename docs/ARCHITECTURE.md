@@ -457,7 +457,7 @@ Intended tools:
 
 | Tool | Purpose |
 |---|---|
-| `context_get` | Get all author context or one context key |
+| `context_get` | Get all author context, one context key, or the merged context of a persona/account |
 | `export_get` | Read the latest generated Markdown export |
 | `posts_get` | Query normalized published posts |
 | `posts_search` | Search normalized post text |

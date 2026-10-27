@@ -19,7 +19,7 @@ The latest full authenticated verification was scraper run `#17`:
 Opened Replies tab by clicking the profile navigation.
 Using Posts + Replies timeline.
 Stopping after 4 scroll(s) without new post IDs.
-Collected 25 post(s) from @starlithars
+Collected 25 post(s) from @example_profile
 (25 from GraphQL, 15 from DOM, 20 replies).
 ```
 

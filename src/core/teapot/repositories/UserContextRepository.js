@@ -3,6 +3,12 @@ import path  from 'node:path';
 import { Op } from 'sequelize';
 import { parse as parseYaml } from 'yaml';
 import { PATHS }              from '../../../config/app.config.js';
+import { validateAccounts }   from '../../../config/accountConfig.js';
+import {
+  parsePersona,
+  assertExclusiveMembership,
+  accountKey,
+} from '../../../config/personaConfig.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -19,13 +25,15 @@ import { PATHS }              from '../../../config/app.config.js';
  *   "bio"                 ← bio.yaml
  *   "platforms"           ← platforms.yaml
  *   "project.<slug>"      ← projects/<slug>.yaml  (one row per project)
+ *   "persona.<slug>"      ← personas/<slug>.yaml  (one row per persona)
  */
 export class UserContextRepository {
   /** @param {{ UserContext, Project }} models */
-  constructor({ UserContext, Project }, contextDir = PATHS.contextDir) {
+  constructor({ UserContext, Project }, contextDir = PATHS.contextDir, accountsConfigPath = PATHS.accountsConfig) {
     this.UserContext = UserContext;
     this.Project     = Project;
     this.contextDir  = contextDir;
+    this.accountsConfigPath = accountsConfigPath;
   }
 
   // ── Sync ──────────────────────────────────────────────────────────────────
@@ -45,6 +53,9 @@ export class UserContextRepository {
 
     // ── projects/*.yaml ──
     await this.#syncProjects(results, now);
+
+    // ── personas/*.yaml ──
+    await this.#syncPersonas(results, now);
 
     return results;
   }
@@ -184,5 +195,64 @@ export class UserContextRepository {
       });
       results.updated.push(`${key} (archived)`);
     }
+  }
+
+  async #syncPersonas(results, now) {
+    const personasDir = path.join(this.contextDir, 'personas');
+    const files = fs.existsSync(personasDir)
+      ? fs.readdirSync(personasDir)
+        .filter(f => f.endsWith('.yaml') && !f.startsWith('_') && !f.endsWith('.example.yaml'))
+      : [];
+
+    let configured;
+    try {
+      const entries = validateAccounts(JSON.parse(fs.readFileSync(this.accountsConfigPath, 'utf8')));
+      configured = new Set(entries.map(accountKey));
+    } catch (err) {
+      if (files.length) {
+        results.errors.push(`personas: cannot check accounts against ${this.accountsConfigPath}: ${err.message}`);
+        return;
+      }
+    }
+
+    // Validate every file first: membership must be exclusive across personas,
+    // so a single invalid file leaves all stored personas unchanged.
+    const personas = [];
+    const initialErrorCount = results.errors.length;
+    for (const file of files) {
+      try {
+        const data = parseYaml(fs.readFileSync(path.join(personasDir, file), 'utf8'));
+        personas.push(parsePersona(data, path.basename(file, '.yaml'), configured));
+      } catch (err) {
+        results.errors.push(`personas/${file}: ${err.message}`);
+      }
+    }
+    if (results.errors.length === initialErrorCount) {
+      try {
+        assertExclusiveMembership(personas);
+      } catch (err) {
+        results.errors.push(`personas: ${err.message}`);
+      }
+    }
+    if (results.errors.length > initialErrorCount) {
+      results.skipped.push('personas (validation errors; stored personas unchanged)');
+      return;
+    }
+
+    for (const persona of personas) {
+      await this.UserContext.upsert({ key: `persona.${persona.slug}`, value: persona, synced_at: now });
+      results.updated.push(`persona.${persona.slug}`);
+    }
+
+    // A deleted persona file removes the grouping; it holds no history.
+    const removed = await this.UserContext.destroy({
+      where: {
+        key: {
+          [Op.like]: 'persona.%',
+          [Op.notIn]: personas.map(persona => `persona.${persona.slug}`),
+        },
+      },
+    });
+    if (removed) results.updated.push(`${removed} removed persona(s)`);
   }
 }

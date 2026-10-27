@@ -16,17 +16,40 @@ export function normalizeAccount(username, platform) {
   return value;
 }
 
+/** "twitter/Name" or "@name" with an explicit platform → { platform, username } */
+export function parseAccountRef(ref, platform) {
+  if (typeof ref !== 'string' || !ref.trim()) throw new Error('Account reference must be a non-empty string.');
+  const [first, ...rest] = ref.trim().split('/');
+  const resolvedPlatform = rest.length ? first.toLowerCase() : platform;
+  if (!resolvedPlatform) throw new Error(`Account "${ref}" needs a platform, e.g. "twitter/${ref.replace(/^@/, '')}".`);
+  if (!SUPPORTED_PLATFORMS.includes(resolvedPlatform)) throw new Error(`Unsupported platform in account "${ref}".`);
+  const username = normalizeAccount(rest.length ? rest.join('/') : first, resolvedPlatform);
+  return { platform: resolvedPlatform, username };
+}
+
+export const accountKey = ({ platform, username }) => `${platform}/${username}`;
+
 /**
  * Validate a collection selection shared by CLI, MCP and the orchestrator.
- * `account` (one) and `accounts` (several) are merged into one normalized list.
+ * `account` (one) and `accounts` (several) are merged into one normalized list
+ * of "platform/username" keys. Entries are bare usernames of `platform`, or
+ * "platform/username" refs, which may span platforms when `platform` is omitted.
  */
 export function normalizeSelection({ platform, account, accounts } = {}) {
   if (platform && !SUPPORTED_PLATFORMS.includes(platform)) throw new Error(`Unknown platform: ${platform}`);
   if (accounts !== undefined && !Array.isArray(accounts)) throw new Error('accounts must be an array of usernames.');
   const requested = [...(accounts ?? []), ...(account ? [account] : [])];
-  if (requested.length && !platform) throw new Error('A platform is required when selecting an account.');
-  const usernames = [...new Set(requested.map(name => normalizeAccount(name, platform)))];
-  return { platform, accounts: usernames.length ? usernames : undefined };
+  const keys = [...new Set(requested.map(ref => {
+    if (!platform && typeof ref === 'string' && !ref.includes('/')) {
+      throw new Error('A platform is required when selecting an account.');
+    }
+    const target = parseAccountRef(ref, platform);
+    if (platform && target.platform !== platform) {
+      throw new Error(`Account ${ref} is not on the selected platform ${platform}.`);
+    }
+    return accountKey(target);
+  }))];
+  return { platform, accounts: keys.length ? keys : undefined };
 }
 
 export function validateAccounts(entries) {

@@ -1,5 +1,6 @@
 import { query } from '../db.js';
 import { MCP, SUPPORTED_PLATFORMS } from '../../../config/app.config.js';
+import { personaAccountCondition, personaIndex, personaProperty } from '../personas.js';
 
 /**
  * src/core/mcp/tools/posts.js
@@ -91,6 +92,7 @@ export const postTools = [
           items:       { type: 'string', minLength: 1 },
           description: 'Filter by several account usernames (without @). Combined with account if both are given.',
         },
+        persona: personaProperty,
         since_days: {
           type:        'integer',
           description: 'Only return posts from the last N days.',
@@ -119,6 +121,7 @@ export const postTools = [
       lang,
       account,
       accounts,
+      persona,
       since_days,
       include_replies = false,
       include_reposts = false,
@@ -145,6 +148,11 @@ export const postTools = [
       if (usernames.length) {
         conds.push(`LOWER(a.username) IN (${usernames.map(() => '?').join(', ')})`);
         params.push(...usernames);
+      }
+      if (persona) {
+        const filter = await personaAccountCondition(persona);
+        conds.push(filter.sql);
+        params.push(...filter.params);
       }
       if (since_days) {
         conds.push("p.posted_at >= datetime('now', ? || ' days')");
@@ -245,6 +253,7 @@ export const postTools = [
           type:        'string',
           description: 'Limit search to this username. Omit for all accounts.',
         },
+        persona: personaProperty,
         limit: {
           type:        'integer',
           description: `Max results to return (default ${MCP.defaultPostLimit}, max ${MCP.queryMaxRecords}).`,
@@ -256,7 +265,7 @@ export const postTools = [
         },
       },
     },
-    async handler({ query: searchQuery, platform, account, limit = MCP.defaultPostLimit, since_days }) {
+    async handler({ query: searchQuery, platform, account, persona, limit = MCP.defaultPostLimit, since_days }) {
       const cap    = Math.min(Number(limit), MCP.queryMaxRecords);
       const conds  = ['LOWER(p.text) LIKE LOWER(?)'];
       const params = [`%${searchQuery}%`];
@@ -268,6 +277,11 @@ export const postTools = [
       if (account) {
         conds.push('LOWER(a.username) = LOWER(?)');
         params.push(account.replace(/^@/, ''));
+      }
+      if (persona) {
+        const filter = await personaAccountCondition(persona);
+        conds.push(filter.sql);
+        params.push(...filter.params);
       }
       if (since_days) {
         conds.push("p.posted_at >= datetime('now', ? || ' days')");
@@ -315,6 +329,7 @@ export const postTools = [
           type:        'string',
           description: 'Filter to a specific account username. Omit for all accounts.',
         },
+        persona: personaProperty,
         days: {
           type:        'integer',
           description: `Time window in days (default ${MCP.defaultStatsDays}). Use 0 for all-time.`,
@@ -322,7 +337,7 @@ export const postTools = [
         },
       },
     },
-    async handler({ platform, account, days = MCP.defaultStatsDays } = {}) {
+    async handler({ platform, account, persona, days = MCP.defaultStatsDays } = {}) {
       const conds  = ['1=1'];
       const params = [];
 
@@ -337,6 +352,12 @@ export const postTools = [
       if (account) {
         conds.push('LOWER(a.username) = LOWER(?)');
         params.push(account.replace(/^@/, ''));
+      }
+
+      if (persona) {
+        const filter = await personaAccountCondition(persona);
+        conds.push(filter.sql);
+        params.push(...filter.params);
       }
 
       const rows = await query(`
@@ -378,7 +399,7 @@ export const postTools = [
     description:
       'List all monitored accounts across all platforms ' +
       '(Twitter/X, GitHub, LinkedIn, Telegram, …). ' +
-      'Shows platform, active status, last scrape time, ' +
+      'Shows platform, active status, last scrape time, persona ' +
       'and counts of posts and signals stored for each account.',
     inputSchema: {
       type: 'object',
@@ -393,9 +414,10 @@ export const postTools = [
           description: 'Only return active accounts (default true).',
           default:     true,
         },
+        persona: personaProperty,
       },
     },
-    async handler({ platform, active_only = true } = {}) {
+    async handler({ platform, active_only = true, persona } = {}) {
       const conds  = ['1=1'];
       const params = [];
 
@@ -405,6 +427,12 @@ export const postTools = [
       }
       if (active_only) {
         conds.push('a.is_active = 1');
+      }
+
+      if (persona) {
+        const filter = await personaAccountCondition(persona);
+        conds.push(filter.sql);
+        params.push(...filter.params);
       }
 
       const rows = await query(`
@@ -424,9 +452,10 @@ export const postTools = [
         ORDER BY   a.platform ASC, a.username ASC
       `, params);
 
+      const personas = await personaIndex();
       return {
         count:    rows.length,
-        accounts: rows,
+        accounts: rows.map(row => ({ ...row, persona: personas.get(`${row.platform}/${row.username}`) ?? null })),
       };
     },
   },

@@ -1,0 +1,44 @@
+# Template for a persona: one identity or theme across platforms.
+# Copy to <slug>.yaml (e.g. anime.yaml). The filename and slug must match.
+# Run `npm run context:sync` after editing. Each account may belong to only
+# one persona. Anything left out falls back to voice.yaml, bio.yaml and
+# platforms.yaml.
+
+slug: "my-persona"           # lowercase kebab-case; must match my-persona.yaml
+name: "Persona Name"
+
+description: |
+  Who this persona is, who it speaks to and what it posts about.
+
+topics:
+  - "Main topic"
+  - "Secondary topic"
+
+# Accounts that represent this persona, as "platform/username" from accounts.json.
+accounts:
+  - "twitter/example-twitter-user"
+  - "telegram/example-telegram-channel"
+
+# Overrides voice.yaml key by key (tone, likes, dislikes, example_post, taboo).
+voice:
+  tone: ""
+  likes: []
+  dislikes: []
+  example_post: |
+
+  taboo: []
+
+# Overrides bio.yaml per platform.
+bio:
+  twitter:
+    short: ""
+
+# Overrides platforms.yaml per platform and key (language, style, formats, avoid).
+platforms:
+  twitter:
+    language: "uk"
+    style: ""
+
+# Project slugs this persona talks about. Omit to use all active projects;
+# [] means this persona never posts about the projects.
+projects: []

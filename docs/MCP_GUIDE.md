@@ -89,6 +89,30 @@ API ID та hash отримують через [Telegram API development tools](
 Twitter використовує той самий workflow `scraper_run` → `scraper_job_get`,
 після чого потрібен `posts_get` із `platform` та `account`.
 
+### Персони: статистика → збір → пост
+
+Персони (`instance/context/personas/*.yaml`, див.
+[CONTEXT_GUIDE.md](CONTEXT_GUIDE.md)) групують акаунти однієї ідентичності на
+різних платформах. Сервер передає клієнту `instructions` під час підключення,
+тож агент сам іде цим шляхом, наприклад на запит «перевір статистику my-brand і
+зроби пост про проєкт eanyra для всіх платформ»:
+
+1. `personas_list` — визначити персону за акаунтом, платформою або темою.
+2. `posts_stats({"persona":"my-brand","days":30})` — підсумки та
+   `last_scraped_at` по кожному акаунту персони.
+3. Якщо дані застарілі або їх просять оновити:
+   `scraper_run({"persona":"my-brand"})` збирає всі акаунти персони на всіх
+   платформах (з `platform` — лише одну), далі `scraper_job_get`.
+4. `context_get({"persona":"my-brand"})` — голос, біо, правила платформ і
+   проєкти саме цієї персони поверх глобальних файлів.
+5. `posts_get({"persona":"my-brand","type":"sample"})` — приклади стилю лише цієї
+   персони; `signals_get({"persona":"my-brand"})` — свіжий матеріал.
+6. Окремий текст для кожної платформи персони за `platforms.<platform>`.
+   Публікація — окремий крок із підтвердженням (Telegram prepare/publish).
+
+`scraper_run` також приймає `accounts` у вигляді `"platform/username"` для
+вибору акаунтів з різних платформ.
+
 CLI також підтримує адресний збір:
 
 ```powershell
@@ -124,7 +148,7 @@ npm run nyra -- scrape twitter --account brand_two
 
 ```json
 {
-  "username": "eclipsisaureum",
+  "username": "example_channel",
   "platform": "telegram",
   "active": true,
   "publish_enabled": true
@@ -134,7 +158,7 @@ npm run nyra -- scrape twitter --account brand_two
 Workflow агента:
 
 1. `telegram_publish_targets({})` — побачити дозволені канали.
-2. `telegram_post_prepare({"request_id":"launch_20261024_001","account":"eclipsisaureum","text":"Точний текст допису"})`.
+2. `telegram_post_prepare({"request_id":"launch_20261024_001","account":"example_channel","text":"Точний текст допису"})`.
    Цей виклик зберігає чернетку, нічого не надсилає й не потребує токена.
 3. Показати користувачу конкретний канал і текст. Публікувати можна за його
    прямою вказівкою або за вже наданою постійною політикою публікацій, яка

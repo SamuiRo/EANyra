@@ -91,7 +91,7 @@ test('stdio MCP reads scoped Telegram messages, validates inputs and runs a real
   const missing = parseResult(await client.callTool({ name: 'scraper_run', arguments: {
     platform: 'twitter', accounts: ['first_profile', 'second_profile'],
   } }));
-  assert.deepEqual(missing.accounts, ['first_profile', 'second_profile']);
+  assert.deepEqual(missing.accounts, ['twitter/first_profile', 'twitter/second_profile']);
   for (let i = 0; i < 150; i++) {
     completed = parseResult(await client.callTool({ name: 'scraper_job_get', arguments: { job_id: missing.job_id } }));
     if (completed.status !== 'running') break;

@@ -1,5 +1,6 @@
 import { query, run } from '../db.js';
 import { MCP } from '../../../config/app.config.js';
+import { personaAccountCondition, personaProperty } from '../personas.js';
 
 /**
  * src/core/mcp/tools/signals.js
@@ -84,6 +85,7 @@ export const signalTools = [
           type:        'string',
           description: 'Filter by account username. Omit for all accounts.',
         },
+        persona: personaProperty,
         limit: {
           type:        'integer',
           description: `Max signals to return (default ${MCP.defaultSignalLimit}, max ${MCP.queryMaxRecords}).`,
@@ -102,6 +104,7 @@ export const signalTools = [
       signal_type,
       used_for_content,
       account,
+      persona,
       limit      = MCP.defaultSignalLimit,
       since_days,
     } = {}) {
@@ -125,6 +128,11 @@ export const signalTools = [
       if (account) {
         conds.push('LOWER(a.username) = LOWER(?)');
         params.push(account.replace(/^@/, ''));
+      }
+      if (persona) {
+        const filter = await personaAccountCondition(persona);
+        conds.push(filter.sql);
+        params.push(...filter.params);
       }
       if (since_days) {
         // Include signals with NULL occurred_at when they are unused

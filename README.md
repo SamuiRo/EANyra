@@ -338,6 +338,14 @@ npm run nyra -- context sync
 The sync writes top-level context into `user_context` and project metadata into
 both `projects` and `user_context`.
 
+**Personas.** When accounts serve different purposes (for example a business
+brand and an anime account), group them into personas in
+`instance/context/personas/<slug>.yaml`. A persona lists its accounts across
+platforms (`twitter/...`, `linkedin/...`, `telegram/...`) and has its own voice,
+bio, platform rules and projects on top of the global files. MCP agents call
+`context_get` with the target account or persona and filter posts with
+`persona`, so each account gets its own context.
+
 See the [Author Context Guide](docs/CONTEXT_GUIDE.md) for every supported field,
 writing guidance, sync semantics, and current validation limitations.
 To delegate creation of one project file to an AI agent, give it the

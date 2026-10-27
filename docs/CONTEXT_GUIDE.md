@@ -16,7 +16,7 @@ instance/context/*.yaml
         |
         | npm run context:sync
         v
-user_context + projects tables in SQLite
+user_context (voice, bio, platforms, personas) + projects tables in SQLite
         |
         +--> context_get MCP tool
         +--> Markdown export
@@ -187,6 +187,59 @@ does not currently enforce that it matches the filename, so the author or AI
 agent must check this explicitly. Use only the fields above: extra YAML fields
 are not preserved by the structured project model and Markdown export.
 
+## `personas/<slug>.yaml`
+
+A persona groups the accounts that represent one identity or theme across
+platforms, for example a business brand on Twitter, LinkedIn and Telegram, and
+a separate anime account. Without personas, every account shares the global
+`voice.yaml`, `bio.yaml`, `platforms.yaml` and all active projects, so an AI
+agent cannot tell what each account is for.
+
+```powershell
+Copy-Item instance/context/personas/_template.yaml instance/context/personas/anime.yaml
+```
+
+```yaml
+slug: "anime"
+name: "Anime"
+description: |
+  Personal anime account: seasonal reviews, character discussion, fan art finds.
+topics: ["seasonal anime", "Genshin Impact"]
+accounts:
+  - "twitter/example-anime-fan"
+  - "telegram/my-anime-channel"
+voice:
+  tone: "Casual, enthusiastic, emoji are fine"
+  taboo: ["Never mention work projects"]
+platforms:
+  twitter:
+    language: "en"
+projects: []
+```
+
+Rules:
+
+- `accounts` lists `"platform/username"` entries that must exist in
+  `accounts.json`. Each account may belong to only one persona, so its voice is
+  never ambiguous. New platforms (for example Discord) use the same form once
+  they are supported.
+- `voice` overrides `voice.yaml` key by key. `bio` and `platforms` override per
+  platform and per key. Missing values fall back to the global files, so the
+  global files act as defaults for every persona. Lists are replaced, not
+  appended: repeat a global `taboo` if it must also apply here.
+- `projects` limits the projects the persona talks about. Omit it to use all
+  active projects; `[]` means none.
+- Accounts outside every persona keep using the global context.
+
+MCP use: on connect, the server's `instructions` tell the agent to pick the
+target persona before drafting. `personas_list` returns the personas, their
+accounts and projects, plus configured accounts that belong to none (read from
+`accounts.json`). `context_get` without arguments also lists the personas.
+`context_get {"account": "twitter/example-anime-fan"}` or `{"persona": "anime"}`
+returns the merged context for that persona. `posts_get`, `posts_search`,
+`posts_stats`, `accounts_list` and `signals_get` accept `persona` to limit
+results to its accounts, for example to calibrate style only on anime posts.
+
 ## Sync Semantics And Validation
 
 `npm run context:sync`:
@@ -197,7 +250,11 @@ are not preserved by the structured project model and Markdown export.
 4. Upserts projects into `projects` and duplicates each raw project object as
    `user_context` key `project.<slug>`.
 5. Archives projects whose YAML files were removed.
-6. Prints updated, skipped, and failed entries.
+6. Validates all persona files (slug, accounts present in `accounts.json`,
+   exclusive membership, field types) and stores them as `persona.<slug>`. If
+   any persona file is invalid, no persona is changed. Removing a persona file
+   removes that grouping.
+7. Prints updated, skipped, and failed entries.
 
 The current implementation validates YAML syntax and database constraints, but
 does not perform complete schema validation. Before syncing, check that arrays,
