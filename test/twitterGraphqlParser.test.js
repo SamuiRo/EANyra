@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';
+import { isAuthoredBy } from '../src/platforms/twitter/TwitterScraper.js';
 
 import {
   parseGraphqlTweet,
@@ -171,4 +172,14 @@ test('response interceptor waits for pending JSON parsing before stopping', asyn
     bottom_cursors: 1,
   }]);
   assert.equal(page.listenerCount('response'), 0);
+});
+
+test('DOM fallback keeps only status links written by the scraped profile', () => {
+  assert.equal(isAuthoredBy('/Example/status/123', 'example'), true);
+  assert.equal(isAuthoredBy('https://x.com/example/status/123/photo/1', 'Example'), true);
+  // Reply parents and retweeted originals on a profile timeline.
+  assert.equal(isAuthoredBy('/second_profile/status/456', 'example'), false);
+  assert.equal(isAuthoredBy('/example_two/status/456', 'example'), false);
+  assert.equal(isAuthoredBy('/example', 'example'), false);
+  assert.equal(isAuthoredBy(null, 'example'), false);
 });

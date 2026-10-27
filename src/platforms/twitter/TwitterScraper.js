@@ -62,6 +62,20 @@ function extractTweetId(href) {
   return match ? match[1] : null;
 }
 
+/**
+ * Whether a status link belongs to the scraped profile.
+ * Example: "/user/status/123" is authored by "user". Profile timelines also
+ * show reply parents and retweeted originals written by other accounts;
+ * those must not be saved under this profile.
+ * @param {string|null|undefined} href
+ * @param {string} username
+ * @returns {boolean}
+ */
+export function isAuthoredBy(href, username) {
+  const author = href?.match(/^(?:https?:\/\/[^/]+)?\/([^/?#]+)\/status\/\d+/)?.[1];
+  return Boolean(author) && author.toLowerCase() === username.toLowerCase();
+}
+
 function mergePosts(domPosts, networkPosts) {
   const merged = new Map(domPosts.map(post => [post.platform_id, post]));
 
@@ -337,6 +351,8 @@ export class TwitterScraper {
     const href      = await linkEl?.getAttribute('href');
     const tweetId   = extractTweetId(href);
     if (!tweetId) return null;
+    // GraphQL checks the author itself; the DOM fallback has to do it here.
+    if (!isAuthoredBy(href, username)) return null;
 
     const raw_url = href ? `${TWITTER.baseUrl}${href}` : null;
 
