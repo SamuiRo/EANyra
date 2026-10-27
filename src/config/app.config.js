@@ -71,6 +71,8 @@ export const DB = {
 export const BROWSER = {
   dataPath:             envPath('BROWSER_DATA_PATH', path.join(DATA_DIR, 'nyra')),
   cookiesPath:          envPath('BROWSER_COOKIES_PATH', path.join(DATA_DIR, 'cookies.json')),
+  /** Default source for `npm run import-cookies` when no file is given. */
+  cookiesImportPath:    envPath('BROWSER_COOKIES_IMPORT_PATH', path.join(DATA_DIR, 'imports', 'cookies.json')),
   headless:            envBoolean('BROWSER_HEADLESS', true),
   navigationTimeoutMs: envNumber('BROWSER_NAV_TIMEOUT_MS', 30_000),
   selectorTimeoutMs:   envNumber('BROWSER_SEL_TIMEOUT_MS', 15_000),

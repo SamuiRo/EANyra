@@ -6,12 +6,16 @@ export function buildCollectionTools(jobs) {
   return [
     {
       name: 'scraper_run',
-      description: 'Start background collection of configured active accounts. Optionally select platform and account. Returns job_id immediately; poll scraper_job_get, then query posts. Does not publish or send messages. Concurrent collection is rejected.',
+      description: 'Start background collection of configured active accounts. Optionally select platform and one or several accounts. Returns job_id immediately; poll scraper_job_get, then query posts. Twitter profiles are collected sequentially with human-like pauses of several minutes, so a multi-profile Twitter job can take a long time. Does not publish or send messages. Concurrent collection is rejected.',
       inputSchema: {
         type: 'object',
         properties: {
           platform: { type: 'string', enum: SUPPORTED_PLATFORMS },
           account: { type: 'string', minLength: 1, description: 'Configured username; requires platform.' },
+          accounts: {
+            type: 'array', items: { type: 'string', minLength: 1 },
+            description: 'Several configured usernames of the same platform; requires platform.',
+          },
         },
       },
       handler: args => jobs.start(args),

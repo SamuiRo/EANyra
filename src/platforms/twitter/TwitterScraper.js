@@ -16,6 +16,9 @@ import { print }                                            from '../../shared/u
 import { humanScroll, simulatePageLanding }                 from './humanBehavior.js';
 import { TwitterResponseInterceptor }                       from './TwitterResponseInterceptor.js';
 
+/** Error code thrown when X redirects to login: the shared session is invalid. */
+export const TWITTER_SESSION_EXPIRED = 'TWITTER_SESSION_EXPIRED';
+
 // Selectors
 
 const SEL = {
@@ -106,7 +109,7 @@ export class TwitterScraper {
     if (!hasAuthToken) {
       print(
         'Twitter session has no auth_token. Replies and public posts may be unavailable; ' +
-        'refresh with `npm run import-cookies -- <file>`.',
+        'refresh with `npm run import-cookies`.',
         'warning',
       );
     }
@@ -122,9 +125,11 @@ export class TwitterScraper {
     if (!loaded) {
       const currentUrl = this.page.url();
       if (currentUrl.includes('/login') || currentUrl.includes('/i/flow/login')) {
-        print(
-          'Twitter session expired. Refresh it with `npm run import-cookies -- <file>`.',
-          'warning',
+        await interceptor.stop();
+        // Every other profile would hit the same login wall: let the caller stop.
+        throw Object.assign(
+          new Error('Twitter session expired. Refresh it with `npm run import-cookies`.'),
+          { code: TWITTER_SESSION_EXPIRED },
         );
       }
       print(
@@ -169,6 +174,14 @@ export class TwitterScraper {
       `${replyCount} replies).`,
       'data',
     );
+    if (!networkPosts.length && collected.size) {
+      // Exact metrics come only from GraphQL; DOM counts are rounded ("1.2K").
+      print(
+        'No posts were read from Twitter GraphQL; X may have renamed its timeline ' +
+        'operations. Check TIMELINE_OPERATIONS in TwitterResponseInterceptor.js.',
+        'warning',
+      );
+    }
     this.#printDiagnostics(interceptor);
     return posts;
   }

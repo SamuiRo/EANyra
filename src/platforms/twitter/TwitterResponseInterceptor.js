@@ -2,6 +2,10 @@ import { print } from '../../shared/utils.js';
 import { parseTwitterGraphqlResponse } from './twitterGraphqlParser.js';
 
 const TIMELINE_OPERATIONS = new Set([
+  // Profile Posts / Replies tabs since October 2026.
+  'UserOriginalsTimeline',
+  'UserRepliesTimeline',
+  // Earlier names, kept in case X serves them again.
   'UserTweets',
   'UserTweetsAndReplies',
   'UserMedia',

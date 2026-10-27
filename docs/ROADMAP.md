@@ -84,9 +84,9 @@ the current repository state, not on the older README.
 
 ## Priority 3: Maintainability
 
-- [ ] **Remove or migrate legacy Twitter MCP tools.**
-  `src/core/mcp/tools/twitter.js` is unregistered and queries obsolete columns
-  such as `tweet_id`, `retweets`, and `is_retweet`.
+- [x] **Remove or migrate legacy Twitter MCP tools.**
+  The unregistered `src/core/mcp/tools/twitter.js` was removed; the unified
+  `posts_*` and `accounts_list` tools cover Twitter.
 - [ ] **Generate supported-platform metadata from one registry.** Platform IDs
   and enums are duplicated across CLI validation, the orchestrator, MCP
   schemas, and documentation.

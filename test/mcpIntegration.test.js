@@ -70,7 +70,14 @@ test('stdio MCP reads scoped Telegram messages, validates inputs and runs a real
   } }));
   assert.ok(sample.count <= 1);
   assert.ok(sample.posts.every(row => row.platform === 'telegram' && row.account === 'same'));
-  const bad = await client.callTool({ name: 'telegram_messages_get', arguments: { limit: -1 } });
+  const several = async args => parseResult(await client.callTool({ name: 'posts_get', arguments: {
+    platform: 'telegram', accounts: ['same', '@Other'], include_replies: true, limit: 50, ...args,
+  } }));
+  const withReposts = await several({ include_reposts: true });
+  assert.equal(withReposts.count, 5);
+  assert.deepEqual(new Set(withReposts.posts.map(row => row.account)), new Set(['same', 'other']));
+  assert.equal((await several({})).count, 4);
+  const bad =await client.callTool({ name: 'telegram_messages_get', arguments: { limit: -1 } });
   assert.equal(bad.isError, true);
   const job = parseResult(await client.callTool({ name: 'scraper_run', arguments: { platform: 'telegram' } }));
   let completed;
@@ -81,6 +88,17 @@ test('stdio MCP reads scoped Telegram messages, validates inputs and runs a real
   }
   assert.equal(completed.status, 'success', JSON.stringify(completed));
   assert.equal(completed.result.accounts_processed, 0);
+  const missing = parseResult(await client.callTool({ name: 'scraper_run', arguments: {
+    platform: 'twitter', accounts: ['first_profile', 'second_profile'],
+  } }));
+  assert.deepEqual(missing.accounts, ['first_profile', 'second_profile']);
+  for (let i = 0; i < 150; i++) {
+    completed = parseResult(await client.callTool({ name: 'scraper_job_get', arguments: { job_id: missing.job_id } }));
+    if (completed.status !== 'running') break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  assert.equal(completed.status, 'failed');
+  assert.match(completed.error, /twitter\/first_profile, twitter\/second_profile/);
 });
 
 test('MCP prepares durable Telegram posts and identifies missing bot setup without sending', { timeout: 30000 }, async t => {

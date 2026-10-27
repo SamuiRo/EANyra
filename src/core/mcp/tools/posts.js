@@ -58,7 +58,7 @@ export const postTools = [
       '\n  "recent"         — newest first (default)' +
       '\n  "top_engagement" — ranked by likes + reposts' +
       '\n  "sample"         — balanced mix: 50% top engagement + 50% recent; best for style calibration' +
-      '\n\nAlways excludes reposts. Excludes replies by default.',
+      '\n\nExcludes reposts and replies by default.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -86,6 +86,11 @@ export const postTools = [
           type:        'string',
           description: 'Filter by account username (without @).',
         },
+        accounts: {
+          type:        'array',
+          items:       { type: 'string', minLength: 1 },
+          description: 'Filter by several account usernames (without @). Combined with account if both are given.',
+        },
         since_days: {
           type:        'integer',
           description: 'Only return posts from the last N days.',
@@ -93,6 +98,11 @@ export const postTools = [
         include_replies: {
           type:        'boolean',
           description: 'Include reply posts (default false).',
+          default:     false,
+        },
+        include_reposts: {
+          type:        'boolean',
+          description: 'Include reposts/retweets (default false).',
           default:     false,
         },
         unused_only: {
@@ -108,13 +118,21 @@ export const postTools = [
       limit           = MCP.defaultPostLimit,
       lang,
       account,
+      accounts,
       since_days,
       include_replies = false,
+      include_reposts = false,
       unused_only     = false,
     } = {}) {
       const cap    = Math.min(Number(limit), MCP.queryMaxRecords);
-      const conds  = ['p.is_repost = 0'];
+      const conds  = ['1=1'];
       const params = [];
+
+      if (!include_reposts) {
+        conds.push('p.is_repost = 0');
+      }
+      const usernames = [...new Set([...(accounts ?? []), ...(account ? [account] : [])]
+        .map(name => name.replace(/^@/, '').toLowerCase()))];
 
       if (platform) {
         conds.push('p.platform = ?');
@@ -124,9 +142,9 @@ export const postTools = [
         conds.push('p.lang = ?');
         params.push(lang);
       }
-      if (account) {
-        conds.push('LOWER(a.username) = LOWER(?)');
-        params.push(account.replace(/^@/, ''));
+      if (usernames.length) {
+        conds.push(`LOWER(a.username) IN (${usernames.map(() => '?').join(', ')})`);
+        params.push(...usernames);
       }
       if (since_days) {
         conds.push("p.posted_at >= datetime('now', ? || ' days')");

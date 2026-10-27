@@ -1,7 +1,6 @@
 import { fork } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { SUPPORTED_PLATFORMS } from '../../config/app.config.js';
-import { normalizeAccount } from '../../config/accountConfig.js';
+import { normalizeSelection } from '../../config/accountConfig.js';
 
 export class ScrapeJobs {
   constructor({ spawn = fork } = {}) {
@@ -10,11 +9,9 @@ export class ScrapeJobs {
     this.active = null;
   }
 
-  start({ platform, account } = {}) {
-    if (platform && !SUPPORTED_PLATFORMS.includes(platform)) throw new Error(`Unknown platform: ${platform}`);
-    if (account && !platform) throw new Error('A platform is required when selecting an account.');
+  start(args = {}) {
+    const selection = normalizeSelection(args);
     if (this.active) throw new Error(`Scrape already running: ${this.active}`);
-    const selection = { platform, account: account ? normalizeAccount(account, platform) : undefined };
     const job = { job_id: randomUUID(), status: 'running', started_at: new Date().toISOString(), ...selection };
     // Keep a bounded history; durable collection results live in scraper_runs.
     if (this.jobs.size >= 50) this.jobs.delete(this.jobs.keys().next().value);

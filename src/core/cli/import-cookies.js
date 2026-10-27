@@ -8,17 +8,18 @@ import {
 } from '../browser/sessionCookies.js';
 import { ensureDir, print } from '../../shared/utils.js';
 
-const cookiesImportPath = process.argv[2];
-if (!cookiesImportPath) {
-  console.error(
-    'Usage: npm run import-cookies -- <path-to-cookies.json>\n' +
-    '   or: node src/core/cli/import-cookies.js <path-to-cookies.json>',
-  );
-  process.exit(1);
-}
+// Without an argument, import the file exported into the instance imports folder.
+const cookiesImportPath = process.argv[2] ?? BROWSER.cookiesImportPath;
 
 async function main() {
-  const cookies = await readCookieFile(cookiesImportPath);
+  print(`Reading cookies from: ${cookiesImportPath}`, 'system');
+  const cookies = await readCookieFile(cookiesImportPath).catch(error => {
+    if (error.code !== 'ENOENT') throw error;
+    throw new Error(
+      `${cookiesImportPath} not found. Export x.com cookies there, or pass a path: ` +
+      'npm run import-cookies -- <path-to-cookies.json>',
+    );
+  });
 
   await ensureDir(BROWSER.dataPath);
   const context = await chromium.launchPersistentContext(BROWSER.dataPath, { headless: true });

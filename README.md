@@ -59,7 +59,7 @@ need:
 
 ```bash
 # Twitter/X only: recommended session setup
-npm run import-cookies -- path/to/cookies.json
+npm run import-cookies   # reads instance/data/imports/cookies.json
 
 # Best-effort alternative; X may reject automated-browser login
 npm run login
@@ -145,16 +145,29 @@ SQLite with their historical posts and signals, but are inactive.
 Twitter collection uses a persistent Playwright Chromium profile.
 
 ```bash
-npm run import-cookies -- path/to/cookies.json
+npm run import-cookies
 npm run scrape:twitter
 ```
 
-Export the `x.com` cookies from your normal browser and import them with
-`npm run import-cookies -- <file>`. The cookie file must contain `auth_token`.
+Export the `x.com` cookies from your normal browser to
+`instance/data/imports/cookies.json` and run `npm run import-cookies`, or pass
+another file with `npm run import-cookies -- <file>`. The default location is
+`BROWSER_COOKIES_IMPORT_PATH`. The cookie file must contain `auth_token`.
 Session data is stored in `instance/data/nyra/`. A gitignored fallback copy is stored at
 `BROWSER_COOKIES_PATH` and restored automatically if X clears the cookie from
 the persistent browser profile. Re-import only when the fallback token itself
 is no longer accepted by X.
+
+**Several X profiles.** Add one `"platform": "twitter"` entry per profile to
+`accounts.json`; all of them are collected through the same imported session.
+A run collects other platforms first, then X profiles starting with the least
+recently collected one, pausing `MIN/MAX_DELAY_BETWEEN_ACCOUNTS_MS` between X
+profiles only. If X redirects to login, the remaining X profiles are skipped
+instead of each waiting for its pause. Collect a subset with
+`npm run nyra -- scrape twitter --account first_profile second_profile` or the
+MCP `scraper_run` `accounts` argument. The optional per-account
+`"session": "default"` field is reserved for separate X logins in the future;
+only `default` is accepted today.
 
 `npm run login` remains available as a best-effort helper. It opens an
 installed Chrome browser without scraper-specific patches, but X may reject
@@ -274,7 +287,7 @@ Use `npm run nyra -- <command>` when the `eanyra` binary is not globally linked.
 | `npm run login` | Best-effort interactive Twitter/X login |
 | `npm run login:telegram` | QR login and automatic session save to root `.env` |
 | `npm run login:telegram -- --phone` | Alternative login by phone and verification code |
-| `npm run import-cookies -- <file>` | Recommended: import browser cookies into the persistent session |
+| `npm run import-cookies [-- <file>]` | Recommended: import browser cookies into the persistent session (default `instance/data/imports/cookies.json`) |
 
 Important export options:
 

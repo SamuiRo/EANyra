@@ -6,12 +6,12 @@ import path from 'node:path';
 import test from 'node:test';
 import { Sequelize, QueryTypes } from 'sequelize';
 import { z } from 'zod';
-import { validateAccounts } from '../src/config/accountConfig.js';
+import { validateAccounts, normalizeSelection } from '../src/config/accountConfig.js';
 import { registerModels } from '../src/core/teapot/models/index.js';
 import { SchemaMigrator } from '../src/core/teapot/SchemaMigrator.js';
 import { migrateAccountIdentity } from '../src/core/teapot/migrateAccountIdentity.js';
 import { AccountRepository } from '../src/core/teapot/repositories/AccountRepository.js';
-import { ScraperOrchestrator } from '../src/core/orchestrator/ScraperOrchestrator.js';
+import { ScraperOrchestrator, orderForCollection } from '../src/core/orchestrator/ScraperOrchestrator.js';
 import { acquireScrapeLock } from '../src/core/orchestrator/ScrapeLock.js';
 import { ScrapeJobs } from '../src/core/mcp/ScrapeJobs.js';
 import { buildCollectionTools } from '../src/core/mcp/tools/collection.js';
@@ -98,7 +98,33 @@ test('collection lock reclaims only a lock whose owner process is gone', async t
 test('orchestrator validates selection before opening a run', async () => {
   const orchestrator = new ScraperOrchestrator({});
   await assert.rejects(orchestrator.run({ account: 'example' }), /platform is required/);
+  await assert.rejects(orchestrator.run({ accounts: ['example'] }), /platform is required/);
+  await assert.rejects(orchestrator.run({ platform: 'twitter', accounts: 'example' }), /array/);
   await assert.rejects(orchestrator.run({ platform: 'invalid' }), /Unknown platform/);
+});
+
+test('selection merges one and several accounts into a normalized unique list', () => {
+  assert.deepEqual(normalizeSelection({ platform: 'twitter', account: '@First', accounts: ['second', 'first'] }),
+    { platform: 'twitter', accounts: ['second', 'first'] });
+  assert.deepEqual(normalizeSelection({ platform: 'twitter' }), { platform: 'twitter', accounts: undefined });
+  assert.throws(() => normalizeSelection({ platform: 'twitter', accounts: ['bad name'] }), /Invalid twitter username/);
+});
+
+test('X profiles run after other platforms, least recently collected first', () => {
+  const order = orderForCollection([
+    { username: 'recent', platform: 'twitter', last_scraped_at: '2026-10-26T10:00:00Z' },
+    { username: 'repo', platform: 'github', last_scraped_at: null },
+    { username: 'never', platform: 'twitter', last_scraped_at: null },
+    { username: 'older', platform: 'twitter', last_scraped_at: '2026-10-20T10:00:00Z' },
+    { username: 'channel', platform: 'telegram', last_scraped_at: null },
+  ]).map(account => account.username);
+  assert.deepEqual(order, ['repo', 'channel', 'never', 'older', 'recent']);
+});
+
+test('the X session field is a placeholder that accepts only the shared session', () => {
+  assert.equal(validateAccounts([{ username: 'one', platform: 'twitter', session: 'default' }])[0].session, 'default');
+  assert.throws(() => validateAccounts([{ username: 'one', platform: 'twitter', session: 'brand_b' }]), /not available/);
+  assert.throws(() => validateAccounts([{ username: 'one', platform: 'telegram', session: 'default' }]), /only for Twitter/);
 });
 
 test('MCP collection jobs report actual partial/failure outcomes and allow the next run', () => {
@@ -110,7 +136,7 @@ test('MCP collection jobs report actual partial/failure outcomes and allow the n
     return child;
   } });
   const first = jobs.start({ platform: 'telegram', account: '@Example' });
-  assert.equal(first.account, 'example');
+  assert.deepEqual(first.accounts, ['example']);
   assert.throws(() => jobs.start(), /already running/);
   child.emit('message', { result: { status: 'partial', accounts_processed: 1 } });
   assert.equal(jobs.get(first.job_id).status, 'running');

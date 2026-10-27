@@ -15,7 +15,7 @@ import { banner, ensureDir, print } from '../../shared/utils.js';
 
 function waitForEnter(prompt) {
   if (!process.stdin.isTTY) {
-    throw new Error('Interactive login requires a terminal. Use `npm run import-cookies -- <file>` instead.');
+    throw new Error('Interactive login requires a terminal. Use `npm run import-cookies` instead.');
   }
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -80,7 +80,7 @@ async function main() {
     'X may reject Playwright-controlled browsers. Cookie import is the recommended session setup.',
     'warning',
   );
-  print('Fallback: npm run import-cookies -- <file>', 'info');
+  print('Fallback: npm run import-cookies (default instance/data/imports/cookies.json)', 'info');
   await ensureDir(BROWSER.dataPath);
 
   let context;
@@ -110,7 +110,7 @@ async function main() {
     if (!authCookie) {
       throw new Error(
         'No auth_token cookie was found. Login was not completed. ' +
-        'You can retry or use `npm run import-cookies -- <file>`.',
+        'You can retry or use `npm run import-cookies`.',
       );
     }
 

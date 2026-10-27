@@ -494,9 +494,6 @@ consistently even if the MCP client starts in another working directory.
 MCP paths, transport settings, routes, and query defaults come from
 `src/config/app.config.js`.
 
-`core/mcp/tools/twitter.js` contains a legacy Twitter-specific API using old
-column names. It is not registered by the server.
-
 ## Configuration Boundaries
 
 `src/config/app.config.js` is the runtime configuration source of truth. It

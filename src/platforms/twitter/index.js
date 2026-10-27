@@ -24,7 +24,7 @@
 
 import { TwitterScraper }    from './TwitterScraper.js';
 
-export { TwitterScraper }    from './TwitterScraper.js';
+export { TwitterScraper, TWITTER_SESSION_EXPIRED } from './TwitterScraper.js';
 export { TwitterResponseInterceptor } from './TwitterResponseInterceptor.js';
 export {
   parseGraphqlTweet,

@@ -101,6 +101,7 @@ Different instance directories share the root settings unless overridden externa
 | `EXPORTS_DIR` | `<DATA_DIR>/exports/` |
 | `BROWSER_DATA_PATH` | `<DATA_DIR>/nyra/` |
 | `BROWSER_COOKIES_PATH` | `<DATA_DIR>/cookies.json` |
+| `BROWSER_COOKIES_IMPORT_PATH` | `<DATA_DIR>/imports/cookies.json` (default `import-cookies` input) |
 | `LINKEDIN_IMPORTS_DIR` | `<DATA_DIR>/imports/` |
 
 The template `.env` explicitly specifies standard paths. If you change DATA_DIR,

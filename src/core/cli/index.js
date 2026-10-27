@@ -64,9 +64,9 @@ class Nyra {
 
   // ── Run modes ─────────────────────────────────────────────────────────────
 
-  async #scrapeOnce({ platform, account } = {}) {
+  async #scrapeOnce({ platform, accounts } = {}) {
     const orchestrator = new ScraperOrchestrator(this.#models);
-    await orchestrator.run({ platform, account });
+    await orchestrator.run({ platform, accounts });
   }
 
   async runOnce(opts = {}) {
@@ -127,7 +127,7 @@ function buildCLI(nyra) {
 
   program
     .command('scrape [platform]')
-    .option('--account <username>', 'Collect one configured account (requires platform)')
+    .option('--account <username...>', 'Collect only these configured accounts (requires platform)')
     .description(
       'Run a single scrape then exit.\n' +
       '  eanyra scrape            → all platforms\n' +
@@ -144,7 +144,7 @@ function buildCLI(nyra) {
         );
         process.exit(1);
       }
-      await nyra.runOnce({ platform, account: options.account });
+      await nyra.runOnce({ platform, accounts: options.account });
     });
 
   registerContextCommands(program, nyra.models);

@@ -128,6 +128,8 @@ test('extracts only top-level timeline items authored by the requested account',
 test('intercepts only supported Twitter profile timeline operations', () => {
   const response = path => ({ url: () => `https://x.com/i/api/graphql/query-id/${path}?variables=x` });
 
+  assert.equal(isTwitterTimelineResponse(response('UserOriginalsTimeline')), true);
+  assert.equal(isTwitterTimelineResponse(response('UserRepliesTimeline')), true);
   assert.equal(isTwitterTimelineResponse(response('UserTweets')), true);
   assert.equal(isTwitterTimelineResponse(response('UserTweetsAndReplies')), true);
   assert.equal(isTwitterTimelineResponse(response('SearchTimeline')), true);

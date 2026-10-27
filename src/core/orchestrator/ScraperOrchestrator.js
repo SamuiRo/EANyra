@@ -23,7 +23,10 @@
  */
 
 import { Browser }                                  from '../browser/Browser.js';
-import { createScraper as createTwitterScraper }   from '../../platforms/twitter/index.js';
+import {
+  createScraper as createTwitterScraper,
+  TWITTER_SESSION_EXPIRED,
+} from '../../platforms/twitter/index.js';
 import { createScraper as createGithubScraper }    from '../../platforms/github/index.js';
 import { createScraper as createLinkedinImporter } from '../../platforms/linkedin/index.js';
 import { createScraper as createTelegramScraper }  from '../../platforms/telegram/index.js';
@@ -33,8 +36,7 @@ import { SignalRepository }     from '../teapot/repositories/SignalRepository.js
 import { ScraperRunRepository } from '../teapot/repositories/ScraperRunRepository.js';
 import { SCRAPER, GITHUB, LINKEDIN, TELEGRAM } from '../../config/app.config.js';
 import { print, sleep }         from '../../shared/utils.js';
-import { SUPPORTED_PLATFORMS } from '../../config/app.config.js';
-import { normalizeAccount } from '../../config/accountConfig.js';
+import { normalizeSelection } from '../../config/accountConfig.js';
 import { acquireScrapeLock } from './ScrapeLock.js';
 
 export class ScraperOrchestrator {
@@ -58,17 +60,15 @@ export class ScraperOrchestrator {
   /**
    * Execute a full scrape run, optionally filtered to one platform.
    *
-   * @param {{ platform?: string }} [opts]
+   * @param {{ platform?: string, account?: string, accounts?: string[] }} [opts]
    */
-  async run({ platform, account } = {}) {
-    if (platform && !SUPPORTED_PLATFORMS.includes(platform)) throw new Error(`Unknown platform: ${platform}`);
-    if (account && !platform) throw new Error('A platform is required when selecting an account.');
-    const username = account ? normalizeAccount(account, platform) : null;
+  async run(opts = {}) {
+    const { platform, accounts: usernames } = normalizeSelection(opts);
     const release = await acquireScrapeLock();
     let scraperRun;
     try {
       scraperRun = await this.scraperRunRepo.start();
-      await this.#runAccounts(scraperRun, { platform, username });
+      await this.#runAccounts(scraperRun, { platform, usernames });
       return scraperRun.toJSON();
     } catch (error) {
       if (scraperRun) await this.scraperRunRepo.fail(scraperRun, error);
@@ -78,16 +78,21 @@ export class ScraperOrchestrator {
     }
   }
 
-  async #runAccounts(scraperRun, { platform, username }) {
+  async #runAccounts(scraperRun, { platform, usernames }) {
 
     await this.accountRepo.syncFromConfig();
     const allActive = await this.accountRepo.findAllActive();
 
     const accounts = allActive.filter(a =>
-      (!platform || a.platform === platform) && (!username || a.username === username));
+      (!platform || a.platform === platform) && (!usernames || usernames.includes(a.username)));
+
+    // Fail before collecting anything, so a typo does not cost a long run.
+    const missing = (usernames ?? []).filter(name => !accounts.some(a => a.username === name));
+    if (missing.length) {
+      throw new Error(`No active configured account: ${missing.map(name => `${platform}/${name}`).join(', ')}`);
+    }
 
     if (!accounts.length) {
-      if (username) throw new Error(`No active configured account: ${platform}/${username}`);
       const reason = platform
         ? `No active accounts for platform "${platform}".`
         : 'No active accounts found — nothing to scrape.';
@@ -109,23 +114,34 @@ export class ScraperOrchestrator {
     this.#activeBrowser = null;
     this.#activeTelegramScraper = null;
 
-    try {
-      const hasTwitter = accounts.some(a => a.platform === 'twitter');
-      if (hasTwitter) {
-        const wakeUpMs = Math.floor(Math.random() * SCRAPER.wakeUpMaxMs);
-        if (wakeUpMs > 0) {
-          print(`Wake-up pause: ${Math.round(wakeUpMs / 1_000)}s…`, 'system');
-          await sleep(wakeUpMs);
-        }
-      }
+    const queue = orderForCollection(accounts);
+    // Set once X rejects the shared session; remaining X profiles are skipped.
+    let twitterSessionError = null;
+    let twitterStarted = false;
 
-      for (let i = 0; i < accounts.length; i++) {
-        const account = accounts[i];
+    try {
+      for (let i = 0; i < queue.length; i++) {
+        const account = queue[i];
+        const isTwitter = account.platform === 'twitter';
 
         print(
-          `[${i + 1}/${accounts.length}] @${account.username} (${account.platform})`,
+          `[${i + 1}/${queue.length}] @${account.username} (${account.platform})`,
           'info',
         );
+
+        if (isTwitter && twitterSessionError) {
+          const msg = `@${account.username} (twitter) skipped: ${twitterSessionError}`;
+          print(msg, 'warning');
+          failed.push(msg);
+          continue;
+        }
+
+        // Human-like pacing applies only between X profile visits.
+        if (isTwitter) {
+          if (twitterStarted) await this.#humanPause();
+          else await this.#wakeUpPause();
+          twitterStarted = true;
+        }
 
         try {
           const saved = await this.#scrapeAccount(account);
@@ -135,10 +151,7 @@ export class ScraperOrchestrator {
           const msg = `@${account.username} (${account.platform}) failed: ${err.message}`;
           print(msg, 'error');
           failed.push(msg);
-        }
-
-        if (i < accounts.length - 1 && account.platform === 'twitter') {
-          await this.#humanPause();
+          if (err.code === TWITTER_SESSION_EXPIRED) twitterSessionError = err.message;
         }
       }
     } finally {
@@ -302,6 +315,14 @@ export class ScraperOrchestrator {
     return latestPostAt ?? fallback;
   }
 
+  async #wakeUpPause() {
+    const wakeUpMs = Math.floor(Math.random() * SCRAPER.wakeUpMaxMs);
+    if (wakeUpMs > 0) {
+      print(`Wake-up pause: ${Math.round(wakeUpMs / 1_000)}s…`, 'system');
+      await sleep(wakeUpMs);
+    }
+  }
+
   async #humanPause() {
     const delayMs = Math.floor(
       Math.random() * (SCRAPER.maxDelayBetweenAccountsMs - SCRAPER.minDelayBetweenAccountsMs + 1),
@@ -310,4 +331,15 @@ export class ScraperOrchestrator {
     print(`Waiting ${(delayMs / 60_000).toFixed(1)} min before next account…`, 'system');
     await sleep(delayMs);
   }
+}
+
+/**
+ * Fast platforms run first, then X profiles from the least recently collected,
+ * so an interrupted multi-profile run resumes with the profiles it missed.
+ */
+export function orderForCollection(accounts) {
+  const scrapedAt = account => account.last_scraped_at ? new Date(account.last_scraped_at).getTime() : 0;
+  const twitter = accounts.filter(a => a.platform === 'twitter')
+    .sort((a, b) => scrapedAt(a) - scrapedAt(b) || a.username.localeCompare(b.username));
+  return [...accounts.filter(a => a.platform !== 'twitter'), ...twitter];
 }
