@@ -47,9 +47,30 @@ flowchart LR
 | `src/core/mcp/server.js` | MCP tool registration and stdio/HTTP transport startup |
 | `src/core/cli/import-cookies.js` | Standalone cookie import helper used by `npm run import-cookies -- <file> --session <name>` |
 | `src/core/cli/vaultCommands.js` | `vault`, `secrets` and `sessions` commands |
+| `src/web/start.js` | `eanyra serve`: local web UI, JSON API, optional scheduler |
 
-There is no separate application server. The scheduled daemon is the CLI
-process running `Scheduler`.
+The scheduled daemon is the CLI process running `Scheduler`. The optional web
+server (`eanyra serve`) is a single local process that serves the browser UI
+and a JSON API, and can run the scheduler too.
+
+## Web Server
+
+```text
+browser ──► src/web/server.js ──► toolRegistry (same tools as MCP) ──► services / SQLite
+                    │                         └─► ScrapeJobs / TelegramPublishRequests ──► worker processes
+                    └─► routes: sessions report, context sync, Telegram drafts
+```
+
+- `src/web/server.js`: `node:http`, no framework. Loopback bind, Host check
+  (DNS rebinding), `X-EANyra` header + Origin/Sec-Fetch-Site check on POST
+  (CSRF), 64 KiB JSON bodies, strict CSP, static files from `src/web/public/`.
+- `src/web/auth.js`: master-password login (unlocks the vault via
+  `unlockSharedVault`) or a startup token without a vault; in-memory sessions
+  with idle expiry; login throttling.
+- `POST /api/tools/<name>` runs any registered tool through `callTool`, which
+  validates arguments with the tool's JSON schema exactly like MCP.
+- `src/web/public/`: dependency-free UI; untrusted collected text is only set
+  through `textContent`.
 
 ## Repository Layout
 

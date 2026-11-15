@@ -11,6 +11,7 @@
     "start": "node src/core/cli/index.js start",
     "nyra": "node src/core/cli/index.js",
     "dev": "node --watch src/core/cli/index.js start",
+    "serve": "node src/core/cli/index.js serve",
     "scrape": "node src/core/cli/index.js scrape",
     "scrape:twitter": "node src/core/cli/index.js scrape twitter",
     "scrape:github": "node src/core/cli/index.js scrape github",

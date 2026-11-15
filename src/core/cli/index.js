@@ -15,6 +15,7 @@
  *   eanyra vault …              → encrypted credentials (init, status, migrate, remember)
  *   eanyra secrets …            → store GitHub / bot tokens and Telegram API keys
  *   eanyra sessions             → which login each account uses and its state
+ *   eanyra serve [--schedule]   → local web UI on 127.0.0.1
  */
 
 import { Command }                    from 'commander';
@@ -154,6 +155,27 @@ function buildCLI(nyra) {
         process.exit(1);
       }
       await nyra.runOnce({ platform, accounts: options.account });
+    });
+
+  program
+    .command('serve')
+    .description('Start the local web UI (127.0.0.1) for accounts, collection, posts and drafts')
+    .option('--port <port>', 'Port (default WEB_PORT or 3030)')
+    .option('--schedule', 'Also run scheduled collection (CRON_SCHEDULE) in this process')
+    .action(async options => {
+      const { startWebServer } = await import('../../web/start.js');
+      const { shutdown } = await startWebServer({
+        ...(options.port ? { port: Number(options.port) } : {}),
+        schedule: Boolean(options.schedule),
+        models: nyra.models,
+      });
+      const stop = async () => {
+        await shutdown();
+        await database.disconnect().catch(() => {});
+        process.exit(0);
+      };
+      process.once('SIGINT', stop);
+      process.once('SIGTERM', stop);
     });
 
   registerContextCommands(program, nyra.models);

@@ -61,6 +61,12 @@ export const MCP = {
   maxStatusHistory: envNumber('MCP_MAX_STATUS_HISTORY', 20),
 };
 
+/** Local web UI (`npm run serve`). Loopback only. */
+export const WEB = {
+  host: process.env.WEB_HOST ?? '127.0.0.1',
+  port: envNumber('WEB_PORT', 3030),
+};
+
 export const SCHEDULER = {
   cronSchedule: process.env.CRON_SCHEDULE ?? '0 8 * * *',
   runOnStartup: envBoolean('RUN_ON_STARTUP', false),

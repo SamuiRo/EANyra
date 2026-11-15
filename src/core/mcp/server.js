@@ -4,17 +4,12 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import http                              from 'node:http';
 import { randomUUID } from 'node:crypto';
 
-import { postTools }         from './tools/posts.js';
-import { signalTools }       from './tools/signals.js';
-import { statusTools }       from './tools/status.js';
-import { buildContextTools } from './context.js';
 import { MCP, PKG } from '../../config/app.config.js';
 import { jsonSchemaToZod } from './schema.js';
+import { buildTools } from './toolRegistry.js';
 import { ScrapeJobs } from './ScrapeJobs.js';
-import { buildCollectionTools } from './tools/collection.js';
 import { closeDb } from './db.js';
 import { TelegramPublishRequests } from './TelegramPublishRequests.js';
-import { buildTelegramPublishingTools } from './tools/telegramPublishing.js';
 import { migrateInWorker } from './migrateWorker.js';
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -84,14 +79,7 @@ function createServer() {
   //  context.js  → personas_list, context_get, export_get
   //  status.js   → scraper_status
 
-  const allTools = [
-    ...postTools,
-    ...signalTools,
-    ...buildContextTools(),
-    ...statusTools,
-    ...buildCollectionTools(jobs),
-    ...buildTelegramPublishingTools(publications),
-  ];
+  const allTools = buildTools({ jobs, publications });
 
   for (const tool of allTools) {
     server.registerTool(

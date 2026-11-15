@@ -89,6 +89,9 @@ npm run export:dry
 
 # Start the scheduled daemon
 npm start
+
+# Or: local web UI on http://127.0.0.1:3030 (add -- --schedule for cron runs)
+npm run serve
 ```
 
 The same commands work in Windows PowerShell. When upgrading an existing
@@ -299,6 +302,31 @@ newest imported post as the future polling baseline. Later daily runs poll
 recent history pages, re-read a small overlap window, and persist only new
 messages through the same post upsert path used by other publishing platforms.
 
+## Web UI
+
+`npm run serve` starts a local web interface on `http://127.0.0.1:3030`
+(`WEB_PORT`, `--port`). Log in with the master password; it also unlocks the
+vault for collection and publishing. Without a vault the terminal prints a
+one-time access token.
+
+- **Огляд:** collection health, freshness per platform, accounts needing
+  attention with their last error, recent runs with per-account outcomes,
+  one-click collection per platform or for everything.
+- **Акаунти:** accounts, personas and the state of every login session;
+  context sync after editing YAML.
+- **Пости / Сигнали:** browse and search collected posts by persona,
+  platform and engagement; unused signals.
+- **Telegram:** drafts prepared by the AI (MCP) or in the form; publish only
+  after an explicit confirmation.
+- **Задачі:** collection jobs from MCP, the browser and the scheduler.
+
+The browser calls the same tools as the AI agent (`core/mcp/toolRegistry.js`),
+with the same validation. `npm run serve -- --schedule` also runs cron
+collection in the same process. The server binds to loopback only, checks the
+Host header, requires a same-origin custom header on every POST, uses
+HttpOnly SameSite=Strict session cookies, throttles failed logins and sends a
+strict Content-Security-Policy.
+
 ## CLI
 
 Use `npm run nyra -- <command>` when the `eanyra` binary is not globally linked.
@@ -306,6 +334,7 @@ Use `npm run nyra -- <command>` when the `eanyra` binary is not globally linked.
 | Command | Purpose |
 |---|---|
 | `npm start` | Start the cron daemon |
+| `npm run serve [-- --schedule] [--port <n>]` | Local web UI on 127.0.0.1 (optionally with cron collection) |
 | `npm run scrape` | Collect all active configured accounts once |
 | `npm run scrape:twitter` | Collect Twitter/X accounts once |
 | `npm run scrape:github` | Collect GitHub accounts once |

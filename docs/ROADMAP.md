@@ -118,8 +118,11 @@ the current repository state, not on the older README.
 - [x] **Encrypted credentials.** Master-password vault (scrypt + AES-256-GCM)
   for all logins and tokens, Windows DPAPI "remember on this PC", migration and
   purge of plaintext `.env`/cookie/profile copies.
-- [ ] **Local web server.** `eanyra serve` on 127.0.0.1: account/session health,
-  collection jobs, posts and signals, and approval of AI-prepared drafts.
+- [x] **Local web server.** `eanyra serve` on 127.0.0.1: account/session health,
+  collection jobs, posts and signals, context sync, and approval of
+  AI-prepared Telegram drafts.
+- [ ] **Embed the MCP HTTP transport in `eanyra serve`** so one process serves
+  the browser and remote-capable agents.
 - [ ] **Unified drafts for all platforms.** AI prepares posts per persona and
   platform; X/LinkedIn stay manual-publish, Telegram can publish after approval.
 - [x] **Durable job queue.** Collection jobs live in the `jobs` table and

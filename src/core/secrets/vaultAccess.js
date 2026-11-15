@@ -83,6 +83,19 @@ export async function getVault({ interactive = Boolean(process.stdin.isTTY), fil
   throw new VaultLockedError();
 }
 
+/**
+ * Unlock with a password supplied by a front end (web login) and make it the
+ * process-wide vault. Throws VaultDecryptError on a wrong password.
+ */
+export async function unlockSharedVault(password, { filePath = PATHS.vaultFile } = {}) {
+  const vault = new Vault(filePath);
+  if (!await vault.exists()) return null;
+  await vault.unlock(password);
+  if (shared !== vault) shared?.lock();
+  shared = vault;
+  return vault;
+}
+
 /** Key material for a worker process, or null in legacy mode. */
 export async function vaultKeyForWorker(opts) {
   const vault = await getVault({ interactive: false, ...opts });
