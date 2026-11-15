@@ -61,6 +61,57 @@ const migrations = [
       }, transaction);
     },
   },
+  {
+    // Rebuilds `accounts` with a fixed column list, so it runs on its own
+    // connection and must stay before any migration that adds account columns.
+    name: '20261024_accounts_platform_username',
+    standalone: migrateAccountIdentity,
+  },
+  {
+    name: '20261116_run_health_and_jobs',
+    async up({ queryInterface, transaction }) {
+      await addColumnIfMissing(queryInterface, 'scraper_runs', 'signals_saved', {
+        type: DataTypes.INTEGER, allowNull: false, defaultValue: 0,
+      }, transaction);
+      for (const [column, type] of [['last_attempt_at', DataTypes.DATE], ['last_error', DataTypes.TEXT], ['last_error_at', DataTypes.DATE]]) {
+        await addColumnIfMissing(queryInterface, 'accounts', column, { type, allowNull: true }, transaction);
+      }
+
+      await createTableIfMissing(queryInterface, 'scraper_run_accounts', {
+        id:            { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+        run_id:        { type: DataTypes.INTEGER, allowNull: false, references: { model: 'scraper_runs', key: 'id' }, onDelete: 'CASCADE' },
+        account_id:    { type: DataTypes.INTEGER, allowNull: false, references: { model: 'accounts', key: 'id' }, onDelete: 'CASCADE' },
+        platform:      { type: DataTypes.STRING(32), allowNull: false },
+        username:      { type: DataTypes.STRING(128), allowNull: false },
+        session:       { type: DataTypes.STRING(64), allowNull: true },
+        status:        { type: DataTypes.STRING(16), allowNull: false },
+        records_found: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+        records_saved: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+        error:         { type: DataTypes.TEXT, allowNull: true },
+        started_at:    { type: DataTypes.DATE, allowNull: false },
+        finished_at:   { type: DataTypes.DATE, allowNull: true },
+      }, transaction);
+      await addIndexIfMissing(queryInterface, 'scraper_run_accounts', 'scraper_run_accounts_run_id', ['run_id'], transaction);
+      await addIndexIfMissing(queryInterface, 'scraper_run_accounts', 'scraper_run_accounts_account_id', ['account_id'], transaction);
+
+      await createTableIfMissing(queryInterface, 'jobs', {
+        id:           { type: DataTypes.STRING(36), primaryKey: true, allowNull: false },
+        type:         { type: DataTypes.STRING(32), allowNull: false },
+        source:       { type: DataTypes.STRING(32), allowNull: false },
+        status:       { type: DataTypes.STRING(16), allowNull: false },
+        params:       { type: DataTypes.TEXT, allowNull: true },
+        result:       { type: DataTypes.TEXT, allowNull: true },
+        error:        { type: DataTypes.TEXT, allowNull: true },
+        pid:          { type: DataTypes.INTEGER, allowNull: true },
+        created_at:   { type: DataTypes.DATE, allowNull: false },
+        started_at:   { type: DataTypes.DATE, allowNull: true },
+        finished_at:  { type: DataTypes.DATE, allowNull: true },
+        heartbeat_at: { type: DataTypes.DATE, allowNull: true },
+      }, transaction);
+      await addIndexIfMissing(queryInterface, 'jobs', 'jobs_status', ['status'], transaction);
+      await addIndexIfMissing(queryInterface, 'jobs', 'jobs_created_at', ['created_at'], transaction);
+    },
+  },
 ];
 
 export class SchemaMigrator {
@@ -78,6 +129,12 @@ export class SchemaMigrator {
     for (const migration of migrations) {
       if (applied.has(migration.name)) continue;
 
+      if (migration.standalone) {
+        await migration.standalone(this.sequelize, migration.name);
+        completed.push(migration.name);
+        continue;
+      }
+
       await this.sequelize.transaction(async transaction => {
         await migration.up({
           sequelize: this.sequelize,
@@ -91,12 +148,6 @@ export class SchemaMigrator {
         );
       });
       completed.push(migration.name);
-    }
-
-    const identityMigration = '20261024_accounts_platform_username';
-    if (!applied.has(identityMigration)) {
-      await migrateAccountIdentity(this.sequelize, identityMigration);
-      completed.push(identityMigration);
     }
     return completed;
   }

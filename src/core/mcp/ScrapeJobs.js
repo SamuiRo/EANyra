@@ -1,73 +1,95 @@
 import { fork } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import { normalizeSelection } from '../../config/accountConfig.js';
 import { vaultKeyForWorker } from '../secrets/vaultAccess.js';
+import { JobStore } from '../services/JobStore.js';
+import { mcpExecutor } from '../services/sql.js';
+import * as mcpDb from './db.js';
 
+/**
+ * Starts collection jobs in a separate worker process and tracks them in the
+ * durable `jobs` table, so job state survives an MCP restart and is visible
+ * to every front end. The worker marks the job running and records the
+ * outcome itself; this class only fills in when the worker dies silently.
+ */
 export class ScrapeJobs {
   /**
-   * @param {{ spawn?: typeof fork, getVaultKey?: () => Promise<object|null> }} [deps]
+   * @param {{ spawn?: typeof fork, getVaultKey?: () => Promise<object|null>,
+   *           store?: JobStore, source?: string }} [deps]
    *   getVaultKey unlocks the vault non-interactively; the key reaches the
    *   worker only over IPC, never through argv or the environment.
    */
-  constructor({ spawn = fork, getVaultKey = vaultKeyForWorker } = {}) {
+  constructor({ spawn = fork, getVaultKey = vaultKeyForWorker, store, source = 'mcp' } = {}) {
     this.spawn = spawn;
     this.getVaultKey = getVaultKey;
-    this.jobs = new Map();
-    this.active = null;
+    this.store = store ?? new JobStore(mcpExecutor(mcpDb));
+    this.source = source;
+    this.children = new Set();
+    this.starting = false;
   }
 
   async start(args = {}) {
     const selection = normalizeSelection(args);
-    if (this.active) throw new Error(`Scrape already running: ${this.active}`);
-    const job = { job_id: randomUUID(), status: 'running', started_at: new Date().toISOString(), ...selection };
-    // Reserve the slot before the async unlock so two calls cannot both start.
-    this.active = job.job_id;
-    let vaultKey;
+    // Guards this process; the scrape lock and the job table guard the rest.
+    if (this.starting) throw new Error('A scrape is already being started.');
+    this.starting = true;
     try {
-      vaultKey = await this.getVaultKey();
-    } catch (error) {
-      this.active = null;
-      throw error;
+      const [active] = await this.store.active('scrape');
+      if (active) throw new Error(`Scrape already running: ${active.job_id}`);
+      const vaultKey = await this.getVaultKey();
+      const job = await this.store.create({ type: 'scrape', source: this.source, params: selection });
+      this.#spawn(job.job_id, selection, vaultKey);
+      return job;
+    } finally {
+      this.starting = false;
     }
-    // Keep a bounded history; durable collection results live in scraper_runs.
-    if (this.jobs.size >= 50) this.jobs.delete(this.jobs.keys().next().value);
-    const child = this.spawn(new URL('./scrapeWorker.js', import.meta.url), [], {
-      stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
-      windowsHide: true,
-      execArgv: [],
-    });
-    this.jobs.set(job.job_id, job);
-    this.child = child;
-    let outcome;
-    child.on('message', message => { outcome = message; });
-    const finish = error => {
-      if (job.status !== 'running') return;
-      job.finished_at = new Date().toISOString();
-      job.status = error || outcome?.error ? 'failed' : (outcome?.result?.status ?? 'failed');
-      if (outcome?.result) job.result = outcome.result;
-      if (error || outcome?.error) job.error = outcome?.error ?? error;
-      this.active = null;
-      this.child = null;
-    };
-    child.on('error', error => finish(error.message));
-    child.on('exit', (code, signal) => finish(code === 0 && outcome
-      ? null : `Scrape worker exited (${signal ?? code}). Check scraper_status and the scrape lock if it was interrupted.`));
-    try {
-      child.send({ selection, vaultKey }, error => { if (error) { child.kill(); finish(error.message); } });
-    } catch (error) {
-      child.kill();
-      finish(error.message);
-    }
-    return { ...job };
   }
 
-  get(jobId) {
-    const job = this.jobs.get(jobId);
-    if (!job) throw new Error('Unknown job_id. Job history is local to this MCP process; use scraper_status for persisted run history.');
-    return { ...job };
+  async get(jobId) {
+    await this.store.recoverOrphans();
+    const job = await this.store.get(jobId);
+    if (!job) throw new Error('Unknown job_id. Use scraper_jobs_list or scraper_status for collection history.');
+    return job;
+  }
+
+  async list(opts) {
+    await this.store.recoverOrphans();
+    return this.store.list(opts);
+  }
+
+  #spawn(jobId, selection, vaultKey) {
+    const fail = message => this.store.finish(jobId, { status: 'failed', error: message }).catch(() => {});
+    let child;
+    try {
+      child = this.spawn(new URL('./scrapeWorker.js', import.meta.url), [], {
+        stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+        windowsHide: true,
+        execArgv: [],
+      });
+    } catch (error) {
+      void fail(`Could not start the scrape worker: ${error.message}`);
+      throw error;
+    }
+    this.children.add(child);
+    let exited = false;
+    const done = message => {
+      if (exited) return;
+      exited = true;
+      this.children.delete(child);
+      // No-op when the worker already recorded its outcome.
+      if (message) void fail(message);
+    };
+    child.on('error', error => done(error.message));
+    child.on('exit', (code, signal) => done(code === 0
+      ? null : `Scrape worker exited (${signal ?? code}). Check scraper_status and the scrape lock if it was interrupted.`));
+    try {
+      child.send({ jobId, selection, vaultKey }, error => { if (error) { child.kill(); done(error.message); } });
+    } catch (error) {
+      child.kill();
+      done(error.message);
+    }
   }
 
   close() {
-    this.child?.kill();
+    for (const child of this.children) child.kill();
   }
 }

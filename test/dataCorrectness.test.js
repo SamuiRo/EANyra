@@ -137,7 +137,7 @@ test('schema migrations repair the legacy database without repeated ALTER sync',
   await sequelize.query('CREATE TABLE accounts_backup AS SELECT * FROM accounts');
 
   const migrator = new SchemaMigrator(sequelize);
-  assert.equal((await migrator.migrate()).length, 5);
+  assert.equal((await migrator.migrate()).length, 6);
   assert.deepEqual(await migrator.migrate(), []);
 
   const tables = await sequelize.getQueryInterface().showAllTables();
@@ -147,6 +147,9 @@ test('schema migrations repair the legacy database without repeated ALTER sync',
 
   assert.equal(tables.includes('accounts_backup'), false);
   assert.ok(accountColumns.is_archived);
+  // Columns added after the accounts rebuild survive it.
+  assert.ok(accountColumns.last_error);
+  assert.ok(tables.includes("jobs") && tables.includes("scraper_run_accounts"));
   assert.ok(postColumns.exported_at);
   assert.ok(signalColumns.exported_at);
 });
@@ -162,7 +165,7 @@ test('schema migrations fully bootstrap a clean database for every model', async
   const models = registerModels(sequelize);
   const migrator = new SchemaMigrator(sequelize);
 
-  assert.equal((await migrator.migrate()).length, 5);
+  assert.equal((await migrator.migrate()).length, 6);
   assert.deepEqual(await migrator.migrate(), []);
 
   const tables = await sequelize.getQueryInterface().showAllTables();

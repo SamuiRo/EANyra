@@ -183,7 +183,7 @@ test('MCP resolves a persona from the target account and scopes posts to it', { 
   assert.equal(job.persona, 'brand');
   assert.deepEqual(job.accounts, ['telegram/brand_channel']);
   let finished;
-  for (let i = 0; i < 150 && (!finished || finished.status === 'running'); i++) {
+  for (let i = 0; i < 150 && (!finished || ['queued', 'running'].includes(finished.status)); i++) {
     if (finished) await new Promise(resolve => setTimeout(resolve, 100));
     finished = (await call('scraper_job_get', { job_id: job.job_id })).body;
   }

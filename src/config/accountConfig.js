@@ -1,10 +1,11 @@
 import { SUPPORTED_PLATFORMS } from './app.config.js';
+import { SESSION_PLATFORMS } from '../platforms/catalog.js';
 import { normalizeTelegramChannel } from '../platforms/telegram/TelegramMessageParser.js';
 
 /** Login used when an account does not name one. */
 export const DEFAULT_SESSION = 'default';
 /** Platforms whose collection needs a login stored in the vault. */
-export const SESSION_PLATFORMS = ['twitter', 'telegram', 'github'];
+export { SESSION_PLATFORMS };
 const SESSION_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const IMPORT_FILE = /^[\w .()-]{1,128}\.csv$/i;
 

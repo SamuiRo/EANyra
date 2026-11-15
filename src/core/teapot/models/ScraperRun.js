@@ -38,7 +38,14 @@ export function defineScraperRunModel(sequelize) {
       allowNull:    false,
       defaultValue: 0,
     },
+    /** New published posts (twitter, linkedin, telegram). */
     posts_saved: {
+      type:         DataTypes.INTEGER,
+      allowNull:    false,
+      defaultValue: 0,
+    },
+    /** New signals (github). */
+    signals_saved: {
       type:         DataTypes.INTEGER,
       allowNull:    false,
       defaultValue: 0,

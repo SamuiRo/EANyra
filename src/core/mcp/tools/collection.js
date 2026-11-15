@@ -35,9 +35,22 @@ export function buildCollectionTools(jobs) {
     },
     {
       name: 'scraper_job_get',
-      description: 'Get a background collection result by job_id. Status: running, success, partial, failed. Job IDs last for this MCP process only; scraper_status provides durable run history.',
+      description: 'Get a background collection job by job_id. Status: queued, running, success, partial, failed. Jobs are stored durably and survive MCP restarts; a job whose worker died is reported as failed. result holds the run id and new post/signal counts; scraper_status shows per-account outcomes.',
       inputSchema: { type: 'object', required: ['job_id'], properties: { job_id: { type: 'string', minLength: 1 } } },
       handler: ({ job_id }) => jobs.get(job_id),
+    },
+    {
+      name: 'scraper_jobs_list',
+      description: 'List recent background collection jobs from any requester (MCP, CLI, web), newest first.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          limit: { type: 'integer', minimum: 1, maximum: 50, default: 10 },
+          status: { type: 'string', enum: ['queued', 'running', 'success', 'partial', 'failed'] },
+        },
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+      handler: ({ limit = 10, status } = {}) => jobs.list({ limit, status }),
     },
     {
       name: 'telegram_messages_get',

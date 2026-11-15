@@ -1,18 +1,16 @@
 /**
  * src/core/orchestrator/ScraperOrchestrator.js
  *
- * Coordinates a complete scrape run across all active platforms
- * (or a single platform when called from `eanyra scrape <platform>`).
+ * Coordinates one collection run across the configured accounts. It is
+ * platform-agnostic: what each platform collects lives in
+ * platforms/collectors.js, where its records go in platforms/catalog.js.
  *
  * Flow:
- *   1. Open a ScraperRun record (status: running)
- *   2. Sync accounts.json → DB
- *   3. Filter accounts by platform (if provided)
- *   4. Dispatch each account to the correct platform scraper:
- *        twitter  → Browser + TwitterScraper (Playwright, human-behaviour delays)
- *        github   → GithubScraper (REST API, no browser)  → signals table
- *        linkedin → LinkedinImporter (CSV import)         → posts table
- *        telegram → TelegramScraper (MTProto polling)     → posts table
+ *   1. Take the scrape lock; close runs a crashed process left "running"
+ *   2. Open a ScraperRun record (status: running)
+ *   3. Sync accounts.json → DB and select accounts (platform / account filter)
+ *   4. For each account: collector.collect() → save posts or signals →
+ *      update account health → record the per-account outcome
  *   5. Close runtime clients; refreshed X sessions are re-encrypted into the vault
  *   6. Finalise the ScraperRun record (success / partial / failed)
  *
@@ -20,32 +18,25 @@
  *   Every account names its login with "session" in accounts.json (default
  *   "default"). X profiles are grouped by session: the long human-like pause
  *   applies only between profiles of one login, and a rejected login stops
- *   only its own accounts. Telegram keeps one MTProto client per session and
- *   GitHub uses each session's token. Credentials come from the encrypted
- *   vault (core/secrets/Credentials.js).
+ *   only its own accounts. Telegram keeps one MTProto client per session.
+ *   Credentials come from the encrypted vault (core/secrets/Credentials.js).
  *
- * Adding a new platform:
- *   1. Create src/platforms/<n>/index.js with createScraper() + PLATFORM_ID
- *   2. Add a case in #scrapeAccount() below
- *   3. Add the platform string to SUPPORTED_PLATFORMS in app.config.js
+ * Adding a platform: catalog.js entry + collector in collectors.js.
  */
 
-import { Browser }                                  from '../browser/Browser.js';
-import {
-  createScraper as createTwitterScraper,
-  TWITTER_SESSION_EXPIRED,
-} from '../../platforms/twitter/index.js';
-import { createScraper as createGithubScraper }    from '../../platforms/github/index.js';
-import { createScraper as createLinkedinImporter } from '../../platforms/linkedin/index.js';
+import { Browser }                 from '../browser/Browser.js';
+import { TWITTER_SESSION_EXPIRED } from '../../platforms/twitter/index.js';
 import {
   createScraper as createTelegramScraper,
   TelegramClient,
 } from '../../platforms/telegram/index.js';
+import { platformInfo }            from '../../platforms/catalog.js';
+import { COLLECTORS }              from '../../platforms/collectors.js';
 import { AccountRepository }    from '../teapot/repositories/AccountRepository.js';
 import { PostRepository }       from '../teapot/repositories/PostRepository.js';
 import { SignalRepository }     from '../teapot/repositories/SignalRepository.js';
 import { ScraperRunRepository } from '../teapot/repositories/ScraperRunRepository.js';
-import { SCRAPER, LINKEDIN, TELEGRAM } from '../../config/app.config.js';
+import { SCRAPER }              from '../../config/app.config.js';
 import { print, sleep }         from '../../shared/utils.js';
 import { normalizeSelection, accountKey, sessionOf } from '../../config/accountConfig.js';
 import { Credentials } from '../secrets/Credentials.js';
@@ -68,13 +59,16 @@ export class ScraperOrchestrator {
    *   credentials?:     Credentials,
    *   browserFactory?:  () => Browser,
    *   telegramFactory?: (config: object) => { connect(): Promise<unknown>, disconnect(): Promise<void>, scrapeAccount: Function },
+   *   collectors?:      typeof COLLECTORS,
    *   pause?:           (ms: number) => Promise<void>,
    *   accountsConfigPath?: string,
    *   lockPath?:        string,
+   *   onRunStarted?:    (run: object) => void|Promise<void>,
    * }} [deps] test seams; production uses the real implementations
    */
   constructor(models, deps = {}) {
     this.deps           = deps;
+    this.collectors     = deps.collectors ?? COLLECTORS;
     this.accountRepo    = deps.accountsConfigPath
       ? new AccountRepository(models.Account, deps.accountsConfigPath)
       : new AccountRepository(models.Account);
@@ -95,9 +89,13 @@ export class ScraperOrchestrator {
     const release = await (this.deps.lockPath ? acquireScrapeLock(this.deps.lockPath) : acquireScrapeLock());
     let scraperRun;
     try {
+      // Holding the lock means no other collection is running.
+      await this.scraperRunRepo.failOrphans();
       scraperRun = await this.scraperRunRepo.start();
+      await this.deps.onRunStarted?.(scraperRun.toJSON());
       this.#credentials = this.deps.credentials ?? await Credentials.open();
       await this.#runAccounts(scraperRun, { platform, targets });
+      await scraperRun.reload();
       return scraperRun.toJSON();
     } catch (error) {
       if (scraperRun) await this.scraperRunRepo.fail(scraperRun, error);
@@ -138,7 +136,7 @@ export class ScraperOrchestrator {
       'info',
     );
 
-    let totalSaved   = 0;
+    const totals = { posts: 0, signals: 0 };
     let accountsDone = 0;
     const failed     = [];
 
@@ -156,17 +154,20 @@ export class ScraperOrchestrator {
         const account = queue[i];
         const session = this.#sessionOf(account);
         const sessionKey = `${account.platform}:${session}`;
+        const startedAt = new Date();
+        const usesSession = Boolean(platformInfo(account.platform).session);
 
         print(
           `[${i + 1}/${queue.length}] @${account.username} (${account.platform}` +
-          (session === 'default' ? ')' : `, session ${session})`),
+          (usesSession && session !== 'default' ? `, session ${session})` : ')'),
           'info',
         );
 
         if (sessionErrors.has(sessionKey)) {
-          const msg = `@${account.username} (${account.platform}) skipped: ${sessionErrors.get(sessionKey)}`;
-          print(msg, 'warning');
-          failed.push(msg);
+          const reason = `skipped: ${sessionErrors.get(sessionKey)}`;
+          print(`@${account.username} (${account.platform}) ${reason}`, 'warning');
+          failed.push(`@${account.username} (${account.platform}) ${reason}`);
+          await this.#recordFailure(scraperRun, account, { status: 'skipped', error: reason, startedAt, session });
           continue;
         }
 
@@ -179,43 +180,84 @@ export class ScraperOrchestrator {
         }
 
         try {
-          const saved = await this.#scrapeAccount(account);
-          totalSaved   += saved;
+          const outcome = await this.#scrapeAccount(account, session);
+          totals[outcome.output] += outcome.saved;
           accountsDone += 1;
+          await this.scraperRunRepo.recordAccount(scraperRun, account, {
+            status: 'success', found: outcome.found, saved: outcome.saved, startedAt,
+            session: usesSession ? session : null,
+          });
         } catch (err) {
           const msg = `@${account.username} (${account.platform}) failed: ${err.message}`;
           print(msg, 'error');
           failed.push(msg);
           if (SESSION_ERRORS.includes(err.code)) sessionErrors.set(sessionKey, err.message);
+          await this.#recordFailure(scraperRun, account, {
+            status: 'failed', error: err.message, startedAt, session: usesSession ? session : null,
+          });
         }
       }
     } finally {
       await this.#closeClients();
     }
 
+    const stats = { accountsProcessed: accountsDone, postsSaved: totals.posts, signalsSaved: totals.signals };
     if (failed.length === 0) {
-      await this.scraperRunRepo.finish(scraperRun, {
-        accountsProcessed: accountsDone,
-        postsSaved:        totalSaved,
-      });
+      await this.scraperRunRepo.finish(scraperRun, stats);
     } else if (accountsDone > 0) {
-      await this.scraperRunRepo.partialFinish(scraperRun, {
-        accountsProcessed: accountsDone,
-        postsSaved:        totalSaved,
-        errorMessage:      failed.join(' | '),
-      });
+      await this.scraperRunRepo.partialFinish(scraperRun, { ...stats, errorMessage: failed.join(' | ') });
     } else {
       await this.scraperRunRepo.fail(scraperRun, `All accounts failed: ${failed.join(' | ')}`);
     }
   }
 
-  // ── Private ───────────────────────────────────────────────────────────────
+  /**
+   * Collect one account through its platform adapter and persist the result.
+   * @returns {Promise<{ output: 'posts'|'signals', found: number, saved: number }>}
+   */
+  async #scrapeAccount(account, session) {
+    const info = platformInfo(account.platform);
+    const collector = this.collectors[account.platform];
+    const { records, scrapedAt } = await collector.collect({
+      account,
+      entry: this.#config.get(accountKey(account)),
+      session,
+      runtime: this.#runtime,
+      repos: { postRepo: this.postRepo, signalRepo: this.signalRepo },
+    });
+    const repo  = info.output === 'signals' ? this.signalRepo : this.postRepo;
+    const saved = await repo.saveBatch(account.id, records);
+    await this.accountRepo.markScraped(account.id, scrapedAt ?? new Date());
+    print(`  → ${records.length} ${info.output} collected, ${saved} new saved.`, 'data');
+    return { output: info.output, found: records.length, saved };
+  }
+
+  async #recordFailure(scraperRun, account, outcome) {
+    // Bookkeeping must never hide the original error or stop the run.
+    try {
+      await this.accountRepo.markFailed(account.id, outcome.error);
+      await this.scraperRunRepo.recordAccount(scraperRun, account, outcome);
+    } catch (error) {
+      print(`Could not record the outcome for @${account.username}: ${error.message}`, 'warning');
+    }
+  }
+
+  // ── Runtime clients ───────────────────────────────────────────────────────
 
   #credentials = null;
   #config = new Map();
   #activeBrowser = null;
   #activeTwitterSession = null;
   #telegramScrapers = new Map();
+
+  /** What collectors may use; owned and closed by the orchestrator. */
+  get #runtime() {
+    return {
+      credentials:     this.#credentials,
+      twitterSession:  name => this.#ensureTwitterSession(name),
+      telegramScraper: name => this.#ensureTelegramScraper(name),
+    };
+  }
 
   #sessionOf(account) {
     return sessionOf(this.#config.get(accountKey(account)));
@@ -290,126 +332,7 @@ export class ScraperOrchestrator {
     }
   }
 
-  /**
-   * Scrape a single account. Returns the number of newly saved records.
-   *
-   * @param {import('sequelize').Model} account
-   * @returns {Promise<number>}
-   */
-  async #scrapeAccount(account) {
-    switch (account.platform) {
-
-      // ── Twitter → posts table ───────────────────────────────────────────
-      case 'twitter': {
-        const isInitial   = await this.#isInitialTwitterRun(account);
-        const postsTarget = isInitial
-          ? SCRAPER.initialPostsPerAccount
-          : SCRAPER.postsPerAccount;
-
-        print(
-          `  → ${isInitial ? 'INITIAL harvest' : 'daily top-up'} (target: ${postsTarget} posts)`,
-          'system',
-        );
-
-        const session = await this.#ensureTwitterSession(this.#sessionOf(account));
-        const page    = await session.newPage();
-        try {
-          const scraper  = createTwitterScraper(page, postsTarget);
-          const rawPosts = await scraper.scrapeAccount(account.username);
-          const saved    = await this.postRepo.saveBatch(account.id, rawPosts);
-          await this.accountRepo.markScraped(account.id);
-          print(`  → ${rawPosts.length} scraped, ${saved} new saved.`, 'data');
-          return saved;
-        } finally {
-          await page.close();
-        }
-      }
-
-      // ── GitHub → signals table ──────────────────────────────────────────
-      case 'github': {
-        const session = this.#sessionOf(account);
-        const token   = this.#credentials.githubToken(session);
-        if (!token) {
-          throw Object.assign(new Error(
-            `No GitHub token for session "${session}". Run \`npm run nyra -- secrets set github ${session}\`.`,
-          ), { code: 'GITHUB_TOKEN_MISSING' });
-        }
-        const readmeShas  = await this.signalRepo.getGithubReadmeShas(account.username);
-        const scraper     = createGithubScraper(token, readmeShas);
-        const rawSignals  = await scraper.scrapeAccount(account.username);
-        const saved       = await this.signalRepo.saveBatch(account.id, rawSignals);
-        await this.accountRepo.markScraped(account.id);
-        print(`  → ${rawSignals.length} signals, ${saved} new saved.`, 'data');
-        return saved;
-      }
-
-      // ── LinkedIn → posts table ──────────────────────────────────────────
-      case 'linkedin': {
-        const entry    = this.#config.get(accountKey(account));
-        const importer = createLinkedinImporter(LINKEDIN.importsDir, {
-          sharesFile: entry?.import_file ?? LINKEDIN.sharesFile,
-        });
-        const rawPosts = await importer.scrapeAccount(account.username);
-        const saved    = await this.postRepo.saveBatch(account.id, rawPosts);
-        await this.accountRepo.markScraped(account.id);
-        print(`  → ${rawPosts.length} posts parsed, ${saved} new saved.`, 'data');
-        return saved;
-      }
-
-      case 'telegram': {
-        const scrapeStartedAt = new Date();
-        const since           = account.last_scraped_at
-          ?? await this.postRepo.newestPostDate(account.id, 'telegram');
-        const isInitial       = since === null;
-
-        print(
-          `  -> ${isInitial ? `INITIAL harvest (target: ${TELEGRAM.initialPostsPerAccount} posts)` : 'daily top-up'} (polling mode)`,
-          'system',
-        );
-
-        const scraper  = await this.#ensureTelegramScraper(this.#sessionOf(account));
-        const rawPosts = await scraper.scrapeAccount(account.username, {
-          since,
-          initialLimit: TELEGRAM.initialPostsPerAccount,
-        });
-        const saved    = await this.postRepo.saveBatch(account.id, rawPosts);
-        await this.accountRepo.markScraped(
-          account.id,
-          this.#telegramBaselineTimestamp(rawPosts, scrapeStartedAt, since),
-        );
-        print(`  -> ${rawPosts.length} messages parsed, ${saved} new saved.`, 'data');
-        return saved;
-      }
-
-      default:
-        throw new Error(`Unknown platform: "${account.platform}"`);
-    }
-  }
-
-  async #isInitialTwitterRun(account) {
-    if (!account.last_scraped_at) return true;
-    const oldest = await this.postRepo.oldestPostDate(account.id, 'twitter');
-    return oldest === null;
-  }
-
-  #telegramBaselineTimestamp(rawPosts, fallback, previousBoundary = null) {
-    const latestPostAt = rawPosts.reduce((latest, post) => {
-      if (!(post.posted_at instanceof Date)) return latest;
-      return latest === null || post.posted_at > latest ? post.posted_at : latest;
-    }, null);
-
-    if (previousBoundary) {
-      const previous = previousBoundary instanceof Date
-        ? previousBoundary
-        : new Date(previousBoundary);
-
-      if (!Number.isNaN(previous.getTime())) {
-        return latestPostAt && latestPostAt > previous ? latestPostAt : fallback;
-      }
-    }
-
-    return latestPostAt ?? fallback;
-  }
+  // ── Pacing ────────────────────────────────────────────────────────────────
 
   async #wakeUpPause() {
     const wakeUpMs = Math.floor(Math.random() * SCRAPER.wakeUpMaxMs);

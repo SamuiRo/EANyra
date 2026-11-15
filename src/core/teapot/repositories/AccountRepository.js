@@ -81,13 +81,22 @@ export class AccountRepository {
   }
 
   /**
-   * Update last_scraped_at for a single account.
+   * Record a successful collection and clear the previous error.
    * @param {number} accountId
-   * @param {Date}   timestamp
+   * @param {Date}   timestamp  last_scraped_at (Telegram: polling watermark)
    */
   async markScraped(accountId, timestamp = new Date()) {
     await this.Account.update(
-      { last_scraped_at: timestamp },
+      { last_scraped_at: timestamp, last_attempt_at: new Date(), last_error: null, last_error_at: null },
+      { where: { id: accountId } },
+    );
+  }
+
+  /** Record a failed or skipped attempt; last_scraped_at stays unchanged. */
+  async markFailed(accountId, message) {
+    const now = new Date();
+    await this.Account.update(
+      { last_attempt_at: now, last_error: String(message).slice(0, 2000), last_error_at: now },
       { where: { id: accountId } },
     );
   }

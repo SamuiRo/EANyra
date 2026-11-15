@@ -32,8 +32,8 @@ the current repository state, not on the older README.
   share `Shares.csv`.
 - [x] **Resolve `used_for_content` semantics.** CLI export now records
   `exported_at`; `used_for_content` is reserved for confirmed publication.
-- [ ] **Correct scraper run metrics.** `scraper_runs.posts_saved` also counts
-  saved signals. Rename it or store post and signal counts separately.
+- [x] **Correct scraper run metrics.** `posts_saved` and `signals_saved` are
+  stored separately, plus per-account outcomes in `scraper_run_accounts`.
 - [x] **Make account/project sync reconcile deletions.** Removed accounts and
   deleted project YAML files are archived without deleting historical data.
   Explicit `archive: true` is supported in account JSON and project YAML.
@@ -69,11 +69,11 @@ the current repository state, not on the older README.
 - [x] **Improve scheduler concurrency behavior.** A database-scoped file lock
   prevents overlapping scheduler, CLI, and MCP collection. Crash recovery of
   stale lock files remains manual.
-- [ ] **Handle orphaned `running` scraper runs.** A hard process termination can
-  leave runs permanently marked as running.
-- [ ] **Improve freshness reporting.** `scraper_status` calculates age from the
-  latest finished run, even when it failed; report last successful collection
-  and per-platform freshness.
+- [x] **Handle orphaned `running` scraper runs.** The next run (holding the
+  scrape lock) marks them failed; jobs with a dead worker PID are recovered.
+- [x] **Improve freshness reporting.** `scraper_status` reports age since the
+  last successful collection, per-platform freshness and accounts needing
+  attention with their last error.
 - [ ] **Review browser anti-detection patches.** Browser API monkey-patching can
   break page behavior and may not reduce detection risk. Keep only measured,
   tested changes.
@@ -87,9 +87,9 @@ the current repository state, not on the older README.
 - [x] **Remove or migrate legacy Twitter MCP tools.**
   The unregistered `src/core/mcp/tools/twitter.js` was removed; the unified
   `posts_*` and `accounts_list` tools cover Twitter.
-- [ ] **Generate supported-platform metadata from one registry.** Platform IDs
-  and enums are duplicated across CLI validation, the orchestrator, MCP
-  schemas, and documentation.
+- [x] **Generate supported-platform metadata from one registry.**
+  `platforms/catalog.js` plus one collector per platform; the orchestrator no
+  longer switches on platform.
 - [x] **Reduce duplicate browser stealth logic.** Interactive login now uses a
   normal headful browser without scraper-specific API patches.
 - [ ] **Remove unused configuration and helpers or connect them to behavior.**
@@ -122,8 +122,10 @@ the current repository state, not on the older README.
   collection jobs, posts and signals, and approval of AI-prepared drafts.
 - [ ] **Unified drafts for all platforms.** AI prepares posts per persona and
   platform; X/LinkedIn stay manual-publish, Telegram can publish after approval.
-- [ ] **Durable job queue.** Persist collection jobs in SQLite so CLI, MCP,
-  scheduler and the web server share one view.
+- [x] **Durable job queue.** Collection jobs live in the `jobs` table and
+  survive MCP restarts; `scraper_jobs_list` shows them.
+- [ ] **Move remaining MCP queries into services** (posts, signals, context) as
+  the web server needs them.
 - [ ] **Encrypt the database and context at rest** (SQLCipher or equivalent).
 
 - [ ] **Posting-gap analysis and proactive reminders.** Compare recent
@@ -143,7 +145,7 @@ the current repository state, not on the older README.
   ownership, and import history explicitly.
 - [ ] **Optional community feedback sources.** Evaluate Discord and similar
   sources as signals after manual signal ingestion and attribution are stable.
-- [ ] **Per-platform health and run metrics.**
+- [x] **Per-platform health and run metrics.**
 - [ ] **Container and remote MCP deployment documentation** after transport
   security and lifecycle are tested.
 

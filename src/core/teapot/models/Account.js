@@ -6,7 +6,7 @@ import { DataTypes } from 'sequelize';
  * The `platform` field was added to support multi-platform scraping.
  * Existing rows default to 'twitter' (set in migration / sync fallback).
  *
- * platform values: 'twitter' | 'github'
+ * platform values: see platforms/catalog.js
  */
 export function defineAccountModel(sequelize) {
   return sequelize.define('Account', {
@@ -40,7 +40,21 @@ export function defineAccountModel(sequelize) {
       allowNull:    false,
       defaultValue: false,
     },
+    /** Last successful collection (Telegram: the polling watermark). */
     last_scraped_at: {
+      type:      DataTypes.DATE,
+      allowNull: true,
+    },
+    last_attempt_at: {
+      type:      DataTypes.DATE,
+      allowNull: true,
+    },
+    /** Error of the most recent attempt; cleared by the next success. */
+    last_error: {
+      type:      DataTypes.TEXT,
+      allowNull: true,
+    },
+    last_error_at: {
       type:      DataTypes.DATE,
       allowNull: true,
     },

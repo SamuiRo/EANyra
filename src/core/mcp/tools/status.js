@@ -1,20 +1,26 @@
-import { query, queryOne } from '../db.js';
+import * as mcpDb from '../db.js';
 import { MCP } from '../../../config/app.config.js';
+import { StatusService } from '../../services/StatusService.js';
+import { mcpExecutor } from '../../services/sql.js';
 
 /**
  * src/core/mcp/tools/status.js
  *
  * Tools:
- *   scraper_status — health check for all scrapers (platform-agnostic)
+ *   scraper_status — collection health, per-platform freshness, failing accounts
  */
+
+const status = new StatusService(mcpExecutor(mcpDb));
 
 export const statusTools = [
   {
     name: 'scraper_status',
     description:
-      'Check the health and data freshness of the EANyra scrapers. ' +
-      'Returns the latest run result, data age in hours, and recent run history. ' +
-      'Call this before a content session if you want to verify data is up to date.',
+      'Check collection health and data freshness. Returns overall health (ok, degraded, error, running), ' +
+      'data_age_hours since the last successful collection, per-platform freshness, accounts needing ' +
+      'attention (failed login, error, stale or never collected, with the last error), any active job ' +
+      'and recent runs with new post and signal counts. Pass run_id to see per-account outcomes of one run. ' +
+      'Call this before a content session to verify the data is current.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -25,56 +31,17 @@ export const statusTools = [
             `(default ${MCP.defaultStatusHistory}, max ${MCP.maxStatusHistory}).`,
           default:     MCP.defaultStatusHistory,
         },
+        run_id: {
+          type: 'integer', minimum: 1,
+          description: 'Optional: return per-account outcomes (status, new records, error) of this run.',
+        },
       },
     },
-    async handler({ history_limit = MCP.defaultStatusHistory } = {}) {
-      const cap = Math.min(Number(history_limit), MCP.maxStatusHistory);
-
-      const latest = await queryOne(`
-        SELECT *
-        FROM   scraper_runs
-        ORDER  BY started_at DESC
-        LIMIT  1
-      `);
-
-      const history = await query(`
-        SELECT
-          id,
-          started_at,
-          finished_at,
-          status,
-          accounts_processed,
-          posts_saved,
-          error_message,
-          ROUND(
-            (JULIANDAY(finished_at) - JULIANDAY(started_at)) * 86400
-          ) AS duration_seconds
-        FROM   scraper_runs
-        ORDER  BY started_at DESC
-        LIMIT  ?
-      `, [cap]);
-
-      let health = 'unknown';
-      if (latest) {
-        if      (latest.status === 'success') health = 'ok';
-        else if (latest.status === 'partial') health = 'degraded';
-        else if (latest.status === 'failed')  health = 'error';
-        else if (latest.status === 'running') health = 'running';
-      }
-
-      let data_age_hours = null;
-      if (latest?.finished_at) {
-        data_age_hours = Math.round(
-          (Date.now() - new Date(latest.finished_at).getTime()) / 36e5 * 10,
-        ) / 10;
-      }
-
-      return {
-        health,
-        data_age_hours,
-        latest_run:  latest ?? null,
-        recent_runs: history,
-      };
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    async handler({ history_limit = MCP.defaultStatusHistory, run_id } = {}) {
+      const cap = Math.max(1, Math.min(Number(history_limit) || MCP.defaultStatusHistory, MCP.maxStatusHistory));
+      const overview = await status.overview({ historyLimit: cap });
+      return run_id ? { ...overview, run_accounts: await status.runAccounts(run_id) } : overview;
     },
   },
 ];

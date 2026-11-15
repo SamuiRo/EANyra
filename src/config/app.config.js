@@ -2,6 +2,7 @@ import path from 'path';
 import { PROJECT_ROOT, INSTANCE_DIR, INSTANCE_ENV_PATH, instancePath as envPath } from './instance.js';
 
 import pkg from '../../package.json' with { type: 'json' };
+import { PLATFORM_IDS } from '../platforms/catalog.js';
 
 export { PROJECT_ROOT, INSTANCE_DIR, INSTANCE_ENV_PATH };
 
@@ -24,7 +25,8 @@ function envBoolean(name, fallback = false) {
 export const NODE_ENV = process.env.NODE_ENV ?? 'production';
 export const PKG      = pkg;
 
-export const SUPPORTED_PLATFORMS = ['twitter', 'github', 'linkedin', 'telegram'];
+/** Derived from platforms/catalog.js, the single platform registry. */
+export const SUPPORTED_PLATFORMS = PLATFORM_IDS;
 
 const DATA_DIR = envPath('DATA_DIR', path.join(INSTANCE_DIR, 'data'));
 

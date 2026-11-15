@@ -16,6 +16,8 @@ import { acquireScrapeLock } from '../src/core/orchestrator/ScrapeLock.js';
 import { ScrapeJobs } from '../src/core/mcp/ScrapeJobs.js';
 import { buildCollectionTools } from '../src/core/mcp/tools/collection.js';
 import { jsonSchemaToZod } from '../src/core/mcp/schema.js';
+import { JobStore } from '../src/core/services/JobStore.js';
+import { sequelizeExecutor } from '../src/core/services/sql.js';
 
 test('account validation normalizes platform identity and rejects invalid config', () => {
   assert.deepEqual(validateAccounts([
@@ -159,41 +161,84 @@ test('X profiles are grouped by login session after fast platforms', () => {
   assert.deepEqual(order, ['repo', 'b1', 'a1', 'a2', 'd1']);
 });
 
-test('MCP collection jobs report actual partial/failure outcomes and allow the next run', async () => {
+async function jobStoreFixture(t, opts) {
+  const sequelize = new Sequelize({ dialect: 'sqlite', storage: ':memory:', logging: false });
+  t.after(() => sequelize.close());
+  registerModels(sequelize);
+  await new SchemaMigrator(sequelize).migrate();
+  return new JobStore(sequelizeExecutor(sequelize), opts);
+}
+
+test('MCP collection jobs are durable, record worker failures and allow the next run', async t => {
+  const store = await jobStoreFixture(t, { isAlive: () => true });
   let child;
   const sent = [];
-  const jobs = new ScrapeJobs({ getVaultKey: async () => ({ key: 'k', salt: 's' }), spawn: () => {
+  const jobs = new ScrapeJobs({ store, getVaultKey: async () => ({ key: 'k', salt: 's' }), spawn: () => {
     child = new EventEmitter();
     child.send = (message, callback) => { sent.push(message); callback(); };
     child.kill = () => {};
     return child;
   } });
   const first = await jobs.start({ platform: 'telegram', account: '@Example' });
+  assert.equal(first.status, 'queued');
   assert.deepEqual(first.accounts, ['telegram/example']);
   // The vault key reaches the worker only over IPC.
-  assert.deepEqual(sent[0], { selection: { platform: 'telegram', accounts: ['telegram/example'] }, vaultKey: { key: 'k', salt: 's' } });
+  assert.deepEqual(sent[0], {
+    jobId: first.job_id, selection: { platform: 'telegram', accounts: ['telegram/example'] }, vaultKey: { key: 'k', salt: 's' },
+  });
   await assert.rejects(jobs.start(), /already running/);
-  child.emit('message', { result: { status: 'partial', accounts_processed: 1 } });
-  assert.equal(jobs.get(first.job_id).status, 'running');
+
+  // The worker records its own outcome; a clean exit changes nothing.
+  await store.start(first.job_id, 4242);
+  await store.finish(first.job_id, { status: 'partial', result: { run_id: 7, accounts_processed: 1 } });
   child.emit('exit', 0, null);
-  assert.equal(jobs.get(first.job_id).status, 'partial');
+  const done = await jobs.get(first.job_id);
+  assert.equal(done.status, 'partial');
+  assert.equal(done.result.run_id, 7);
+
+  // A worker that dies without reporting is marked failed by the requester.
   const second = await jobs.start();
   child.emit('error', new Error('spawn failed'));
-  child.emit('exit', 1, null);
-  assert.equal(jobs.get(second.job_id).error, 'spawn failed');
-  assert.throws(() => jobs.get('missing'), /Unknown job_id/);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal((await jobs.get(second.job_id)).error, 'spawn failed');
+  assert.equal((await jobs.list({ limit: 5 })).length, 2);
+  await assert.rejects(jobs.get('missing'), /Unknown job_id/);
 });
 
-test('a locked vault fails the job request without spawning or blocking later runs', async () => {
+test('a locked vault fails the job request without spawning or blocking later runs', async t => {
+  const store = await jobStoreFixture(t);
   let spawned = 0;
   const jobs = new ScrapeJobs({
+    store,
     getVaultKey: async () => { throw new Error('The secrets vault is locked.'); },
     spawn: () => { spawned++; throw new Error('must not spawn'); },
   });
   await assert.rejects(jobs.start(), /locked/);
   await assert.rejects(jobs.start(), /locked/);
   assert.equal(spawned, 0);
-  assert.equal(jobs.active, null);
+  assert.deepEqual(await store.list(), []);
+});
+
+test('jobs whose worker died or never started are recovered as failed', async t => {
+  let now = new Date('2026-11-16T10:00:00Z');
+  const alive = new Set([1]);
+  const store = await jobStoreFixture(t, { isAlive: pid => alive.has(pid), now: () => now });
+  const running = await store.create({ type: 'scrape', source: 'cli' });
+  await store.start(running.job_id, 1);
+  const crashed = await store.create({ type: 'scrape', source: 'mcp' });
+  await store.start(crashed.job_id, 2);
+  const queued = await store.create({ type: 'scrape', source: 'web' });
+  assert.equal(await store.recoverOrphans(), 1);
+  assert.match((await store.get(crashed.job_id)).error, /Interrupted/);
+  assert.equal((await store.get(queued.job_id)).status, 'queued');
+  now = new Date('2026-11-16T10:05:00Z');
+  assert.deepEqual((await store.active('scrape')).map(job => job.job_id), [running.job_id]);
+  assert.match((await store.get(queued.job_id)).error, /Never started/);
+  await store.finish(running.job_id, { status: 'success', result: { ok: true } });
+  // First writer wins: a late failure report cannot overwrite the outcome.
+  await store.finish(running.job_id, { status: 'failed', error: 'late' });
+  assert.equal((await store.get(running.job_id)).status, 'success');
+  await assert.rejects(store.create({ type: 'other', source: 'cli' }), /Unknown job type/);
 });
 
 test('MCP schemas enforce Telegram limits and required job ID', () => {

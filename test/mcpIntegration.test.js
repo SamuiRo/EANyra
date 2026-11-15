@@ -83,7 +83,7 @@ test('stdio MCP reads scoped Telegram messages, validates inputs and runs a real
   let completed;
   for (let i = 0; i < 150; i++) {
     completed = parseResult(await client.callTool({ name: 'scraper_job_get', arguments: { job_id: job.job_id } }));
-    if (completed.status !== 'running') break;
+    if (!['queued', 'running'].includes(completed.status)) break;
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   assert.equal(completed.status, 'success', JSON.stringify(completed));
@@ -94,7 +94,7 @@ test('stdio MCP reads scoped Telegram messages, validates inputs and runs a real
   assert.deepEqual(missing.accounts, ['twitter/first_profile', 'twitter/second_profile']);
   for (let i = 0; i < 150; i++) {
     completed = parseResult(await client.callTool({ name: 'scraper_job_get', arguments: { job_id: missing.job_id } }));
-    if (completed.status !== 'running') break;
+    if (!['queued', 'running'].includes(completed.status)) break;
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   assert.equal(completed.status, 'failed');

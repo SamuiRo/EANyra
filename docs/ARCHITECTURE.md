@@ -172,16 +172,34 @@ ticks.
 
 ## Platform Modules
 
-Each platform directory exposes this minimal interface from `index.js`:
+Platforms are registered in two places that must agree (enforced at import
+time and by tests):
+
+- `platforms/catalog.js`: dependency-free metadata — id, display name, where
+  records go (`output`: posts or signals), which secret kind holds its login
+  (`session`), and publishing mode. `SUPPORTED_PLATFORMS`, session validation
+  and MCP enums derive from it.
+- `platforms/collectors.js`: one adapter per platform:
 
 ```js
-export const PLATFORM_ID = 'twitter';
-export const displayName = 'Twitter / X';
-export function createScraper(/* platform-specific dependencies */) {}
+collect({ account, entry, session, runtime, repos }) → { records, scrapedAt? }
 ```
 
-The interface is conventional rather than polymorphic: the orchestrator still
-contains a `switch` with platform-specific construction and persistence logic.
+A collector only fetches and normalizes. The orchestrator is platform-agnostic:
+it owns sessions and runtime clients (`runtime.twitterSession(name)`,
+`runtime.telegramScraper(name)`, `runtime.credentials`), pacing, persistence by
+`output`, account health and per-account run records.
+
+## Shared Services
+
+`core/services/` holds logic shared by all front ends. Services take a small
+SQL executor (`all`, `get`, `run`) so the same code runs on Sequelize (CLI,
+workers) and on the direct sqlite3 connection (MCP, the planned web server):
+
+| Service | Responsibility |
+|---|---|
+| `JobStore` | Durable background jobs (`jobs` table), orphan recovery by worker PID |
+| `StatusService` | Health, freshness per platform and account, per-run account outcomes |
 
 ### Twitter/X
 
@@ -391,10 +409,29 @@ Deduplication constraint: unique `(source, source_id)`.
 
 Audit log for collection runs:
 
-`started_at`, `finished_at`, `status`, `accounts_processed`, `posts_saved`,
-`error_message`.
+`started_at`, `finished_at`, `status`, `accounts_processed`, `posts_saved`
+(new posts), `signals_saved` (new signals), `error_message`.
 
-Statuses are `running`, `success`, `partial`, and `failed`.
+Statuses are `running`, `success`, `partial`, and `failed`. A run left
+`running` by a killed process is marked `failed` by the next run, which holds
+the scrape lock and therefore knows no other collection is active.
+
+#### `scraper_run_accounts`
+
+Per-account outcome of each run: platform, username, session, `status`
+(`success`, `failed`, `skipped` when its login already failed), records found
+and saved, error, timestamps.
+
+`accounts` also carries health: `last_scraped_at` (last success; Telegram's
+polling watermark), `last_attempt_at`, `last_error`, `last_error_at`. A
+successful collection clears the error.
+
+#### `jobs`
+
+Durable background requests (`type: scrape`) from MCP, CLI, scheduler or web:
+`status` (`queued`, `running`, `success`, `partial`, `failed`), JSON `params`
+and `result`, worker `pid`. The worker records start and outcome itself; a job
+whose worker process no longer exists is recovered as `failed`.
 
 #### `user_context`
 
@@ -486,7 +523,8 @@ Intended tools:
 | `signals_mark_used` | Mark signals as used |
 | `scraper_status` | Read collection run health/history |
 | `scraper_run` | Start a background collection for all sources, a platform, or one account |
-| `scraper_job_get` | Read the background job outcome |
+| `scraper_job_get` | Read the background job outcome (durable across restarts) |
+| `scraper_jobs_list` | List recent collection jobs from any requester |
 | `telegram_messages_get` | Read stored Telegram messages, including forwards/replies, with an insertion cursor |
 | `telegram_publisher_info` | Identify the configured publishing bot without sending |
 | `telegram_publish_targets` | List explicitly enabled publication channels |
@@ -506,8 +544,8 @@ hash, claim state and receipt. Bot API is the default publishing transport;
 historical collection continues to use MTProto. Local allowlists and Telegram
 channel admin rights are checked before claiming a draft. Uncertain delivery
 never automatically resets to draft or resends.
-Browser origins are rejected. Job history is bounded and process-local; run
-history is persisted in SQLite. `core/mcp/start.js` loads project-relative paths
+Browser origins are rejected. Jobs and run history are persisted in SQLite;
+the MCP server applies pending migrations in a child process at startup. `core/mcp/start.js` loads project-relative paths
 consistently even if the MCP client starts in another working directory.
 
 MCP paths, transport settings, routes, and query defaults come from
@@ -540,17 +578,19 @@ The actual account list is separate in `instance/accounts.json`.
 
 ### Add a Publishing Platform
 
-1. Add `src/platforms/<platform>/index.js` and implementation files.
-2. Return normalized `RawPost` objects.
-3. Add the platform to `SUPPORTED_PLATFORMS` in `config/app.config.js`.
-4. Add an orchestrator branch that persists through `PostRepository`.
-5. Extend MCP platform enums where required.
-6. Add examples, tests, and documentation.
+1. Add `src/platforms/<platform>/` implementation files returning normalized
+   `RawPost` objects.
+2. Add a catalog entry in `platforms/catalog.js` (`output: 'posts'`, its
+   `session` secret kind or `null`).
+3. Add a collector in `platforms/collectors.js`.
+4. Add examples, tests, and documentation. CLI validation and MCP enums follow
+   the catalog automatically.
 
 ### Add a Signal Source
 
-1. Build an importer or collector that returns normalized `RawSignal` objects.
-2. Persist through `SignalRepository`.
+1. Build an importer or collector that returns normalized `RawSignal` objects;
+   register it like a platform with `output: 'signals'`.
+2. The orchestrator persists it through `SignalRepository`.
 3. Add source-specific metadata conventions.
 4. Extend export presentation if the new type benefits from special rendering.
 
