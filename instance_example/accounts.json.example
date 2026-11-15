@@ -1,8 +1,16 @@
 [
   {
-    "username": "example-twitter-user",
-    "display_name": "Example",
+    "username": "my_brand_account",
+    "display_name": "Brand account",
     "platform": "twitter",
+    "session": "brand",
+    "active": true
+  },
+  {
+    "username": "my_personal_account",
+    "display_name": "Personal account",
+    "platform": "twitter",
+    "session": "personal",
     "active": true
   },
   {
@@ -16,18 +24,21 @@
     "display_name": "Example Telegram Channel",
     "platform": "telegram",
     "active": true,
-    "publish_enabled": false
-  },
-  {
-    "username": "second_twitter_profile",
-    "display_name": "Second Twitter profile",
-    "platform": "twitter",
-    "active": true
+    "publish_enabled": false,
+    "bot": "default"
   },
   {
     "username": "second_telegram_channel",
     "display_name": "Second Telegram channel",
     "platform": "telegram",
+    "session": "second",
+    "active": true
+  },
+  {
+    "username": "example-linkedin-user",
+    "display_name": "LinkedIn",
+    "platform": "linkedin",
+    "import_file": "Shares.csv",
     "active": true
   },
   {

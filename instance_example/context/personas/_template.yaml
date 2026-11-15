@@ -16,7 +16,7 @@ topics:
 
 # Accounts that represent this persona, as "platform/username" from accounts.json.
 accounts:
-  - "twitter/example-twitter-user"
+  - "twitter/my_brand_account"
   - "telegram/example-telegram-channel"
 
 # Overrides voice.yaml key by key (tone, likes, dislikes, example_post, taboo).

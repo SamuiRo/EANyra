@@ -45,7 +45,8 @@ flowchart LR
 | `src/core/cli/login.js` | Interactive Twitter/X login and persistent session creation |
 | `src/core/cli/telegram-login.js` | Interactive Telegram MTProto login and session string generation |
 | `src/core/mcp/server.js` | MCP tool registration and stdio/HTTP transport startup |
-| `src/core/cli/import-cookies.js` | Standalone cookie import helper used by `npm run import-cookies -- <file>` |
+| `src/core/cli/import-cookies.js` | Standalone cookie import helper used by `npm run import-cookies -- <file> --session <name>` |
+| `src/core/cli/vaultCommands.js` | `vault`, `secrets` and `sessions` commands |
 
 There is no separate application server. The scheduled daemon is the CLI
 process running `Scheduler`.
@@ -84,7 +85,8 @@ EANyra/
       app.config.js             environment parsing and defaults
       instance.js               instance selection and environment loading
     core/
-      browser/                  Playwright context and stealth patches
+      browser/                  Playwright browser, per-session contexts, stealth patches
+      secrets/                  encrypted vault, unlock paths, per-session credentials
       cli/                      Commander commands
       export/                   Markdown formatter
       mcp/                      MCP server, SQLite queries, tools
@@ -129,13 +131,29 @@ schema change must include a new migration.
 1. Create a `scraper_runs` row with status `running`.
 2. Read `instance/accounts.json` and upsert configured accounts.
 3. Load active accounts and optionally filter by platform.
-4. Lazily open one persistent browser if Twitter accounts exist.
-5. Lazily connect one Telegram MTProto client if Telegram accounts exist.
+4. Lazily launch one Chromium if Twitter accounts exist and open an isolated
+   context per X session, loading its storage state from the vault.
+5. Lazily connect one Telegram MTProto client per Telegram session.
 6. Dispatch each account to its platform module.
 7. Persist normalized posts or signals through repositories.
 8. Update each successful account's `last_scraped_at`.
-9. Close runtime clients and finalize the run as `success`, `partial`, or
-   `failed`.
+9. Save refreshed X storage states back into the vault, close runtime clients
+   and finalize the run as `success`, `partial`, or `failed`.
+
+## Sessions and Credentials
+
+Each account names its login with `session` (default `default`); Telegram
+channels name their publishing bot with `bot`. `core/secrets/Credentials.js`
+resolves these names to secrets in the encrypted vault
+(`core/secrets/Vault.js`, AES-256-GCM, scrypt key derivation). Without a vault
+file the legacy plaintext `.env` provides the `default` session only.
+
+The orchestrator groups X profiles by session; the long human-like pause
+applies only within one session and a rejected login (`SESSION_ERRORS`) skips
+only its own accounts. Workers spawned by MCP receive the vault key over IPC.
+Background processes unlock through the Windows DPAPI-protected remembered key
+or `EANYRA_MASTER_PASSWORD`; interactive commands prompt. See
+[ACCOUNTS_AND_SECRETS.md](ACCOUNTS_AND_SECRETS.md).
 
 The `posts_saved` field in `scraper_runs` is currently used for the total number
 of newly persisted records, including GitHub signals.
@@ -174,9 +192,10 @@ Files:
 - `core/browser/Browser.js`
 - `core/cli/login.js`
 
-Twitter uses a persistent Playwright Chromium context stored in `instance/data/nyra/`.
-The browser wrapper configures viewport, locale, timezone, launch flags,
-blocked telemetry domains, and browser API patches.
+Twitter uses one Playwright Chromium process with a separate, non-persistent
+context per X session; cookies and local storage come from the vault. The
+browser wrapper configures viewport, locale, timezone, launch flags, blocked
+telemetry domains, and browser API patches.
 
 Collection behavior:
 
@@ -547,11 +566,14 @@ The actual account list is separate in `instance/accounts.json`.
 ## Operational Constraints
 
 - Runtime data and real context files are gitignored.
-- Twitter/X scraping depends on an authenticated persistent browser session.
+- Twitter/X scraping depends on an authenticated session per X login, stored
+  in the encrypted vault.
 - GitHub collection depends on API rate limits and token access.
 - LinkedIn import depends on the shape of LinkedIn's export files.
 - Telegram collection depends on Telegram API credentials and a saved MTProto
-  session string.
+  session string per Telegram session.
+- Credentials require the vault to be unlocked (prompt, remembered DPAPI key or
+  `EANYRA_MASTER_PASSWORD`); reading collected data does not.
 - SQLite is local and single-host; there is no distributed locking.
 - Automated coverage is still focused on parser, migration, and repository
   boundaries rather than live platform access.

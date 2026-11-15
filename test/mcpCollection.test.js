@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { Sequelize, QueryTypes } from 'sequelize';
 import { z } from 'zod';
-import { validateAccounts, normalizeSelection } from '../src/config/accountConfig.js';
+import { validateAccounts, normalizeSelection, sessionOf } from '../src/config/accountConfig.js';
 import { registerModels } from '../src/core/teapot/models/index.js';
 import { SchemaMigrator } from '../src/core/teapot/SchemaMigrator.js';
 import { migrateAccountIdentity } from '../src/core/teapot/migrateAccountIdentity.js';
@@ -125,32 +125,75 @@ test('X profiles run after other platforms, least recently collected first', () 
   assert.deepEqual(order, ['repo', 'channel', 'never', 'older', 'recent']);
 });
 
-test('the X session field is a placeholder that accepts only the shared session', () => {
-  assert.equal(validateAccounts([{ username: 'one', platform: 'twitter', session: 'default' }])[0].session, 'default');
-  assert.throws(() => validateAccounts([{ username: 'one', platform: 'twitter', session: 'brand_b' }]), /not available/);
-  assert.throws(() => validateAccounts([{ username: 'one', platform: 'telegram', session: 'default' }]), /only for Twitter/);
+test('accounts name their own login session per platform', () => {
+  const [x, tg, gh, li] = validateAccounts([
+    { username: 'one', platform: 'twitter', session: 'brand_b' },
+    { username: 'chan', platform: 'telegram', session: 'work', bot: 'news-bot', publish_transport: 'bot' },
+    { username: 'dev', platform: 'github', session: 'work' },
+    { username: 'me', platform: 'linkedin', import_file: 'Shares-me.csv' },
+  ]);
+  assert.equal(sessionOf(x), 'brand_b');
+  assert.equal(sessionOf({ username: 'plain' }), 'default');
+  assert.equal(tg.bot, 'news-bot');
+  assert.equal(gh.session, 'work');
+  assert.equal(li.import_file, 'Shares-me.csv');
+  for (const entry of [
+    { username: 'one', platform: 'twitter', session: 'Bad Name' },
+    { username: 'one', platform: 'linkedin', session: 'default' },
+    { username: 'one', platform: 'twitter', bot: 'x' },
+    { username: 'one', platform: 'telegram', publish_transport: 'email' },
+    { username: 'one', platform: 'linkedin', import_file: '../secrets.csv' },
+    { username: 'one', platform: 'twitter', import_file: 'a.csv' },
+  ]) assert.throws(() => validateAccounts([entry]), undefined, JSON.stringify(entry));
 });
 
-test('MCP collection jobs report actual partial/failure outcomes and allow the next run', () => {
+test('X profiles are grouped by login session after fast platforms', () => {
+  const sessions = { a1: 'a', a2: 'a', b1: 'b', d1: 'default' };
+  const order = orderForCollection([
+    { username: 'a2', platform: 'twitter', last_scraped_at: '2026-10-22T10:00:00Z' },
+    { username: 'b1', platform: 'twitter', last_scraped_at: null },
+    { username: 'a1', platform: 'twitter', last_scraped_at: '2026-10-21T10:00:00Z' },
+    { username: 'repo', platform: 'github', last_scraped_at: null },
+    { username: 'd1', platform: 'twitter', last_scraped_at: '2026-10-23T10:00:00Z' },
+  ], account => sessions[account.username]).map(account => account.username);
+  assert.deepEqual(order, ['repo', 'b1', 'a1', 'a2', 'd1']);
+});
+
+test('MCP collection jobs report actual partial/failure outcomes and allow the next run', async () => {
   let child;
-  const jobs = new ScrapeJobs({ spawn: () => {
+  const sent = [];
+  const jobs = new ScrapeJobs({ getVaultKey: async () => ({ key: 'k', salt: 's' }), spawn: () => {
     child = new EventEmitter();
-    child.send = (selection, callback) => callback();
+    child.send = (message, callback) => { sent.push(message); callback(); };
     child.kill = () => {};
     return child;
   } });
-  const first = jobs.start({ platform: 'telegram', account: '@Example' });
+  const first = await jobs.start({ platform: 'telegram', account: '@Example' });
   assert.deepEqual(first.accounts, ['telegram/example']);
-  assert.throws(() => jobs.start(), /already running/);
+  // The vault key reaches the worker only over IPC.
+  assert.deepEqual(sent[0], { selection: { platform: 'telegram', accounts: ['telegram/example'] }, vaultKey: { key: 'k', salt: 's' } });
+  await assert.rejects(jobs.start(), /already running/);
   child.emit('message', { result: { status: 'partial', accounts_processed: 1 } });
   assert.equal(jobs.get(first.job_id).status, 'running');
   child.emit('exit', 0, null);
   assert.equal(jobs.get(first.job_id).status, 'partial');
-  const second = jobs.start();
+  const second = await jobs.start();
   child.emit('error', new Error('spawn failed'));
   child.emit('exit', 1, null);
   assert.equal(jobs.get(second.job_id).error, 'spawn failed');
   assert.throws(() => jobs.get('missing'), /Unknown job_id/);
+});
+
+test('a locked vault fails the job request without spawning or blocking later runs', async () => {
+  let spawned = 0;
+  const jobs = new ScrapeJobs({
+    getVaultKey: async () => { throw new Error('The secrets vault is locked.'); },
+    spawn: () => { spawned++; throw new Error('must not spawn'); },
+  });
+  await assert.rejects(jobs.start(), /locked/);
+  await assert.rejects(jobs.start(), /locked/);
+  assert.equal(spawned, 0);
+  assert.equal(jobs.active, null);
 });
 
 test('MCP schemas enforce Telegram limits and required job ID', () => {

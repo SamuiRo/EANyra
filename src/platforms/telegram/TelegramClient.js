@@ -57,9 +57,9 @@ export class TelegramClient {
     validateTelegramApiConfig(this.config);
 
     if (!this.config.session && !this.config.interactiveLogin) {
+      const name = this.config.sessionName ?? 'default';
       throw new Error(
-        'TELEGRAM_SESSION is not set. Run `npm run login:telegram` for QR login; ' +
-        'the session is saved to the root .env automatically.',
+        `Telegram session "${name}" is not logged in. Run \`npm run login:telegram -- --session ${name}\` for QR login.`,
       );
     }
   }
@@ -67,8 +67,8 @@ export class TelegramClient {
   async #readCredential(label) {
     if (!this.config.interactiveLogin) {
       throw new Error(
-        'Telegram session is missing or expired. Run `npm run login:telegram` ' +
-        'to generate a fresh TELEGRAM_SESSION.',
+        `Telegram session "${this.config.sessionName ?? 'default'}" is missing or expired. ` +
+        `Run \`npm run login:telegram -- --session ${this.config.sessionName ?? 'default'}\` to log in again.`,
       );
     }
 
@@ -87,7 +87,7 @@ export class TelegramClient {
 
 export function validateTelegramApiConfig(config) {
   if (!Number.isInteger(config.apiId) || config.apiId <= 0 || !config.apiHash) {
-    throw new Error('TELEGRAM_API_ID and TELEGRAM_API_HASH are required. Configure them in the root .env (my.telegram.org/apps).');
+    throw new Error('Telegram API id and hash are required (my.telegram.org/apps). Run `npm run nyra -- secrets set telegram-api`.');
   }
 }
 

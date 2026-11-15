@@ -6,10 +6,12 @@ export function buildTelegramPublishingTools(requests) {
   return [
     {
       name: 'telegram_publisher_info',
-      description: 'Identify the configured Telegram publishing bot by username and ID using read-only getMe, or explain missing setup. Does not send messages and never returns the bot token. With MTProto transport, explains that publishing uses a user session instead.',
-      inputSchema: { type: 'object', properties: {} },
+      description: 'Identify the Telegram publishing bot by username and ID using read-only getMe, or explain missing setup. Pass account to see the bot configured for that channel (channels may use different bots); omit it for the default bot. Does not send messages and never returns the bot token. With MTProto transport, explains that publishing uses a user session instead.',
+      inputSchema: { type: 'object', properties: {
+        account: { type: 'string', minLength: 1, description: 'Optional publish-enabled Telegram channel.' },
+      } },
       annotations: { readOnlyHint: true, openWorldHint: true },
-      handler: () => requests.execute('identity'),
+      handler: args => requests.execute('identity', args),
     },
     {
       name: 'telegram_publish_targets',

@@ -25,9 +25,11 @@ import { print }                             from '../../shared/utils.js';
 export class LinkedinImporter {
   /**
    * @param {string} importsDir  Absolute path to the imports folder (instance/data/imports/)
+   * @param {{ sharesFile?: string }} [opts] per-account export file name
    */
-  constructor(importsDir) {
+  constructor(importsDir, { sharesFile = LINKEDIN.sharesFile } = {}) {
     this.importsDir = importsDir;
+    this.sharesFile = sharesFile;
   }
 
   // ── Public ────────────────────────────────────────────────────────────────
@@ -41,7 +43,7 @@ export class LinkedinImporter {
   async scrapeAccount(username) {
     print(`[LinkedIn] Importing CSV data for @${username}`, 'info');
 
-    const sharesPath  = path.join(this.importsDir, LINKEDIN.sharesFile);
+    const sharesPath  = path.join(this.importsDir, this.sharesFile);
     const profilePath = path.join(this.importsDir, LINKEDIN.profileFile);
 
     // ── Profile (optional, informational only) ────────────────────────────

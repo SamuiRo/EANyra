@@ -30,7 +30,7 @@ export function buildCollectionTools(jobs) {
           .filter(entry => !args.platform || entry.platform === args.platform)
           .map(accountKey);
         if (!keys.length) throw new Error(`Persona "${persona}" has no ${args.platform} accounts.`);
-        return { persona, ...jobs.start({ platform: args.platform, accounts: keys }) };
+        return { persona, ...await jobs.start({ platform: args.platform, accounts: keys }) };
       },
     },
     {

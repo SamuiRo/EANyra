@@ -35,6 +35,13 @@ export const PATHS = {
   accountsConfig: envPath('ACCOUNTS_CONFIG_PATH', path.join(INSTANCE_DIR, 'accounts.json')),
   contextDir:      envPath('CONTEXT_DIR', path.join(INSTANCE_DIR, 'context')),
   exportsDir:      envPath('EXPORTS_DIR', path.join(DATA_DIR, 'exports')),
+  /** Encrypted credentials (AES-256-GCM, master password). */
+  vaultFile:       envPath('VAULT_PATH', path.join(INSTANCE_DIR, 'secrets.vault')),
+};
+
+export const VAULT = {
+  /** Windows DPAPI-protected copy of the vault key ("remember on this device"). */
+  rememberFile: envPath('VAULT_REMEMBER_PATH', `${PATHS.vaultFile}.dpapi`),
 };
 
 export const MCP = {
@@ -126,6 +133,9 @@ export const SCRAPER = {
   navigationTimeoutMs:       envNumber('SCRAPER_NAV_TIMEOUT_MS', envNumber('BROWSER_NAV_TIMEOUT_MS', 30_000)),
   selectorTimeoutMs:         envNumber('SCRAPER_SELECTOR_TIMEOUT_MS', envNumber('BROWSER_SEL_TIMEOUT_MS', 15_000)),
   wakeUpMaxMs:               envNumber('SCRAPER_WAKE_UP_MAX_MS', 3 * 60 * 1_000),
+  /** Pause when switching to a different X login (no shared identity to protect). */
+  minDelayBetweenSessionsMs: envNumber('MIN_DELAY_BETWEEN_SESSIONS_MS', 30 * 1_000),
+  maxDelayBetweenSessionsMs: envNumber('MAX_DELAY_BETWEEN_SESSIONS_MS', 2 * 60 * 1_000),
 };
 
 export const EXPORT = {

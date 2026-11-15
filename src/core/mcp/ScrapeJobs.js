@@ -1,18 +1,34 @@
 import { fork } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { normalizeSelection } from '../../config/accountConfig.js';
+import { vaultKeyForWorker } from '../secrets/vaultAccess.js';
 
 export class ScrapeJobs {
-  constructor({ spawn = fork } = {}) {
+  /**
+   * @param {{ spawn?: typeof fork, getVaultKey?: () => Promise<object|null> }} [deps]
+   *   getVaultKey unlocks the vault non-interactively; the key reaches the
+   *   worker only over IPC, never through argv or the environment.
+   */
+  constructor({ spawn = fork, getVaultKey = vaultKeyForWorker } = {}) {
     this.spawn = spawn;
+    this.getVaultKey = getVaultKey;
     this.jobs = new Map();
     this.active = null;
   }
 
-  start(args = {}) {
+  async start(args = {}) {
     const selection = normalizeSelection(args);
     if (this.active) throw new Error(`Scrape already running: ${this.active}`);
     const job = { job_id: randomUUID(), status: 'running', started_at: new Date().toISOString(), ...selection };
+    // Reserve the slot before the async unlock so two calls cannot both start.
+    this.active = job.job_id;
+    let vaultKey;
+    try {
+      vaultKey = await this.getVaultKey();
+    } catch (error) {
+      this.active = null;
+      throw error;
+    }
     // Keep a bounded history; durable collection results live in scraper_runs.
     if (this.jobs.size >= 50) this.jobs.delete(this.jobs.keys().next().value);
     const child = this.spawn(new URL('./scrapeWorker.js', import.meta.url), [], {
@@ -20,7 +36,6 @@ export class ScrapeJobs {
       windowsHide: true,
       execArgv: [],
     });
-    this.active = job.job_id;
     this.jobs.set(job.job_id, job);
     this.child = child;
     let outcome;
@@ -38,7 +53,7 @@ export class ScrapeJobs {
     child.on('exit', (code, signal) => finish(code === 0 && outcome
       ? null : `Scrape worker exited (${signal ?? code}). Check scraper_status and the scrape lock if it was interrupted.`));
     try {
-      child.send(selection, error => { if (error) { child.kill(); finish(error.message); } });
+      child.send({ selection, vaultKey }, error => { if (error) { child.kill(); finish(error.message); } });
     } catch (error) {
       child.kill();
       finish(error.message);

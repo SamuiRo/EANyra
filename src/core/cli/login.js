@@ -1,17 +1,26 @@
 /**
  * Interactive Twitter/X login helper.
  *
- * Uses a normal headful Chrome session without scraper stealth patches or a
- * custom user agent. The persistent profile is shared with the scraper.
+ *   npm run login                       → session "default"
+ *   npm run login -- --session brand-a  → session "brand-a"
+ *
+ * Uses a normal headful Chrome window without scraper stealth patches. The
+ * window runs in a throwaway profile; after login only the storage state
+ * (cookies + local storage) is kept, encrypted in the vault. The temporary
+ * profile is deleted, so no plaintext login remains on disk.
  */
 
 import { chromium } from 'playwright';
-import fs from 'fs/promises';
-import path from 'path';
-import readline from 'readline';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import readline from 'node:readline';
+import { Command } from 'commander';
 
 import { BROWSER, TWITTER } from '../../config/app.config.js';
-import { banner, ensureDir, print } from '../../shared/utils.js';
+import { Credentials, DEFAULT_SESSION } from '../secrets/Credentials.js';
+import { assertSessionName } from '../secrets/Vault.js';
+import { banner, print } from '../../shared/utils.js';
 
 function waitForEnter(prompt) {
   if (!process.stdin.isTTY) {
@@ -27,7 +36,7 @@ function waitForEnter(prompt) {
   });
 }
 
-async function launchLoginContext() {
+async function launchLoginContext(profileDir) {
   const options = {
     headless: false,
     viewport: null,
@@ -38,7 +47,7 @@ async function launchLoginContext() {
   if (BROWSER.loginChannel) {
     try {
       print(`Opening system browser channel "${BROWSER.loginChannel}"...`, 'system');
-      return await chromium.launchPersistentContext(BROWSER.dataPath, {
+      return await chromium.launchPersistentContext(profileDir, {
         ...options,
         channel: BROWSER.loginChannel,
       });
@@ -50,15 +59,7 @@ async function launchLoginContext() {
     }
   }
 
-  return chromium.launchPersistentContext(BROWSER.dataPath, options);
-}
-
-async function exportCookies(context) {
-  const cookies = await context.cookies();
-  const cookiesPath = path.resolve(BROWSER.cookiesPath);
-  await ensureDir(path.dirname(cookiesPath));
-  await fs.writeFile(cookiesPath, JSON.stringify(cookies, null, 2), 'utf-8');
-  return { cookies, cookiesPath };
+  return chromium.launchPersistentContext(profileDir, options);
 }
 
 function resolveLoginUrl() {
@@ -75,17 +76,30 @@ function resolveLoginUrl() {
 }
 
 async function main() {
-  banner('EANyra - Login Helper', 'Interactive Twitter/X authentication');
+  const { session } = new Command()
+    .name('login')
+    .description('Log into X in a browser window and store the session in the encrypted vault.')
+    .option('--session <name>', 'Session name referenced by accounts.json "session"', DEFAULT_SESSION)
+    .parse()
+    .opts();
+  assertSessionName(session);
+
+  banner('EANyra - Login Helper', `Interactive Twitter/X authentication · session "${session}"`);
   print(
     'X may reject Playwright-controlled browsers. Cookie import is the recommended session setup.',
     'warning',
   );
-  print('Fallback: npm run import-cookies (default instance/data/imports/cookies.json)', 'info');
-  await ensureDir(BROWSER.dataPath);
+  print(`Fallback: npm run import-cookies -- --session ${session}`, 'info');
 
+  const credentials = await Credentials.open({ interactive: true });
+  if (!credentials.encrypted) {
+    print('No encrypted vault yet: cookies will be saved to the plaintext cookie cache. Run `npm run nyra -- vault init` first to encrypt them.', 'warning');
+  }
+
+  const profileDir = await fs.mkdtemp(path.join(os.tmpdir(), 'eanyra-login-'));
   let context;
   try {
-    context = await launchLoginContext();
+    context = await launchLoginContext(profileDir);
     const page = context.pages()[0] ?? await context.newPage();
     const loginUrl = resolveLoginUrl();
 
@@ -100,25 +114,26 @@ async function main() {
       print('The browser remains open; navigate to x.com/login manually if needed.', 'info');
     }
 
-    print('Log in in the browser, including any email/2FA challenge.', 'system');
+    print('Log in in the browser with the account for this session, including any email/2FA challenge.', 'system');
     print('Wait until the home feed is visible, then return to this terminal.', 'system');
     await waitForEnter('Press ENTER after login is complete: ');
 
-    const { cookies, cookiesPath } = await exportCookies(context);
-    const authCookie = cookies.find(cookie => cookie.name === 'auth_token');
-
-    if (!authCookie) {
+    const state = await context.storageState();
+    if (!state.cookies.some(cookie => cookie.name === 'auth_token')) {
       throw new Error(
         'No auth_token cookie was found. Login was not completed. ' +
-        'You can retry or use `npm run import-cookies`.',
+        `You can retry or use \`npm run import-cookies -- --session ${session}\`.`,
       );
     }
 
-    print(`Session profile saved to: ${BROWSER.dataPath}`, 'success');
-    print(`Cookies exported to: ${cookiesPath}`, 'success');
-    print(`Found ${cookies.length} cookies, including auth_token.`, 'data');
+    await credentials.saveTwitterState(session, state);
+    print(`X session "${session}" saved${credentials.encrypted ? ' to the encrypted vault' : ''} (${state.cookies.length} cookies).`, 'success');
+    if (session !== DEFAULT_SESSION) {
+      print(`Reference it from X accounts in accounts.json: "session": "${session}".`, 'info');
+    }
   } finally {
-    if (context) await context.close();
+    if (context) await context.close().catch(() => {});
+    await fs.rm(profileDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 

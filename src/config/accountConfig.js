@@ -1,8 +1,12 @@
 import { SUPPORTED_PLATFORMS } from './app.config.js';
 import { normalizeTelegramChannel } from '../platforms/telegram/TelegramMessageParser.js';
 
-/** The only X login session: BROWSER.dataPath + BROWSER.cookiesPath. */
-export const DEFAULT_TWITTER_SESSION = 'default';
+/** Login used when an account does not name one. */
+export const DEFAULT_SESSION = 'default';
+/** Platforms whose collection needs a login stored in the vault. */
+export const SESSION_PLATFORMS = ['twitter', 'telegram', 'github'];
+const SESSION_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+const IMPORT_FILE = /^[\w .()-]{1,128}\.csv$/i;
 
 export function normalizeAccount(username, platform) {
   if (typeof username !== 'string') throw new Error('Account username must be a string.');
@@ -71,10 +75,29 @@ export function validateAccounts(entries) {
       throw new Error(`${platform}/${username}: publishing is supported only for Telegram.`);
     }
     if (entry.session !== undefined) {
-      if (platform !== 'twitter') throw new Error(`${platform}/${username}: session is supported only for Twitter.`);
-      // Placeholder for per-profile X logins: only the shared session exists today.
-      if (entry.session !== DEFAULT_TWITTER_SESSION) {
-        throw new Error(`${platform}/${username}: session "${entry.session}" is not available. Only "${DEFAULT_TWITTER_SESSION}" is supported for now.`);
+      if (!SESSION_PLATFORMS.includes(platform)) {
+        throw new Error(`${platform}/${username}: session is supported only for ${SESSION_PLATFORMS.join(', ')}.`);
+      }
+      if (typeof entry.session !== 'string' || !SESSION_NAME.test(entry.session)) {
+        throw new Error(`${platform}/${username}: session must be a lowercase name like "brand-a".`);
+      }
+    }
+    if (entry.bot !== undefined) {
+      if (platform !== 'telegram') throw new Error(`${platform}/${username}: bot is supported only for Telegram.`);
+      if (typeof entry.bot !== 'string' || !SESSION_NAME.test(entry.bot)) {
+        throw new Error(`${platform}/${username}: bot must be a lowercase name like "news-bot".`);
+      }
+    }
+    if (entry.publish_transport !== undefined) {
+      if (platform !== 'telegram') throw new Error(`${platform}/${username}: publish_transport is supported only for Telegram.`);
+      if (!['bot', 'mtproto'].includes(entry.publish_transport)) {
+        throw new Error(`${platform}/${username}: publish_transport must be "bot" or "mtproto".`);
+      }
+    }
+    if (entry.import_file !== undefined) {
+      if (platform !== 'linkedin') throw new Error(`${platform}/${username}: import_file is supported only for LinkedIn.`);
+      if (typeof entry.import_file !== 'string' || !IMPORT_FILE.test(entry.import_file)) {
+        throw new Error(`${platform}/${username}: import_file must be a .csv file name inside the imports folder.`);
       }
     }
     if (entry.display_name !== undefined && typeof entry.display_name !== 'string') {
@@ -85,4 +108,9 @@ export function validateAccounts(entries) {
     keys.add(key);
     return { ...entry, username, platform };
   });
+}
+
+/** The login an account uses for collection (and MTProto publishing). */
+export function sessionOf(entry) {
+  return entry?.session ?? DEFAULT_SESSION;
 }

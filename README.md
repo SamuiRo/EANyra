@@ -54,20 +54,29 @@ npm install
 npm run instance:init
 ```
 
-Edit `.env` and `instance/accounts.json`, then initialize the data sources you
-need:
+Edit `instance/accounts.json`, create the encrypted credentials vault, then
+initialize the data sources you need:
 
 ```bash
-# Twitter/X only: recommended session setup
-npm run import-cookies   # reads instance/data/imports/cookies.json
+# Encrypted storage for every login and token (master password)
+npm run nyra -- vault init
 
-# Best-effort alternative; X may reject automated-browser login
-npm run login
+# Twitter/X: one session per own account (recommended: cookie import)
+npm run import-cookies -- --session brand-a --delete-source
+npm run login -- --session brand-b      # best-effort; X may reject it
+
+# GitHub / Telegram tokens and API keys (hidden prompts, stored encrypted)
+npm run nyra -- secrets set github
+npm run nyra -- secrets set telegram-api
+npm run nyra -- secrets set telegram-bot
 
 # LinkedIn only: place Shares.csv in instance/data/imports/
 
-# Telegram only: configure TELEGRAM_API_ID / TELEGRAM_API_HASH, then create a session
+# Telegram user session (QR login)
 npm run login:telegram
+
+# Check that every account's login is configured
+npm run nyra -- sessions
 
 # Collect all configured platforms once
 npm run scrape
@@ -92,7 +101,11 @@ npm run instance:migrate
 
 ## Account Configuration
 
-The root `.env` contains credentials and runtime settings. Editable accounts,
+Credentials (X sessions, Telegram sessions and API keys, bot and GitHub tokens)
+live in the encrypted vault `instance/secrets.vault`; the root `.env` holds
+runtime settings. See [Accounts, sessions and encryption](docs/ACCOUNTS_AND_SECRETS.md)
+for running several own accounts, the master password and migration from a
+plaintext `.env`. Editable accounts,
 context and data live in `instance/`: `accounts.json`, `context/`, and `data/`.
 Source code contains no instance-specific files.
 See [Instance layout and migration](docs/INSTANCE_GUIDE.md) for the complete
@@ -133,6 +146,15 @@ gitignored because it commonly contains personal account choices.
 Supported platform IDs are `twitter`, `github`, `linkedin`, and `telegram`. When
 `platform` is omitted, it defaults to `twitter`.
 
+Per-account login fields:
+
+| Field | Platforms | Meaning |
+|---|---|---|
+| `session` | twitter, telegram, github | Which stored login collects this account (default `default`) |
+| `bot` | telegram | Which stored bot publishes to this channel (default `default`) |
+| `publish_transport` | telegram | `bot` or `mtproto` for this channel |
+| `import_file` | linkedin | This account's export file in the imports folder (default `Shares.csv`) |
+
 On each scrape, configured accounts are upserted into SQLite. Set
 `"archive": true` to explicitly archive an account. Accounts removed from the
 JSON file are also archived during the next sync. Archived accounts remain in
@@ -142,34 +164,39 @@ SQLite with their historical posts and signals, but are inactive.
 
 ### Twitter/X
 
-Twitter collection uses a persistent Playwright Chromium profile.
+Twitter collection runs one Playwright Chromium with an isolated context per
+login session. Each session's cookies and local storage are loaded from the
+encrypted vault and written back, refreshed, after the run; nothing is kept in
+a plaintext browser profile.
 
 ```bash
-npm run import-cookies
+npm run import-cookies -- --session brand-a --delete-source
 npm run scrape:twitter
 ```
 
-Export the `x.com` cookies from your normal browser to
-`instance/data/imports/cookies.json` and run `npm run import-cookies`, or pass
-another file with `npm run import-cookies -- <file>`. The default location is
-`BROWSER_COOKIES_IMPORT_PATH`. The cookie file must contain `auth_token`.
-Session data is stored in `instance/data/nyra/`. A gitignored fallback copy is stored at
-`BROWSER_COOKIES_PATH` and restored automatically if X clears the cookie from
-the persistent browser profile. Re-import only when the fallback token itself
-is no longer accepted by X.
+Export the `x.com` cookies of one account from your normal browser to
+`instance/data/imports/cookies.json` (or pass another file:
+`npm run import-cookies -- <file> --session <name>`). The file must contain
+`auth_token`. `--delete-source` removes the plaintext export afterwards.
 
-**Several X profiles.** Add one `"platform": "twitter"` entry per profile to
-`accounts.json`; all of them are collected through the same imported session.
-A run collects other platforms first, then X profiles starting with the least
-recently collected one, pausing `MIN/MAX_DELAY_BETWEEN_ACCOUNTS_MS` between X
-profiles only. If X redirects to login, the remaining X profiles are skipped
-instead of each waiting for its pause. Collect a subset with
-`npm run nyra -- scrape twitter --account first_profile second_profile` or the
-MCP `scraper_run` `accounts` argument. The optional per-account
-`"session": "default"` field is reserved for separate X logins in the future;
-only `default` is accepted today.
+**Several own X accounts.** Give each account its own login:
 
-`npm run login` remains available as a best-effort helper. It opens an
+```json
+{ "username": "brand_a", "platform": "twitter", "session": "brand-a" },
+{ "username": "brand_b", "platform": "twitter", "session": "brand-b" }
+```
+
+and import or log in once per session. A run collects other platforms first,
+then X profiles grouped by session, least recently collected first. The long
+`MIN/MAX_DELAY_BETWEEN_ACCOUNTS_MS` pause applies only between profiles that
+share one login; switching logins waits `MIN/MAX_DELAY_BETWEEN_SESSIONS_MS`
+(default 30-120 s). If X rejects one login, only that session's profiles are
+skipped. Collect a subset with
+`npm run nyra -- scrape twitter --account brand_a brand_b` or the MCP
+`scraper_run` `accounts` argument. `npm run nyra -- sessions` shows each
+session's state and how many days its `auth_token` stays valid.
+
+`npm run login -- --session <name>` remains available as a best-effort helper. It opens an
 installed Chrome browser without scraper-specific patches, but X may reject
 login from any Playwright-controlled browser.
 
@@ -185,10 +212,11 @@ entries.
 
 ### GitHub
 
-Add a token to `.env`:
+Store a token in the vault (one per session if accounts need different tokens):
 
-```env
-GITHUB_TOKEN=github_pat_...
+```bash
+npm run nyra -- secrets set github            # session "default"
+npm run nyra -- secrets set github work       # referenced by "session": "work"
 ```
 
 Then configure a GitHub account and run:
@@ -216,28 +244,31 @@ Then run:
 npm run nyra -- scrape linkedin
 ```
 
+For several LinkedIn accounts, give each its own export file name with
+`"import_file": "Shares-brand-a.csv"`; otherwise they share `Shares.csv`.
+
 Import is idempotent. Engagement metrics are not present in LinkedIn's export,
 so imported posts use zero or null values for those fields.
 
 ### Telegram
 
-Telegram collection uses GramJS/MTProto polling. Add credentials to `.env`:
+Telegram collection uses GramJS/MTProto polling. Store your API keys from
+my.telegram.org in the vault:
 
-```env
-TELEGRAM_API_ID=123456
-TELEGRAM_API_HASH=your_api_hash
-TELEGRAM_SESSION=your_saved_string_session
+```bash
+npm run nyra -- secrets set telegram-api
 ```
 
-Run `npm run login:telegram` for QR login, following the same GramJS flow as
+Run `npm run login:telegram` (or `-- --session <name>` for another Telegram
+account) for QR login, following the same GramJS flow as
 Inemuri. On your phone, open Telegram > Settings > Devices > Link Desktop Device
 and scan the QR displayed in the terminal. The QR refreshes automatically; no
 SMS or verification code is required. If 2FA is enabled, enter its password in
 the terminal's hidden prompt.
 
-After Telegram confirms authorization, the command saves `TELEGRAM_SESSION`
-directly to the root `.env` without printing it or changing other keys. Restart
-running MCP/daemon processes to load the saved session. Run this command in an
+After Telegram confirms authorization, the command stores the session in the
+encrypted vault without printing it (without a vault: in the root `.env`).
+Restart running MCP/daemon processes to load the saved session. Run this command in an
 interactive terminal; Ctrl+C cancels login and closes the connection.
 
 Phone/code login remains available:
@@ -246,8 +277,10 @@ Phone/code login remains available:
 npm run login:telegram -- --phone
 ```
 
-Both login methods require your own `TELEGRAM_API_ID` and `TELEGRAM_API_HASH`.
-Bot API posting does not require this user session.
+Both login methods require your own Telegram API id and hash.
+Bot API posting does not require this user session. Each publish-enabled
+channel can name its bot with `"bot": "<name>"` (stored with
+`npm run nyra -- secrets set telegram-bot <name>`).
 
 Configure channel usernames in `accounts.json` without `@`:
 
@@ -284,10 +317,18 @@ Use `npm run nyra -- <command>` when the `eanyra` binary is not globally linked.
 | `npm run nyra -- context show -k <key>` | Print one context key |
 | `npm run export` | Generate a Markdown content export |
 | `npm run export:dry` | Generate an export without marking records used |
-| `npm run login` | Best-effort interactive Twitter/X login |
-| `npm run login:telegram` | QR login and automatic session save to root `.env` |
+| `npm run login [-- --session <name>]` | Best-effort interactive Twitter/X login into one session |
+| `npm run login:telegram [-- --session <name>]` | Telegram QR login, session stored in the vault |
 | `npm run login:telegram -- --phone` | Alternative login by phone and verification code |
-| `npm run import-cookies [-- <file>]` | Recommended: import browser cookies into the persistent session (default `instance/data/imports/cookies.json`) |
+| `npm run import-cookies [-- <file>] [--session <name>] [--delete-source]` | Recommended: import browser cookies into one X session (default file `instance/data/imports/cookies.json`) |
+| `npm run nyra -- vault init` | Create the encrypted vault and import plaintext secrets |
+| `npm run nyra -- vault status` | Show stored secrets (names only) and plaintext leftovers |
+| `npm run nyra -- vault migrate [--purge]` | Import plaintext `.env` secrets, cookie cache and X profile; `--purge` deletes the plaintext copies |
+| `npm run nyra -- vault remember` / `forget` | Let background processes on this PC unlock the vault (Windows DPAPI) |
+| `npm run nyra -- vault change-password` | Re-encrypt with a new master password |
+| `npm run nyra -- secrets set <github\|telegram-bot\|telegram-api> [name]` | Store a token or API keys (hidden prompt) |
+| `npm run nyra -- secrets list` / `delete <kind> <name>` | List or remove stored secrets |
+| `npm run nyra -- sessions` | Which login each account uses and whether it is configured or expired |
 
 Important export options:
 
@@ -424,6 +465,8 @@ Runtime configuration is centralized in `src/config/app.config.js`.
 
 - [Instance layout](docs/INSTANCE_GUIDE.md): editable files, initialization,
   migration from the legacy layout, and isolated instance selection.
+- [Accounts, sessions and encryption](docs/ACCOUNTS_AND_SECRETS.md): several
+  own accounts, per-account logins, the master-password vault and unlocking.
 
 - [Architecture](docs/ARCHITECTURE.md): module boundaries, runtime flows, data
   model, and extension points.

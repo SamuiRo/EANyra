@@ -1,14 +1,20 @@
 import { fork } from 'node:child_process';
+import { vaultKeyForWorker } from '../secrets/vaultAccess.js';
+
+/** Operations that contact Telegram and therefore need credentials. */
+const NEEDS_SECRETS = ['publish', 'identity'];
 
 export class TelegramPublishRequests {
-  constructor({ spawn = fork, timeoutMs = 30000 } = {}) {
+  constructor({ spawn = fork, timeoutMs = 30000, getVaultKey = vaultKeyForWorker } = {}) {
     this.spawn = spawn;
     this.timeoutMs = timeoutMs;
+    this.getVaultKey = getVaultKey;
     this.children = new Set();
   }
 
-  execute(operation, args = {}) {
+  async execute(operation, args = {}) {
     if (this.children.size >= 4) throw new Error('Too many Telegram publication requests. Wait for an existing request to finish.');
+    const vaultKey = NEEDS_SECRETS.includes(operation) ? await this.getVaultKey() : null;
     return new Promise((resolve, reject) => {
       // GramJS and CLI database logging stay in a child process, away from MCP stdout.
       const child = this.spawn(new URL('./telegramPublishWorker.js', import.meta.url), [], {
@@ -33,7 +39,7 @@ export class TelegramPublishRequests {
       child.once('error', error => finish(error.message));
       child.once('exit', code => finish(code === 0 && outcome ? null : 'Telegram publication worker stopped. Inspect telegram_post_get before retrying.'));
       try {
-        child.send({ operation, args }, error => {
+        child.send({ operation, args, vaultKey }, error => {
           if (error) { child.kill(); finish(error.message); }
         });
       } catch (error) {

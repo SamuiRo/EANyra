@@ -36,6 +36,6 @@ export const displayName = 'LinkedIn';
  * @param {string} importsDir  Absolute path to the imports folder (instance/data/imports/)
  * @returns {LinkedinImporter}
  */
-export function createScraper(importsDir) {
-  return new LinkedinImporter(importsDir);
+export function createScraper(importsDir, opts) {
+  return new LinkedinImporter(importsDir, opts);
 }

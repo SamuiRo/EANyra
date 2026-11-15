@@ -4,18 +4,41 @@ import { PATHS } from '../../config/app.config.js';
 import { normalizeAccount, validateAccounts } from '../../config/accountConfig.js';
 
 export class TelegramPublisher {
-  constructor({ outbox, gateway, loadAccounts = async () => validateAccounts(
+  /**
+   * @param {{ outbox: object, gateway?: object, gatewayFor?: (entry: object) => object|Promise<object>,
+   *           loadAccounts?: () => Promise<object[]> }} deps
+   *   gatewayFor picks the bot or MTProto session configured for one channel;
+   *   gateway is a single fixed gateway (tests, legacy).
+   */
+  constructor({ outbox, gateway, gatewayFor, loadAccounts = async () => validateAccounts(
     JSON.parse(await fs.readFile(PATHS.accountsConfig, 'utf8')),
   ) }) {
+    if (!gateway && !gatewayFor) throw new Error('TelegramPublisher needs gateway or gatewayFor.');
     this.outbox = outbox;
-    this.gateway = gateway;
+    this.gatewayFor = gatewayFor ?? (() => gateway);
     this.loadAccounts = loadAccounts;
   }
 
   async targets() {
-    return (await this.loadAccounts()).filter(isPublishTarget).map(({ username, display_name }) => ({
+    return (await this.loadAccounts()).filter(isPublishTarget).map(({ username, display_name, bot, session, publish_transport }) => ({
       account: username, display_name: display_name ?? username,
+      ...(publish_transport ? { transport: publish_transport } : {}),
+      ...(bot ? { bot } : {}),
+      ...(session ? { session } : {}),
     }));
+  }
+
+  /** Identity of the publisher used for one channel, or the default one. */
+  async identity({ account } = {}) {
+    const entry = account
+      ? await this.#assertAllowed(normalizeAccount(account, 'telegram'))
+      : { platform: 'telegram' };
+    const gateway = await this.gatewayFor(entry);
+    try {
+      return await gateway.identity();
+    } finally {
+      await gateway.close().catch(() => {});
+    }
   }
 
   async prepare({ request_id, account, text, disable_preview = true }) {
@@ -47,14 +70,15 @@ export class TelegramPublisher {
     // A completed or uncertain request never sends again, including after restart.
     // An explicitly rejected one was not published and may be retried as is.
     if (!RETRYABLE_STATUSES.includes(draft.status)) return formatDraft(draft);
-    await this.#assertAllowed(draft.account);
+    const entry = await this.#assertAllowed(draft.account);
+    const gateway = await this.gatewayFor(entry);
     try {
-      const target = await this.gateway.resolve(draft.account);
+      const target = await gateway.resolve(draft.account);
       // Recheck the local policy after a possibly slow network connection.
       await this.#assertAllowed(draft.account);
       if (!await this.outbox.claim(request_id)) return formatDraft(await this.outbox.get(request_id));
       try {
-        const receipt = await this.gateway.send(target, draft);
+        const receipt = await gateway.send(target, draft);
         return formatDraft(await this.outbox.sent(request_id, receipt));
       } catch (error) {
         // Telegram explicitly refused the post, so nothing was published.
@@ -64,14 +88,16 @@ export class TelegramPublisher {
         return formatDraft(await this.outbox.uncertain(request_id, error.message));
       }
     } finally {
-      await this.gateway.close().catch(() => {});
+      await gateway.close().catch(() => {});
     }
   }
 
   async #assertAllowed(account) {
-    if (!(await this.loadAccounts()).some(entry => entry.username === account && isPublishTarget(entry))) {
+    const entry = (await this.loadAccounts()).find(item => item.username === account && isPublishTarget(item));
+    if (!entry) {
       throw new Error(`Publishing is not enabled for Telegram channel ${account}. Set publish_enabled: true on an active Telegram account in accounts.json.`);
     }
+    return entry;
   }
 }
 

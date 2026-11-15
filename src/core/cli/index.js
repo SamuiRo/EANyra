@@ -12,12 +12,17 @@
  *   eanyra context sync         → sync YAML context files into DB
  *   eanyra context show         → print current context from DB
  *   eanyra export               → export data to Markdown for AI content creation
+ *   eanyra vault …              → encrypted credentials (init, status, migrate, remember)
+ *   eanyra secrets …            → store GitHub / bot tokens and Telegram API keys
+ *   eanyra sessions             → which login each account uses and its state
  */
 
 import { Command }                    from 'commander';
 import database                       from '../teapot/database.js';
 import { registerContextCommands }    from './contextCommands.js';
 import { registerExportCommands }     from './exportCommands.js';
+import { registerVaultCommands }      from './vaultCommands.js';
+import { Credentials }                from '../secrets/Credentials.js';
 import { registerModels }             from '../teapot/models/index.js';
 import { SchemaMigrator }             from '../teapot/SchemaMigrator.js';
 import { ScraperOrchestrator }        from '../orchestrator/ScraperOrchestrator.js';
@@ -31,6 +36,8 @@ import { WELCOME_MESSAGE, SUB_TITLE } from '../../shared/message.js';
 class Nyra {
   /** @type {{ Account, Post, Signal, ScraperRun, UserContext, Project }} */
   #models = null;
+  /** Unlocked once for the daemon so cron runs do not prompt. */
+  #credentials = null;
 
   get models() { return this.#models; }
 
@@ -65,7 +72,7 @@ class Nyra {
   // ── Run modes ─────────────────────────────────────────────────────────────
 
   async #scrapeOnce({ platform, accounts } = {}) {
-    const orchestrator = new ScraperOrchestrator(this.#models);
+    const orchestrator = new ScraperOrchestrator(this.#models, { credentials: this.#credentials ?? undefined });
     await orchestrator.run({ platform, accounts });
   }
 
@@ -80,6 +87,8 @@ class Nyra {
 
   async runDaemon() {
     print('Mode: scheduler daemon', 'system');
+    // Unlock now (prompt, remembered key or env) rather than at 08:00 with no terminal.
+    this.#credentials = await Credentials.open();
     const scheduler = new Scheduler(() => this.#scrapeOnce());
     await scheduler.start();
 
@@ -149,6 +158,7 @@ function buildCLI(nyra) {
 
   registerContextCommands(program, nyra.models);
   registerExportCommands(program, nyra.models);
+  registerVaultCommands(program);
 
   // Default: no command → daemon (backwards-compat)
   program.action(async () => {

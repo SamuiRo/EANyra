@@ -27,9 +27,9 @@ the current repository state, not on the older README.
 - [x] **Support multiple accounts with the same username on different
   platforms.** Composite `(platform, username)` identity, migration preserving
   child records, and platform-aware account sync are implemented.
-- [ ] **Define multi-account LinkedIn import behavior.** Every LinkedIn account
-  currently reads the same `Shares.csv`; global post deduplication means the
-  first account can claim all imported rows.
+- [x] **Define multi-account LinkedIn import behavior.** Each LinkedIn account
+  can name its own export file with `import_file`; accounts without it still
+  share `Shares.csv`.
 - [x] **Resolve `used_for_content` semantics.** CLI export now records
   `exported_at`; `used_for_content` is reserved for confirmed publication.
 - [ ] **Correct scraper run metrics.** `scraper_runs.posts_saved` also counts
@@ -112,8 +112,19 @@ the current repository state, not on the older README.
   selection and a Telegram message reader. See [MCP_GUIDE.md](MCP_GUIDE.md).
 - [ ] **Telegram backfill checkpoints.** Persist pagination progress so reaching
   the page cap cannot skip an older unread interval.
-- [ ] **Separate brand identities.** Per-brand author context and independent
-  login sessions, beyond the current list of monitored accounts.
+- [x] **Separate brand identities.** Personas carry per-brand context; each
+  account names its own X/Telegram/GitHub login (`session`) and Telegram
+  channels their bot (`bot`). Sessions are isolated during collection.
+- [x] **Encrypted credentials.** Master-password vault (scrypt + AES-256-GCM)
+  for all logins and tokens, Windows DPAPI "remember on this PC", migration and
+  purge of plaintext `.env`/cookie/profile copies.
+- [ ] **Local web server.** `eanyra serve` on 127.0.0.1: account/session health,
+  collection jobs, posts and signals, and approval of AI-prepared drafts.
+- [ ] **Unified drafts for all platforms.** AI prepares posts per persona and
+  platform; X/LinkedIn stay manual-publish, Telegram can publish after approval.
+- [ ] **Durable job queue.** Persist collection jobs in SQLite so CLI, MCP,
+  scheduler and the web server share one view.
+- [ ] **Encrypt the database and context at rest** (SQLCipher or equivalent).
 
 - [ ] **Posting-gap analysis and proactive reminders.** Compare recent
   publishing activity with per-platform `posting_frequency` and expose the

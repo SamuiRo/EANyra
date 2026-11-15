@@ -7,7 +7,9 @@ reusable defaults live in `instance_example/`.
 ```text
 .env                            repository root; credentials and runtime options
 instance/                       entirely gitignored
-  accounts.json                 monitored accounts and publishing permissions
+  accounts.json                 accounts, their sessions and publishing permissions
+  secrets.vault                 encrypted logins and tokens (master password)
+  secrets.vault.dpapi           optional: vault key remembered on this PC (Windows DPAPI)
   context/
     voice.yaml
     bio.yaml
@@ -17,15 +19,15 @@ instance/                       entirely gitignored
       your-project.yaml
   data/
     pot.sqlite                  collected records and Telegram publication outbox
-    cookies.json                sensitive Twitter cookie cache
-    nyra/                       persistent browser profile
+    cookies.json                legacy plaintext X cookie cache (removed by vault migrate --purge)
+    nyra/                       legacy plaintext X browser profile (removed by vault migrate --purge)
     imports/                    LinkedIn CSV files
     exports/                    generated Markdown
     logs/                       migrated legacy logs
 ```
 
-Edit `instance/context/` and `instance/accounts.json` directly. Put the Telegram
-bot token in `.env` when ready; an empty token does not prevent editing
+Edit `instance/context/` and `instance/accounts.json` directly. Store the
+Telegram bot token with `npm run nyra -- secrets set telegram-bot` when ready; an empty token does not prevent editing
 context or preparing a publication draft. Context changes become available to
 agents after `npm run context:sync`; account changes sync during collection.
 Restart MCP/daemon after changing environment values.

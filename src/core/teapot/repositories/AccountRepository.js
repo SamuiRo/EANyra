@@ -27,7 +27,7 @@ export class AccountRepository {
    * New accounts are created with is_active = true.
    * Existing accounts have their display_name, platform and is_active refreshed.
    *
-   * @returns {Promise<void>}
+   * @returns {Promise<object[]>} the validated config entries
    */
   async syncFromConfig() {
     const entries = await this.#loadJson();
@@ -61,6 +61,12 @@ export class AccountRepository {
     );
 
     print('Account sync complete.', 'success');
+    return entries;
+  }
+
+  /** Validated accounts.json entries without touching the database. */
+  async loadConfig() {
+    return this.#loadJson();
   }
 
   /**

@@ -70,7 +70,7 @@ test('phone fallback uses phone auth instead of QR', async () => {
 });
 
 test('login validates credentials before connection and refuses unconfirmed authorization', async () => {
-  await assert.rejects(loginTelegram({ config: { apiId: 0 }, createClient: () => { throw new Error('Must not connect'); } }), /TELEGRAM_API_ID/);
+  await assert.rejects(loginTelegram({ config: { apiId: 0 }, createClient: () => { throw new Error('Must not connect'); } }), /API id and hash/);
   await assert.rejects(loginTelegram({ config, method: 'invalid' }), /method/);
   const client = fakeClient();
   client.signInUserWithQrCode = async () => ({ id: 1 });
