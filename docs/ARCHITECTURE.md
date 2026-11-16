@@ -513,6 +513,16 @@ first README observed becomes the baseline for change detection.
 Manual signals (`signal_add`) use source `note`/`article`, `source_id`
 `manual:<uuid>` and `metadata.persona`, which `signals_get` honours.
 
+#### `linkedin_imports`
+
+One row per LinkedIn export file handled for an account: file name, SHA-256,
+size, `status` (`imported`, `failed`), rows, new posts, conflicts (rows
+already owned by another account) and the newest post date. The LinkedIn
+collector skips a file whose hash equals the last successful import, drops
+rows owned by another account with a warning, and records the outcome through
+the collector's `onSaved` hook. Collectors may also return `keepWatermark`
+(nothing was read; `last_scraped_at` stays unchanged).
+
 #### `jobs`
 
 Durable background requests (`type: scrape`) from MCP, CLI, scheduler or web:

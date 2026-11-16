@@ -129,12 +129,27 @@ function parseRow(text, pos) {
  * @param {string} filePath  Absolute path to Shares.csv
  * @returns {ParsedShare[]}
  */
+/**
+ * LinkedIn exports write "YYYY-MM-DD HH:MM:SS" in UTC without a zone.
+ * `new Date()` would read that as local time (off by the UTC offset).
+ * @returns {Date|null}
+ */
+export function parseLinkedinDate(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  const date = match
+    ? new Date(Date.UTC(+match[1], +match[2] - 1, +match[3], +match[4], +match[5], +(match[6] ?? 0)))
+    : new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 export function parseSharesFile(filePath) {
   const raw  = fs.readFileSync(filePath, 'utf-8');
   const rows = parseCsvString(raw);
 
   return rows.map(r => ({
-    date:        r['Date']             ? new Date(r['Date'])    : null,
+    date:        parseLinkedinDate(r['Date']),
     shareLink:   r['ShareLink']?.trim()   || null,
     text:        r['ShareCommentary']?.trim() || '',
     sharedUrl:   r['SharedUrl']?.trim()   || null,

@@ -151,6 +151,27 @@ const migrations = [
       }, transaction);
     },
   },
+  {
+    name: '20261119_linkedin_imports',
+    async up({ queryInterface, transaction }) {
+      // One row per LinkedIn export file seen for an account.
+      await createTableIfMissing(queryInterface, 'linkedin_imports', {
+        id:          { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+        account_id:  { type: DataTypes.INTEGER, allowNull: false, references: { model: 'accounts', key: 'id' }, onDelete: 'CASCADE' },
+        file_name:   { type: DataTypes.STRING(255), allowNull: false },
+        sha256:      { type: DataTypes.STRING(64), allowNull: false },
+        bytes:       { type: DataTypes.INTEGER, allowNull: false },
+        status:      { type: DataTypes.STRING(16), allowNull: false },
+        rows:        { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+        new_posts:   { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+        conflicts:   { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+        newest_post_at: { type: DataTypes.DATE, allowNull: true },
+        error:       { type: DataTypes.TEXT, allowNull: true },
+        imported_at: { type: DataTypes.DATE, allowNull: false },
+      }, transaction);
+      await addIndexIfMissing(queryInterface, 'linkedin_imports', 'linkedin_imports_account_id', ['account_id'], transaction);
+    },
+  },
 ];
 
 export class SchemaMigrator {

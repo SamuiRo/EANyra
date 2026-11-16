@@ -25,6 +25,7 @@ import { registerContextCommands }    from './contextCommands.js';
 import { registerExportCommands }     from './exportCommands.js';
 import { registerVaultCommands }      from './vaultCommands.js';
 import { registerNotifyCommands }     from './notifyCommands.js';
+import { registerLinkedinCommands }   from './linkedinCommands.js';
 import { Credentials }                from '../secrets/Credentials.js';
 import { registerModels }             from '../teapot/models/index.js';
 import { SchemaMigrator }             from '../teapot/SchemaMigrator.js';
@@ -137,8 +138,8 @@ class Nyra {
       const program = buildCLI(this);
       await program.parseAsync(process.argv);
     } catch (error) {
-      print(`Startup failed: ${error.message}`, 'error');
-      console.error(error);
+      print(`Failed: ${error.message}`, 'error');
+      if (process.env.LOG_LEVEL === 'debug') console.error(error);
       try { await database.disconnect(); } catch { /* ignore */ }
       process.exit(1);
     }
@@ -234,6 +235,7 @@ function buildCLI(nyra) {
   registerExportCommands(program, nyra.models);
   registerVaultCommands(program);
   registerNotifyCommands(program);
+  registerLinkedinCommands(program, () => nyra.models);
 
   // Default: no command → daemon (backwards-compat)
   program.action(async () => {

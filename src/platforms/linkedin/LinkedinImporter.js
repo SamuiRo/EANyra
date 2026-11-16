@@ -18,6 +18,7 @@
 
 import path from 'path';
 import fs   from 'fs';
+import { createHash } from 'node:crypto';
 import { parseSharesFile, parseProfileFile } from './csvParser.js';
 import { LINKEDIN }                          from '../../config/app.config.js';
 import { print }                             from '../../shared/utils.js';
@@ -35,18 +36,27 @@ export class LinkedinImporter {
   // ── Public ────────────────────────────────────────────────────────────────
 
   /**
-   * Import all LinkedIn CSVs for a given username.
+   * Import all LinkedIn CSVs for a given username (no history, no checks).
    *
    * @param {string} username
    * @returns {Promise<import('../../core/teapot/repositories/PostRepository.js').RawPost[]>}
    */
   async scrapeAccount(username) {
+    const result = await this.read(username);
+    return result.posts;
+  }
+
+  /**
+   * Read this account's export file.
+   * @returns {Promise<{ file: { name: string, path: string, exists: boolean, sha256?: string, bytes?: number },
+   *                     posts: object[] }>}
+   * @throws when the file exists but cannot be parsed — never a silent empty import
+   */
+  async read(username) {
     print(`[LinkedIn] Importing CSV data for @${username}`, 'info');
+    const file = { name: this.sharesFile, path: path.join(this.importsDir, this.sharesFile), exists: false };
 
-    const sharesPath  = path.join(this.importsDir, this.sharesFile);
     const profilePath = path.join(this.importsDir, LINKEDIN.profileFile);
-
-    // ── Profile (optional, informational only) ────────────────────────────
     if (fs.existsSync(profilePath)) {
       try {
         const profile = parseProfileFile(profilePath);
@@ -54,32 +64,27 @@ export class LinkedinImporter {
       } catch (err) {
         print(`[LinkedIn] Failed to parse Profile.csv: ${err.message}`, 'warning');
       }
-    } else {
-      print(`[LinkedIn] Profile.csv not found at ${profilePath} — skipping.`, 'warning');
     }
 
-    // ── Shares (posts) ────────────────────────────────────────────────────
-    if (!fs.existsSync(sharesPath)) {
-      print(`[LinkedIn] Shares.csv not found at ${sharesPath} — nothing to import.`, 'warning');
-      return [];
-    }
+    if (!fs.existsSync(file.path)) return { file, posts: [] };
+    const data = fs.readFileSync(file.path);
+    Object.assign(file, { exists: true, bytes: data.length, sha256: createHash('sha256').update(data).digest('hex') });
+    /** The file of the last read() — also when parsing it fails. */
+    this.lastFile = file;
 
     let shares;
     try {
-      shares = parseSharesFile(sharesPath);
+      shares = parseSharesFile(file.path);
     } catch (err) {
-      print(`[LinkedIn] Failed to parse Shares.csv: ${err.message}`, 'error');
-      return [];
+      throw new Error(`Cannot read ${file.name}: ${err.message}`, { cause: err });
     }
-
-    if (!shares.length) {
-      print(`[LinkedIn] Shares.csv is empty — nothing to import.`, 'warning');
-      return [];
+    if (shares.length && !shares.some(share => share.shareLink || share.text)) {
+      throw new Error(`${file.name} has no ShareLink/ShareCommentary columns: is it the Shares.csv from the LinkedIn export?`);
     }
 
     const posts = shares.map(share => this.#toRawPost(share));
-    print(`[LinkedIn] @${username}: ${posts.length} post(s) parsed from CSV.`, 'data');
-    return posts;
+    print(`[LinkedIn] @${username}: ${posts.length} post(s) parsed from ${file.name}.`, 'data');
+    return { file, posts };
   }
 
   // ── Private ───────────────────────────────────────────────────────────────

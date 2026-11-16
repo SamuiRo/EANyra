@@ -250,6 +250,21 @@ npm run nyra -- scrape linkedin
 For several LinkedIn accounts, give each its own export file name with
 `"import_file": "Shares-brand-a.csv"`; otherwise they share `Shares.csv`.
 
+The easiest way to bring a new export in:
+
+```bash
+npm run nyra -- linkedin import ~/Downloads/Shares.csv --account brand-a
+npm run nyra -- linkedin history
+```
+
+The command checks that the file is a LinkedIn `Shares.csv`, copies it to the
+account's import file and imports it. Every import is recorded (file hash,
+rows, new posts, conflicts); an unchanged file is skipped on later runs. Posts
+that already belong to another account are not reassigned and are reported
+(two accounts pointing at one export). A missing export is a warning that
+does not mark the account as fresh; an unreadable file is an error and shows
+up in problem alerts. Export timestamps are read as UTC.
+
 Import is idempotent. Engagement metrics are not present in LinkedIn's export,
 so imported posts use zero or null values for those fields.
 

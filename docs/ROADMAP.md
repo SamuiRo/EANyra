@@ -162,8 +162,9 @@ the current repository state, not on the older README.
   publication marks them used.
 - [x] **Link published drafts to collected posts** and report engagement per
   draft, signal type and author (`content_performance_get`, web «Що працює»).
-- [ ] **Incremental LinkedIn import management.** Track import files, account
-  ownership, and import history explicitly.
+- [x] **Incremental LinkedIn import management.** `linkedin_imports` history,
+  unchanged-file skip, ownership conflicts, `linkedin import` / `history` CLI,
+  UTC export dates, no silent empty imports.
 - [ ] **Optional community feedback sources.** Evaluate Discord and similar
   sources as signals after manual signal ingestion and attribution are stable.
 - [x] **Per-platform health and run metrics.**

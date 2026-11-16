@@ -92,6 +92,14 @@ export class AccountRepository {
     );
   }
 
+  /** A successful attempt that read nothing new: clear errors, keep last_scraped_at. */
+  async markAttempted(accountId) {
+    await this.Account.update(
+      { last_attempt_at: new Date(), last_error: null, last_error_at: null },
+      { where: { id: accountId } },
+    );
+  }
+
   /** Record a failed or skipped attempt; last_scraped_at stays unchanged. */
   async markFailed(accountId, message) {
     const now = new Date();

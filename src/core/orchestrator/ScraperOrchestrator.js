@@ -37,6 +37,7 @@ import { PostRepository }       from '../teapot/repositories/PostRepository.js';
 import { SignalRepository }     from '../teapot/repositories/SignalRepository.js';
 import { ScraperRunRepository } from '../teapot/repositories/ScraperRunRepository.js';
 import { SourceStateRepository } from '../teapot/repositories/SourceStateRepository.js';
+import { LinkedinImportRepository } from '../teapot/repositories/LinkedinImportRepository.js';
 import { linkPublishedDrafts } from '../services/draftLinks.js';
 import { sequelizeExecutor } from '../services/sql.js';
 import { validatePosts, validateSignals, describeRejected } from '../teapot/recordValidation.js';
@@ -84,6 +85,7 @@ export class ScraperOrchestrator {
     // Created lazily: selection is validated before any database access.
     const sequelize     = models.Post?.sequelize;
     this.stateRepo      = sequelize ? new SourceStateRepository(sequelize) : null;
+    this.linkedinImports = sequelize ? new LinkedinImportRepository(sequelize) : null;
     this.db             = sequelize ? sequelizeExecutor(sequelize) : null;
   }
 
@@ -274,12 +276,12 @@ export class ScraperOrchestrator {
   async #scrapeAccount(account, session) {
     const info = platformInfo(account.platform);
     const collector = this.collectors[account.platform];
-    const { records, scrapedAt, warning } = await collector.collect({
+    const { records, scrapedAt, warning, keepWatermark, onSaved } = await collector.collect({
       account,
       entry: this.#config.get(accountKey(account)),
       session,
       runtime: this.#runtime,
-      repos: { postRepo: this.postRepo, signalRepo: this.signalRepo, stateRepo: this.stateRepo },
+      repos: { postRepo: this.postRepo, signalRepo: this.signalRepo, stateRepo: this.stateRepo, linkedinImports: this.linkedinImports },
     });
     // Drop malformed records instead of failing the whole account's batch.
     const { valid, rejected } = info.output === 'signals'
@@ -287,7 +289,10 @@ export class ScraperOrchestrator {
       : validatePosts(records, account.platform);
     const repo  = info.output === 'signals' ? this.signalRepo : this.postRepo;
     const saved = await repo.saveBatch(account.id, valid);
-    await this.accountRepo.markScraped(account.id, scrapedAt ?? new Date());
+    await onSaved?.(saved);
+    // Nothing was read (e.g. no export file): keep the freshness watermark.
+    if (keepWatermark) await this.accountRepo.markAttempted(account.id);
+    else await this.accountRepo.markScraped(account.id, scrapedAt ?? new Date());
     print(`  → ${records.length} ${info.output} collected, ${saved} new saved.`, 'data');
     const warnings = [warning, describeRejected(rejected)].filter(Boolean);
     for (const message of warnings) print(`  → ${message}`, 'warning');

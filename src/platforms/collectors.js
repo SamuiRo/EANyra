@@ -5,11 +5,14 @@
  * pacing, persistence (by the catalog's `output`), run bookkeeping and errors.
  *
  *   collect({ account, entry, session, runtime, repos }) →
- *     { records: RawPost[]|RawSignal[], scrapedAt?: Date, warning?: string }
- *   warning marks a successful but incomplete collection (shown per run).
+ *     { records: RawPost[]|RawSignal[], scrapedAt?: Date, warning?: string,
+ *       keepWatermark?: boolean, onSaved?: (saved: number) => Promise<void> }
+ *   warning marks a successful but incomplete collection (shown per run);
+ *   keepWatermark leaves last_scraped_at unchanged (nothing was read);
+ *   onSaved runs after persistence with the number of new records.
  *
  * runtime: { credentials, twitterSession(name), telegramScraper(name) }
- * repos:   { postRepo, signalRepo, stateRepo }
+ * repos:   { postRepo, signalRepo, stateRepo, linkedinImports }
  */
 
 import { LINKEDIN, SCRAPER, TELEGRAM } from '../config/app.config.js';
@@ -60,11 +63,56 @@ export const COLLECTORS = Object.freeze({
   },
 
   linkedin: {
-    async collect({ account, entry }) {
+    async collect({ account, entry, repos }) {
       const importer = createLinkedinImporter(LINKEDIN.importsDir, {
         sharesFile: entry?.import_file ?? LINKEDIN.sharesFile,
       });
-      return { records: await importer.scrapeAccount(account.username) };
+      const history = repos.linkedinImports;
+      let result;
+      try {
+        result = await importer.read(account.username);
+      } catch (error) {
+        const failed = importer.lastFile;
+        if (history && failed?.exists) {
+          await history.record({ accountId: account.id, fileName: failed.name, sha256: failed.sha256, bytes: failed.bytes, status: 'failed', error: error.message });
+        }
+        throw error;
+      }
+      const { file, posts } = result;
+
+      if (!file.exists) {
+        return {
+          records: [], keepWatermark: true,
+          warning: `No LinkedIn export ${file.name} in ${LINKEDIN.importsDir}. Download it (LinkedIn → Settings → Data privacy → ` +
+            `Get a copy of your data → Posts) and run \`npm run nyra -- linkedin import <Shares.csv> --account ${account.username}\`.`,
+        };
+      }
+
+      // The same export again: nothing new to read.
+      const last = await history?.lastImported(account.id);
+      if (last && last.sha256 === file.sha256) {
+        print(`  → ${file.name} unchanged since ${new Date(last.imported_at).toISOString().slice(0, 10)}; skipped.`, 'system');
+        return { records: [] };
+      }
+
+      // A post can belong to one account only: rows already owned by another
+      // account mean two accounts point at the same export file.
+      const owners = history ? await history.foreignOwners(account.id, posts.map(post => post.platform_id).filter(Boolean)) : new Map();
+      const records = posts.filter(post => !owners.has(String(post.platform_id)));
+      const conflicts = posts.length - records.length;
+      const newestPostAt = records.reduce((newest, post) => (post.posted_at && (!newest || post.posted_at > newest) ? post.posted_at : newest), null);
+
+      return {
+        records,
+        ...(conflicts ? {
+          warning: `${conflicts} post(s) in ${file.name} already belong to ${[...new Set(owners.values())].map(u => `linkedin/${u}`).join(', ')}; ` +
+            'give each LinkedIn account its own "import_file" in accounts.json.',
+        } : {}),
+        onSaved: async saved => history?.record({
+          accountId: account.id, fileName: file.name, sha256: file.sha256, bytes: file.bytes,
+          status: 'imported', rows: posts.length, newPosts: saved, conflicts, newestPostAt,
+        }),
+      };
     },
   },
 
