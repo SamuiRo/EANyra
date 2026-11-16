@@ -191,7 +191,7 @@ test('orchestrator isolates a failing login to its own accounts', async t => {
         if (config.session === 'bad-string') throw new Error('AUTH_KEY_UNREGISTERED');
       },
       async disconnect() {},
-      async scrapeAccount() { return []; },
+      async collect() { return { posts: [], complete: true, backfill: null }; },
     }),
     browserFactory: () => ({
       async launch() {},

@@ -22,6 +22,18 @@ export class SourceStateRepository {
     return Object.fromEntries(rows.map(row => [row.key, row.value]));
   }
 
+  async get(source, key) {
+    const [row] = await this.sequelize.query(
+      'SELECT value FROM source_state WHERE source = ? AND key = ?',
+      { replacements: [source, key], type: QueryTypes.SELECT },
+    );
+    return row?.value ?? null;
+  }
+
+  async delete(source, key) {
+    await this.sequelize.query('DELETE FROM source_state WHERE source = ? AND key = ?', { replacements: [source, key] });
+  }
+
   async setMany(source, entries) {
     const now = new Date().toISOString();
     for (const [key, value] of entries) {

@@ -199,8 +199,8 @@ export class ScraperOrchestrator {
           totals[outcome.output] += outcome.saved;
           accountsDone += 1;
           await this.scraperRunRepo.recordAccount(scraperRun, account, {
-            status: 'success', found: outcome.found, saved: outcome.saved, startedAt,
-            session: usesSession ? session : null,
+            status: outcome.warning ? 'partial' : 'success', found: outcome.found, saved: outcome.saved, startedAt,
+            error: outcome.warning ?? null, session: usesSession ? session : null,
           });
         } catch (err) {
           const msg = `@${account.username} (${account.platform}) failed: ${err.message}`;
@@ -233,7 +233,7 @@ export class ScraperOrchestrator {
   async #scrapeAccount(account, session) {
     const info = platformInfo(account.platform);
     const collector = this.collectors[account.platform];
-    const { records, scrapedAt } = await collector.collect({
+    const { records, scrapedAt, warning } = await collector.collect({
       account,
       entry: this.#config.get(accountKey(account)),
       session,
@@ -244,7 +244,8 @@ export class ScraperOrchestrator {
     const saved = await repo.saveBatch(account.id, records);
     await this.accountRepo.markScraped(account.id, scrapedAt ?? new Date());
     print(`  → ${records.length} ${info.output} collected, ${saved} new saved.`, 'data');
-    return { output: info.output, found: records.length, saved };
+    if (warning) print(`  → ${warning}`, 'warning');
+    return { output: info.output, found: records.length, saved, warning };
   }
 
   async #recordFailure(scraperRun, account, outcome) {

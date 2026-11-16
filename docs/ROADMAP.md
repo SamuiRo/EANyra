@@ -107,8 +107,8 @@ the current repository state, not on the older README.
 
 - [x] **Agent-triggered collection.** MCP background jobs with platform/account
   selection and a Telegram message reader. See [MCP_GUIDE.md](MCP_GUIDE.md).
-- [ ] **Telegram backfill checkpoints.** Persist pagination progress so reaching
-  the page cap cannot skip an older unread interval.
+- [x] **Telegram backfill checkpoints.** Reaching the page cap stores the
+  unread interval in `source_state` and later runs read it; nothing is skipped.
 - [x] **Separate brand identities.** Personas carry per-brand context; each
   account names its own X/Telegram/GitHub login (`session`) and Telegram
   channels their bot (`bot`). Sessions are isolated during collection.
@@ -141,7 +141,6 @@ the current repository state, not on the older README.
   publication marks them used.
 - [x] **Link published drafts to collected posts** and report engagement per
   draft, signal type and author (`content_performance_get`, web «Що працює»).
-- [ ] **Telegram backfill checkpoints** can reuse `source_state`.
 - [ ] **Incremental LinkedIn import management.** Track import files, account
   ownership, and import history explicitly.
 - [ ] **Optional community feedback sources.** Evaluate Discord and similar

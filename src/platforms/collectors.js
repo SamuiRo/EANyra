@@ -5,7 +5,8 @@
  * pacing, persistence (by the catalog's `output`), run bookkeeping and errors.
  *
  *   collect({ account, entry, session, runtime, repos }) →
- *     { records: RawPost[]|RawSignal[], scrapedAt?: Date, note?: string }
+ *     { records: RawPost[]|RawSignal[], scrapedAt?: Date, warning?: string }
+ *   warning marks a successful but incomplete collection (shown per run).
  *
  * runtime: { credentials, twitterSession(name), telegramScraper(name) }
  * repos:   { postRepo, signalRepo, stateRepo }
@@ -76,12 +77,26 @@ export const COLLECTORS = Object.freeze({
         'system',
       );
       const scraper = await runtime.telegramScraper(session);
-      const records = await scraper.scrapeAccount(account.username, {
+      const stored = await repos.stateRepo?.get('telegram_backfill', account.username);
+      const result = await scraper.collect(account.username, {
         since,
         initialLimit: TELEGRAM.initialPostsPerAccount,
+        backfill: stored ? JSON.parse(stored) : null,
       });
+      // An unread older interval is kept as a checkpoint instead of being
+      // skipped when the watermark moves forward.
+      if (result.backfill) await repos.stateRepo?.setMany('telegram_backfill', [[account.username, JSON.stringify(result.backfill)]]);
+      else if (stored) await repos.stateRepo?.delete('telegram_backfill', account.username);
+      const records = result.posts;
       // last_scraped_at is the polling watermark for Telegram.
-      return { records, scrapedAt: telegramBaselineTimestamp(records, startedAt, since) };
+      return {
+        records,
+        scrapedAt: telegramBaselineTimestamp(records, startedAt, since),
+        ...(result.backfill ? {
+          warning: `Incomplete: older messages before #${result.backfill.before_id} (since ${result.backfill.since}) ` +
+            'exceed TELEGRAM_MAX_PAGES_PER_ACCOUNT and will be read on the next runs.',
+        } : {}),
+      };
     },
   },
 });

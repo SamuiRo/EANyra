@@ -338,6 +338,11 @@ Collection behavior:
 3. Later runs fetch recent channel history pages.
 4. Pagination stops when a message at or before the prior scrape boundary is
    reached, with a configurable overlap window for safety.
+   If `TELEGRAM_MAX_PAGES_PER_ACCOUNT` is reached first, the unread older
+   interval is stored as a checkpoint (`source_state`, source
+   `telegram_backfill`: `{ since, before_id }`) and read on the next runs
+   before it is cleared; overlapping gaps merge into one interval. Such runs
+   are recorded per account as `partial` with the pending interval.
 5. Messages are normalized to `RawPost` objects with stable IDs in the form
    `<channel>:<message_id>`.
 6. Engagement maps Telegram reactions to `likes`, forwards to `reposts`,
