@@ -130,9 +130,10 @@ export const signalTools = [
         params.push(account.replace(/^@/, ''));
       }
       if (persona) {
+        // The persona's accounts, plus manual ideas bound to it (signal_add).
         const filter = await personaAccountCondition(persona);
-        conds.push(filter.sql);
-        params.push(...filter.params);
+        conds.push(`(${filter.sql} OR (CASE WHEN json_valid(s.metadata) THEN json_extract(s.metadata, '$.persona') END) = ?)`);
+        params.push(...filter.params, persona);
       }
       if (since_days) {
         // Include signals with NULL occurred_at when they are unused

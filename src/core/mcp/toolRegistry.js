@@ -14,6 +14,7 @@ import { statusTools }       from './tools/status.js';
 import { buildContextTools } from './context.js';
 import { buildCollectionTools } from './tools/collection.js';
 import { buildTelegramPublishingTools } from './tools/telegramPublishing.js';
+import { buildContentTools } from './tools/content.js';
 import { jsonSchemaToZod } from './schema.js';
 
 /**
@@ -28,6 +29,7 @@ export function buildTools({ jobs, publications }) {
     ...statusTools,
     ...buildCollectionTools(jobs),
     ...buildTelegramPublishingTools(publications),
+    ...buildContentTools({ publications }),
   ];
 }
 

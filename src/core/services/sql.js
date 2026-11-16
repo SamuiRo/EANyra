@@ -7,7 +7,7 @@
  *
  *   all(sql, params) → rows
  *   get(sql, params) → first row or null
- *   run(sql, params) → void
+ *   run(sql, params) → { lastID?: number } (lastID for INSERT)
  *
  * Parameters are positional "?" placeholders; never interpolate values.
  */
@@ -18,13 +18,20 @@ export function sequelizeExecutor(sequelize) {
   return {
     all: (sql, params = []) => sequelize.query(sql, { replacements: params, type: QueryTypes.SELECT }),
     get: async (sql, params = []) => (await sequelize.query(sql, { replacements: params, type: QueryTypes.SELECT }))[0] ?? null,
-    run: async (sql, params = []) => { await sequelize.query(sql, { replacements: params }); },
+    run: async (sql, params = []) => {
+      if (/^\s*INSERT\b/i.test(sql)) {
+        const [lastID] = await sequelize.query(sql, { replacements: params, type: QueryTypes.INSERT });
+        return { lastID };
+      }
+      await sequelize.query(sql, { replacements: params });
+      return {};
+    },
   };
 }
 
 /** Adapter for core/mcp/db.js (query, queryOne, run). */
 export function mcpExecutor({ query, queryOne, run }) {
-  return { all: query, get: queryOne, run: async (sql, params) => { await run(sql, params); } };
+  return { all: query, get: queryOne, run: async (sql, params) => ({ lastID: (await run(sql, params))?.lastID }) };
 }
 
 export function parseJson(value, fallback = null) {

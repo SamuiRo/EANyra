@@ -56,7 +56,18 @@ test('stdio MCP reads scoped Telegram messages, validates inputs and runs a real
   const names = (await client.listTools()).tools.map(tool => tool.name);
   for (const name of ['scraper_run', 'scraper_job_get', 'scraper_status',
     'telegram_messages_get', 'posts_get', 'posts_search',
-    'telegram_post_prepare', 'telegram_post_publish', 'telegram_post_get']) assert.ok(names.includes(name));
+    'telegram_post_prepare', 'telegram_post_publish', 'telegram_post_get',
+    'content_plan_get', 'draft_create', 'drafts_list', 'draft_mark_published', 'signal_add']) assert.ok(names.includes(name), name);
+  const prompts = (await client.listPrompts()).prompts.map(prompt => prompt.name);
+  assert.deepEqual(prompts, ['write_post', 'content_week', 'repurpose_signal', 'performance_review']);
+  const prompt = await client.getPrompt({ name: 'write_post', arguments: { persona: 'brand', platform: 'twitter' } });
+  assert.match(prompt.messages[0].content.text, /draft_create/);
+  // The full loop through real MCP: idea → draft → list.
+  const idea = parseResult(await client.callTool({ name: 'signal_add', arguments: { title: 'Idea from chat' } }));
+  const draft = parseResult(await client.callTool({ name: 'draft_create', arguments: { platform: 'telegram', text: 'Draft text', signal_ids: [idea.id] } }));
+  assert.equal(draft.status, 'draft');
+  assert.deepEqual(draft.signal_ids, [idea.id]);
+  assert.equal(parseResult(await client.callTool({ name: 'drafts_list', arguments: {} }))[0].id, draft.id);
   const read = async args => parseResult(await client.callTool({ name: 'telegram_messages_get', arguments: args }));
   const initial = await read({ account: '@same', limit: 2 });
   assert.equal(initial.messages.length, 2);

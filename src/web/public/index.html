@@ -27,6 +27,7 @@
       <div class="brand">EANyra <span id="version" class="muted"></span></div>
       <nav id="tabs" class="tabs" aria-label="Розділи">
         <button data-view="overview" class="active">Огляд</button>
+        <button data-view="content">Контент</button>
         <button data-view="accounts">Акаунти</button>
         <button data-view="posts">Пости</button>
         <button data-view="signals">Сигнали</button>
@@ -38,6 +39,17 @@
     <main id="view" class="view" aria-live="polite"></main>
     <div id="toast" class="toast" role="status" hidden></div>
   </div>
+
+  <dialog id="ask" class="card">
+    <form id="ask-form" method="dialog" class="stack">
+      <h2 id="ask-title"></h2>
+      <label class="field"><span id="ask-label"></span><input id="ask-input" type="text"></label>
+      <div class="row end">
+        <button type="button" id="ask-cancel" class="ghost">Скасувати</button>
+        <button type="submit" class="primary">OK</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="confirm" class="card">
     <h2 id="confirm-title"></h2>

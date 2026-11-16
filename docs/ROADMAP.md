@@ -123,27 +123,27 @@ the current repository state, not on the older README.
   AI-prepared Telegram drafts.
 - [ ] **Embed the MCP HTTP transport in `eanyra serve`** so one process serves
   the browser and remote-capable agents.
-- [ ] **Unified drafts for all platforms.** AI prepares posts per persona and
-  platform; X/LinkedIn stay manual-publish, Telegram can publish after approval.
+- [x] **Unified drafts for all platforms.** AI prepares posts per persona and
+  platform; X/LinkedIn stay manual-publish (compose link + mark published),
+  Telegram publishes after approval.
 - [x] **Durable job queue.** Collection jobs live in the `jobs` table and
   survive MCP restarts; `scraper_jobs_list` shows them.
 - [ ] **Move remaining MCP queries into services** (posts, signals, context) as
   the web server needs them.
 - [ ] **Encrypt the database and context at rest** (SQLCipher or equivalent).
 
-- [ ] **Posting-gap analysis and proactive reminders.** Compare recent
-  publishing activity with per-platform `posting_frequency` and expose the
-  result to agents; add notification delivery only after the analysis contract
-  is stable.
+- [x] **Posting-gap analysis.** `content_plan_get` and the web content plan.
+- [ ] **Proactive reminders.** Notify (e.g. Telegram bot message to the author)
+  when an account becomes overdue.
 - [x] **Twitter network-response extraction with DOM fallback.** Intercept
   already-loaded GraphQL responses to obtain exact metrics, complete text, and
   richer metadata while preserving browser navigation and human-paced
   scrolling.
-- [ ] **Manual signal ingestion.** Add CLI/MCP workflows for notes, articles,
-  ideas, and other non-GitHub signal sources already supported by the generic
-  `signals` schema.
-- [ ] **Signal-to-post attribution.** Track which published posts came from
-  which signals instead of relying on one timestamp flag.
+- [x] **Manual signal ingestion.** `signal_add` (MCP) and the web idea form.
+- [x] **Signal-to-post attribution.** Drafts keep their source `signal_ids`;
+  publication marks them used.
+- [ ] **Link published drafts to collected posts** (match `published_url` with
+  collected `raw_url`) to report engagement per draft and per signal.
 - [ ] **Incremental LinkedIn import management.** Track import files, account
   ownership, and import history explicitly.
 - [ ] **Optional community feedback sources.** Evaluate Discord and similar

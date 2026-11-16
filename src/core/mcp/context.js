@@ -155,7 +155,7 @@ async function configuredAccounts() {
   }
 }
 
-async function loadGlobalContext() {
+export async function loadGlobalContext() {
   const rows = await query('SELECT key, value FROM user_context ORDER BY key');
   const ctx  = {};
   for (const row of rows) {

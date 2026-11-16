@@ -75,7 +75,14 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 button.danger { background: var(--err); color: #fff; border-color: var(--err); }
 button.ghost { background: transparent; }
-button.small { padding: 2px 8px; font-size: 12px; }
+button.small, .linkbutton.small { padding: 2px 8px; font-size: 12px; }
+.linkbutton {
+  display: inline-block; border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px;
+  background: var(--surface); color: var(--text); text-decoration: none;
+}
+.linkbutton:hover { background: var(--surface-2); }
+details > summary { cursor: pointer; font-weight: 600; }
+details[open] > summary { margin-bottom: 12px; }
 input, select, textarea {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -139,6 +146,10 @@ tr.clickable:hover td { background: var(--surface-2); }
 .post { display: grid; gap: 6px; }
 .post-meta { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
 .empty { color: var(--muted); padding: 24px; text-align: center; }
+.draft-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.draft textarea { min-height: 140px; }
+.counter.over { color: var(--err); font-weight: 600; }
+.plan-due { display: grid; gap: 6px; }
 
 .toast {
   position: fixed; right: 16px; bottom: 16px; max-width: min(420px, calc(100vw - 32px));

@@ -130,7 +130,7 @@ twitter:
 | `style` | string | Platform-specific tone, density, and structure. |
 | `formats` | string[] | Useful post patterns the agent may choose from. |
 | `avoid` | string[] | Platform-specific anti-patterns. |
-| `posting_frequency` | string | Human-readable target cadence; not automatically enforced. |
+| `posting_frequency` | string | Target cadence used by `content_plan_get` and the web content plan. Understood forms: `daily`, `weekly`, `monthly`, `every 2 days`, `3 posts per week`, `3/week`, `2 posts per month`, `щодня`, `щотижня`, `3 рази на тиждень`. Other text is shown but not checked. Personas can override it per platform. |
 
 The MCP context returns all fields. The Markdown exporter currently looks for
 `frequency` instead of `posting_frequency`, so cadence is absent from exports;

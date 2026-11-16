@@ -13,6 +13,7 @@ import { PLATFORM_CATALOG } from '../platforms/catalog.js';
 import { ScrapeJobs } from '../core/mcp/ScrapeJobs.js';
 import { TelegramPublishRequests } from '../core/mcp/TelegramPublishRequests.js';
 import { buildTools } from '../core/mcp/toolRegistry.js';
+import { createContentService } from '../core/mcp/tools/content.js';
 import * as mcpDb from '../core/mcp/db.js';
 import { Vault } from '../core/secrets/Vault.js';
 import { getVault, unlockSharedVault } from '../core/secrets/vaultAccess.js';
@@ -41,6 +42,7 @@ export async function startWebServer({ host = WEB.host, port = WEB.port, schedul
   const jobs = new ScrapeJobs({ source: 'web' });
   const publications = new TelegramPublishRequests();
   const db = mcpExecutor(mcpDb);
+  const content = createContentService();
 
   const routes = {
     'GET /api/platforms': async () => PLATFORM_CATALOG,
@@ -55,6 +57,11 @@ export async function startWebServer({ host = WEB.host, port = WEB.port, schedul
       const { updated, skipped, errors } = await new UserContextRepository(models).sync();
       return { updated, skipped, errors };
     },
+    // Drafts written by the author in the browser (the AI uses draft_create).
+    'POST /api/drafts': async ({ body }) => content.createDraft({
+      platform: body.platform, account: body.account || undefined, persona: body.persona || undefined,
+      text: body.text, notes: body.notes || null, created_by: 'user',
+    }),
     'GET /api/telegram/drafts': async ({ query }) => {
       const limit = Math.min(Math.max(Number(query.get('limit')) || 50, 1), 200);
       return db.all(`SELECT request_id, account, text, status, error, receipt, created_at, updated_at

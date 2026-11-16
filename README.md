@@ -302,6 +302,28 @@ newest imported post as the future polling baseline. Later daily runs poll
 recent history pages, re-read a small overlap window, and persist only new
 messages through the same post upsert path used by other publishing platforms.
 
+## AI Content Workflow
+
+The agent (any MCP client) and the web UI share one loop:
+
+```text
+content_plan_get ─► context_get(persona) ─► signals_get ─► posts_get(sample) ─► draft_create
+        ▲                                                                         │
+        └──── signals marked used ◄── published (Telegram auto / X, LinkedIn manual) ◄── review in web UI
+```
+
+| Tool | Purpose |
+|---|---|
+| `content_plan_get` | Which accounts are overdue/due vs. `platforms.<platform>.posting_frequency` (e.g. `"3 posts per week"`, `"daily"`, `"щодня"`), with waiting drafts and unused signals |
+| `signal_add` | Save an idea, link or note as material, optionally for one persona |
+| `draft_create` / `draft_update` / `drafts_list` / `draft_get` | Drafts per platform and account; persona derived from the account; source `signal_ids` |
+| `draft_prepare_telegram` | Turn a Telegram draft into an outbox request; publishing still needs `telegram_post_publish` and approval |
+| `draft_mark_published` | Record a post the author published themselves; marks its signals used |
+
+MCP prompts (prompt menu of the MCP client): `write_post`, `content_week`,
+`repurpose_signal`, `performance_review`. X and LinkedIn are never published
+by the agent.
+
 ## Web UI
 
 `npm run serve` starts a local web interface on `http://127.0.0.1:3030`
@@ -309,13 +331,18 @@ messages through the same post upsert path used by other publishing platforms.
 vault for collection and publishing. Without a vault the terminal prints a
 one-time access token.
 
+- **Контент:** publishing plan per persona and account (cadence from
+  `posting_frequency` vs. real posts), AI and manual drafts with edit, approve,
+  discard; X/LinkedIn drafts open the official compose dialog with the text
+  filled in and are then marked published with their URL; Telegram drafts are
+  published after confirmation.
 - **Огляд:** collection health, freshness per platform, accounts needing
   attention with their last error, recent runs with per-account outcomes,
   one-click collection per platform or for everything.
 - **Акаунти:** accounts, personas and the state of every login session;
   context sync after editing YAML.
 - **Пости / Сигнали:** browse and search collected posts by persona,
-  platform and engagement; unused signals.
+  platform and engagement; unused signals; add ideas and links as signals.
 - **Telegram:** drafts prepared by the AI (MCP) or in the form; publish only
   after an explicit confirmation.
 - **Задачі:** collection jobs from MCP, the browser and the scheduler.

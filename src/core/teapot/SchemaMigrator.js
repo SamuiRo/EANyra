@@ -112,6 +112,29 @@ const migrations = [
       await addIndexIfMissing(queryInterface, 'jobs', 'jobs_created_at', ['created_at'], transaction);
     },
   },
+  {
+    name: '20261117_drafts',
+    async up({ queryInterface, transaction }) {
+      await createTableIfMissing(queryInterface, 'drafts', {
+        id:                  { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+        persona:             { type: DataTypes.STRING(64), allowNull: true },
+        platform:            { type: DataTypes.STRING(32), allowNull: false },
+        account:             { type: DataTypes.STRING(128), allowNull: true },
+        text:                { type: DataTypes.TEXT, allowNull: false },
+        status:              { type: DataTypes.STRING(16), allowNull: false, defaultValue: 'draft' },
+        signal_ids:          { type: DataTypes.TEXT, allowNull: true },
+        notes:               { type: DataTypes.TEXT, allowNull: true },
+        created_by:          { type: DataTypes.STRING(16), allowNull: false, defaultValue: 'ai' },
+        telegram_request_id: { type: DataTypes.STRING(128), allowNull: true },
+        published_url:       { type: DataTypes.TEXT, allowNull: true },
+        published_at:        { type: DataTypes.DATE, allowNull: true },
+        created_at:          { type: DataTypes.DATE, allowNull: false },
+        updated_at:          { type: DataTypes.DATE, allowNull: false },
+      }, transaction);
+      await addIndexIfMissing(queryInterface, 'drafts', 'drafts_status', ['status'], transaction);
+      await addIndexIfMissing(queryInterface, 'drafts', 'drafts_platform_account', ['platform', 'account'], transaction);
+    },
+  },
 ];
 
 export class SchemaMigrator {

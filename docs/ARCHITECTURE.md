@@ -221,6 +221,7 @@ workers) and on the direct sqlite3 connection (MCP, the planned web server):
 |---|---|
 | `JobStore` | Durable background jobs (`jobs` table), orphan recovery by worker PID |
 | `StatusService` | Health, freshness per platform and account, per-run account outcomes |
+| `ContentService` | Drafts, manual signals, signal→publication attribution, content plan |
 
 ### Twitter/X
 
@@ -446,6 +447,19 @@ and saved, error, timestamps.
 `accounts` also carries health: `last_scraped_at` (last success; Telegram's
 polling watermark), `last_attempt_at`, `last_error`, `last_error_at`. A
 successful collection clears the error.
+
+#### `drafts`
+
+Posts prepared by the agent (`created_by: ai`) or the author (`user`):
+`persona`, `platform`, `account`, `text`, `status` (`draft`, `approved`,
+`published`, `discarded`), JSON `signal_ids`, `notes`, `published_url`,
+`published_at`, and `telegram_request_id` linking a Telegram draft to its
+`telegram_outbox` request (`draft-<id>-<text hash>`, so preparing the same text
+twice is idempotent). A sent outbox request marks its draft published; any
+publication marks the draft's signals `used_for_content`.
+
+Manual signals (`signal_add`) use source `note`/`article`, `source_id`
+`manual:<uuid>` and `metadata.persona`, which `signals_get` honours.
 
 #### `jobs`
 

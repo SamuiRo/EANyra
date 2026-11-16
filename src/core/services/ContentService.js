@@ -1,0 +1,427 @@
+/**
+ * The AI content loop on top of collected data:
+ *
+ *   signals (GitHub, manual ideas) ──► drafts (per persona/platform/account)
+ *        ▲                                   │ review in the web UI
+ *        └── marked used on publication ◄────┘ publish: Telegram (bot/MTProto)
+ *                                              or manually (X, LinkedIn) + URL
+ *
+ * plus a content plan that compares each account's real posting rhythm with
+ * the persona's `posting_frequency`.
+ *
+ * Shared by MCP tools and the web UI through a SQL executor (see sql.js).
+ */
+
+import { createHash, randomUUID } from 'node:crypto';
+
+import { PLATFORM_CATALOG } from '../../platforms/catalog.js';
+import { mergePersonaContext } from '../../config/personaConfig.js';
+import { normalizeAccount } from '../../config/accountConfig.js';
+import { parseJson } from './sql.js';
+
+export const DRAFT_STATUSES = ['draft', 'approved', 'published', 'discarded'];
+/** Soft limits shown as warnings; Telegram's is enforced by its API. */
+const LENGTH_LIMITS = { twitter: 280, linkedin: 3000, telegram: 4096 };
+const HARD_LIMITS = { telegram: 4096 };
+const MAX_TEXT = 20_000;
+const DAY = 864e5;
+
+export class ContentService {
+  /**
+   * @param {import('./sql.js').Executor} db
+   * @param {{
+   *   loadAccounts: () => Promise<object[]>,        validated accounts.json entries
+   *   loadPersonas: () => Promise<object[]>,        synced personas
+   *   loadGlobalContext: () => Promise<object>,     voice/bio/platforms/projects
+   *   now?: () => Date,
+   * }} deps
+   */
+  constructor(db, { loadAccounts, loadPersonas, loadGlobalContext, now = () => new Date() }) {
+    this.db = db;
+    this.loadAccounts = loadAccounts;
+    this.loadPersonas = loadPersonas;
+    this.loadGlobalContext = loadGlobalContext;
+    this.now = now;
+  }
+
+  // ── Drafts ────────────────────────────────────────────────────────────────
+
+  async createDraft({ platform, account, persona, text, signal_ids = [], notes = null, created_by = 'ai' }) {
+    const target = await this.#resolveTarget({ platform, account, persona });
+    const body = assertText(text, target.platform);
+    const signals = await this.#assertSignals(signal_ids);
+    const ts = this.#ts();
+    if (!['ai', 'user'].includes(created_by)) throw new Error('created_by must be ai or user.');
+    const { lastID } = await this.db.run(
+      `INSERT INTO drafts (persona, platform, account, text, status, signal_ids, notes, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?)`,
+      [target.persona, target.platform, target.account, body, JSON.stringify(signals), notes, created_by, ts, ts],
+    );
+    return this.getDraft(lastID);
+  }
+
+  async getDraft(id) {
+    await this.reconcileTelegram();
+    const row = await this.db.get(`${DRAFT_SELECT} WHERE d.id = ?`, [assertId(id)]);
+    if (!row) throw Object.assign(new Error(`Unknown draft ${id}.`), { status: 404 });
+    const draft = formatDraft(row);
+    if (draft.signal_ids.length) {
+      draft.signals = await this.db.all(
+        `SELECT id, source, signal_type, title, url, used_for_content FROM signals WHERE id IN (${draft.signal_ids.map(() => '?').join(', ')})`,
+        draft.signal_ids,
+      );
+    }
+    return draft;
+  }
+
+  async listDrafts({ status, persona, platform, account, limit = 50 } = {}) {
+    await this.reconcileTelegram();
+    const conds = [];
+    const params = [];
+    if (status) {
+      const statuses = Array.isArray(status) ? status : [status];
+      conds.push(`d.status IN (${statuses.map(() => '?').join(', ')})`);
+      params.push(...statuses);
+    }
+    if (persona) { conds.push('d.persona = ?'); params.push(persona); }
+    if (platform) { conds.push('d.platform = ?'); params.push(platform); }
+    if (account) { conds.push('d.account = ?'); params.push(account); }
+    const rows = await this.db.all(
+      `${DRAFT_SELECT} ${conds.length ? `WHERE ${conds.join(' AND ')}` : ''}
+       ORDER BY CASE d.status WHEN 'approved' THEN 0 WHEN 'draft' THEN 1 WHEN 'published' THEN 2 ELSE 3 END, d.updated_at DESC
+       LIMIT ?`,
+      [...params, Math.min(Math.max(limit, 1), 200)],
+    );
+    return rows.map(formatDraft);
+  }
+
+  async updateDraft(id, { text, notes, status, signal_ids }) {
+    const draft = await this.getDraft(id);
+    if (draft.status === 'published') throw new Error('A published draft cannot be changed.');
+    if (status !== undefined && !['draft', 'approved', 'discarded'].includes(status)) {
+      throw new Error('status can be set to draft, approved or discarded. Use draft_mark_published after publishing.');
+    }
+    if (text !== undefined && draft.telegram?.status && !['draft', 'failed'].includes(draft.telegram.status)) {
+      throw new Error('This draft is already being sent to Telegram; its text can no longer change.');
+    }
+    const fields = [];
+    const params = [];
+    if (text !== undefined) { fields.push('text = ?'); params.push(assertText(text, draft.platform)); }
+    if (notes !== undefined) { fields.push('notes = ?'); params.push(notes); }
+    if (status !== undefined) { fields.push('status = ?'); params.push(status); }
+    if (signal_ids !== undefined) { fields.push('signal_ids = ?'); params.push(JSON.stringify(await this.#assertSignals(signal_ids))); }
+    if (!fields.length) return draft;
+    fields.push('updated_at = ?');
+    params.push(this.#ts());
+    await this.db.run(`UPDATE drafts SET ${fields.join(', ')} WHERE id = ?`, [...params, draft.id]);
+    return this.getDraft(draft.id);
+  }
+
+  /**
+   * Record a publication the author confirmed (manual X/LinkedIn posting, or a
+   * Telegram post made outside EANyra). Marks the source signals as used.
+   */
+  async markPublished(id, { url = null } = {}) {
+    const draft = await this.getDraft(id);
+    if (draft.status === 'published') return draft;
+    if (draft.status === 'discarded') throw new Error('A discarded draft cannot be marked published.');
+    if (url !== null) assertUrl(url);
+    const ts = this.#ts();
+    await this.db.run(
+      "UPDATE drafts SET status = 'published', published_url = ?, published_at = ?, updated_at = ? WHERE id = ?",
+      [url, ts, ts, draft.id],
+    );
+    await this.#markSignalsUsed(draft.signal_ids, ts);
+    return this.getDraft(draft.id);
+  }
+
+  /**
+   * Request id for publishing this draft's exact text to Telegram. Stable for
+   * the same draft and text, so preparing twice never creates two posts.
+   */
+  async telegramRequestFor(id) {
+    const draft = await this.getDraft(id);
+    if (draft.platform !== 'telegram') throw new Error('Only Telegram drafts can be published from EANyra. Publish X and LinkedIn posts yourself, then call draft_mark_published.');
+    if (!['draft', 'approved'].includes(draft.status)) throw new Error(`Draft ${draft.id} is ${draft.status}.`);
+    if (!draft.account) throw new Error('Set the Telegram channel (account) on the draft first.');
+    const hash = createHash('sha256').update(draft.text).digest('hex').slice(0, 12);
+    const requestId = `draft-${draft.id}-${hash}`;
+    await this.db.run('UPDATE drafts SET telegram_request_id = ?, updated_at = ? WHERE id = ?', [requestId, this.#ts(), draft.id]);
+    return { draft, request_id: requestId };
+  }
+
+  /** Drafts whose Telegram post was sent become published, with the post URL. */
+  async reconcileTelegram() {
+    const rows = await this.db.all(`
+      SELECT d.id, d.signal_ids, o.receipt FROM drafts d
+      JOIN telegram_outbox o ON o.request_id = d.telegram_request_id
+      WHERE d.status IN ('draft', 'approved') AND o.status = 'sent'`);
+    for (const row of rows) {
+      const receipt = parseJson(row.receipt, {});
+      const ts = receipt.sent_at ?? this.#ts();
+      await this.db.run(
+        "UPDATE drafts SET status = 'published', published_url = ?, published_at = ?, updated_at = ? WHERE id = ?",
+        [receipt.url ?? null, ts, this.#ts(), row.id],
+      );
+      await this.#markSignalsUsed(parseJson(row.signal_ids, []), ts);
+    }
+  }
+
+  // ── Manual signals ────────────────────────────────────────────────────────
+
+  async addSignal({ kind = 'idea', title, body = null, url = null, persona = null }) {
+    const types = { idea: ['note', 'idea'], article: ['article', 'article'], note: ['note', 'draft'] };
+    if (!types[kind]) throw new Error('kind must be idea, article or note.');
+    if (typeof title !== 'string' || !title.trim() || title.length > 300) throw new Error('title must be 1-300 characters.');
+    if (body !== null && (typeof body !== 'string' || body.length > MAX_TEXT)) throw new Error(`body must be at most ${MAX_TEXT} characters.`);
+    if (url !== null) assertUrl(url);
+    if (persona) await this.#assertPersona(persona);
+    const [source, type] = types[kind];
+    const ts = this.#ts();
+    const sourceId = `manual:${randomUUID()}`;
+    await this.db.run(
+      `INSERT INTO signals (source, source_id, signal_type, title, body, url, occurred_at, metadata, scraped_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [source, sourceId, type, title.trim(), body, url, ts, JSON.stringify({ manual: true, ...(persona ? { persona } : {}) }), ts, ts, ts],
+    );
+    return this.db.get('SELECT id, source, signal_type, title, body, url, occurred_at, metadata FROM signals WHERE source_id = ?', [sourceId]);
+  }
+
+  // ── Content plan ──────────────────────────────────────────────────────────
+
+  /**
+   * Per persona and publishing account: target cadence, real cadence from
+   * collected posts, what is due, waiting drafts and unused material.
+   */
+  async contentPlan({ persona: only } = {}) {
+    const [personas, global, accounts, configured] = await Promise.all([
+      this.loadPersonas(), this.loadGlobalContext(),
+      this.db.all('SELECT id, platform, username, last_scraped_at FROM accounts WHERE is_active = 1 AND is_archived = 0'),
+      this.loadAccounts(),
+    ]);
+    if (only && !personas.some(p => p.slug === only)) throw new Error(`Unknown persona "${only}".`);
+    const accountRow = new Map(accounts.map(row => [`${row.platform}/${row.username}`, row]));
+    const owner = new Map();
+    for (const persona of personas) for (const ref of persona.accounts) owner.set(`${ref.platform}/${ref.username}`, persona);
+
+    const groups = new Map();
+    for (const entry of configured) {
+      if (entry.archive === true || entry.active === false) continue;
+      if (PLATFORM_CATALOG[entry.platform]?.output !== 'posts') continue;
+      const persona = owner.get(`${entry.platform}/${entry.username}`) ?? null;
+      if (only && persona?.slug !== only) continue;
+      const key = persona?.slug ?? '';
+      if (!groups.has(key)) groups.set(key, { persona, accounts: [] });
+      groups.get(key).accounts.push(entry);
+    }
+
+    const now = this.now().getTime();
+    const result = [];
+    for (const { persona, accounts: entries } of groups.values()) {
+      const context = persona ? mergePersonaContext(global, persona) : global;
+      const items = [];
+      for (const entry of entries) {
+        const row = accountRow.get(`${entry.platform}/${entry.username}`);
+        const rules = context.platforms?.[entry.platform] ?? {};
+        const frequency = parseFrequency(rules.posting_frequency ?? rules.frequency);
+        const stats = row ? await this.db.get(`
+          SELECT MAX(posted_at) AS last_post_at,
+                 SUM(CASE WHEN posted_at >= ? THEN 1 ELSE 0 END) AS last_7_days,
+                 SUM(CASE WHEN posted_at >= ? THEN 1 ELSE 0 END) AS last_30_days
+          FROM posts WHERE account_id = ? AND is_repost = 0 AND is_reply = 0`,
+        [new Date(now - 7 * DAY).toISOString(), new Date(now - 30 * DAY).toISOString(), row.id]) : null;
+        const waiting = await this.db.get(
+          "SELECT COUNT(*) AS n FROM drafts WHERE platform = ? AND account = ? AND status IN ('draft', 'approved')",
+          [entry.platform, entry.username],
+        );
+        const lastPost = stats?.last_post_at ? new Date(stats.last_post_at).getTime() : null;
+        const daysSince = lastPost === null ? null : Math.round((now - lastPost) / DAY * 10) / 10;
+        const dataAge = row?.last_scraped_at ? (now - new Date(row.last_scraped_at).getTime()) / 36e5 : null;
+
+        let status = 'no_target';
+        if (frequency) {
+          if (daysSince === null) status = 'due';
+          else if (daysSince >= frequency.interval_days * 1.5) status = 'overdue';
+          else if (daysSince >= frequency.interval_days) status = 'due';
+          else status = 'on_track';
+        }
+        items.push({
+          account: `${entry.platform}/${entry.username}`,
+          platform: entry.platform,
+          publishing: PLATFORM_CATALOG[entry.platform].publishing,
+          target: frequency ? { text: frequency.text, per_week: frequency.per_week } : null,
+          status,
+          last_post_at: stats?.last_post_at ?? null,
+          days_since_last_post: daysSince,
+          next_due_at: frequency && lastPost !== null ? new Date(lastPost + frequency.interval_days * DAY).toISOString() : null,
+          posts_last_7_days: Number(stats?.last_7_days ?? 0),
+          posts_last_30_days: Number(stats?.last_30_days ?? 0),
+          drafts_waiting: Number(waiting?.n ?? 0),
+          ...(dataAge === null || dataAge > 36 ? { data_warning: 'Collected data is older than 36 hours or missing; recent posts may not be counted. Run scraper_run first.' } : {}),
+        });
+      }
+      items.sort((a, b) => URGENCY[a.status] - URGENCY[b.status] || (b.days_since_last_post ?? 1e9) - (a.days_since_last_post ?? 1e9));
+      result.push({
+        persona: persona ? { slug: persona.slug, name: persona.name } : null,
+        unused_signals: await this.#unusedSignalCount(persona),
+        accounts: items,
+      });
+    }
+    result.sort((a, b) => Math.min(...a.accounts.map(i => URGENCY[i.status])) - Math.min(...b.accounts.map(i => URGENCY[i.status])));
+    const due = result.flatMap(group => group.accounts.filter(item => ['overdue', 'due'].includes(item.status))
+      .map(item => ({ persona: group.persona?.slug ?? null, ...item })));
+    return {
+      generated_at: this.now().toISOString(),
+      due_now: due.map(({ persona, account, status, days_since_last_post, drafts_waiting }) =>
+        ({ persona, account, status, days_since_last_post, drafts_waiting })),
+      personas: result,
+      next_step: due.length
+        ? 'For each due account without waiting drafts: context_get with its persona, pick material from signals_get, write in that persona\'s voice and save with draft_create.'
+        : 'Nothing is due. Optionally prepare drafts ahead from unused signals.',
+    };
+  }
+
+  // ── Private ───────────────────────────────────────────────────────────────
+
+  async #resolveTarget({ platform, account, persona }) {
+    if (!PLATFORM_CATALOG[platform] || PLATFORM_CATALOG[platform].output !== 'posts') {
+      throw new Error(`Drafts are for publishing platforms: ${Object.values(PLATFORM_CATALOG).filter(p => p.output === 'posts').map(p => p.id).join(', ')}.`);
+    }
+    let username = null;
+    if (account) {
+      username = normalizeAccount(String(account).replace(new RegExp(`^${platform}/`), ''), platform);
+      const configured = (await this.loadAccounts()).some(entry => entry.platform === platform && entry.username === username && entry.archive !== true);
+      if (!configured) throw new Error(`${platform}/${username} is not a configured account.`);
+    }
+    const personas = await this.loadPersonas();
+    const owner = username ? personas.find(p => p.accounts.some(ref => ref.platform === platform && ref.username === username)) : null;
+    if (persona) {
+      await this.#assertPersona(persona, personas);
+      if (owner && owner.slug !== persona) throw new Error(`${platform}/${username} belongs to persona "${owner.slug}", not "${persona}".`);
+    }
+    return { platform, account: username, persona: persona ?? owner?.slug ?? null };
+  }
+
+  async #assertPersona(slug, personas) {
+    if (!(personas ?? await this.loadPersonas()).some(p => p.slug === slug)) {
+      throw new Error(`Unknown persona "${slug}". Call personas_list.`);
+    }
+  }
+
+  async #assertSignals(ids) {
+    if (!Array.isArray(ids) || ids.some(id => !Number.isInteger(id) || id < 1)) throw new Error('signal_ids must be an array of signal ids.');
+    const unique = [...new Set(ids)];
+    if (!unique.length) return [];
+    const rows = await this.db.all(`SELECT id FROM signals WHERE id IN (${unique.map(() => '?').join(', ')})`, unique);
+    const missing = unique.filter(id => !rows.some(row => row.id === id));
+    if (missing.length) throw new Error(`Unknown signal id(s): ${missing.join(', ')}.`);
+    return unique;
+  }
+
+  async #markSignalsUsed(ids, ts) {
+    if (!ids?.length) return;
+    await this.db.run(
+      `UPDATE signals SET used_for_content = ? WHERE used_for_content IS NULL AND id IN (${ids.map(() => '?').join(', ')})`,
+      [ts, ...ids],
+    );
+  }
+
+  async #unusedSignalCount(persona) {
+    if (!persona) {
+      return Number((await this.db.get('SELECT COUNT(*) AS n FROM signals WHERE used_for_content IS NULL'))?.n ?? 0);
+    }
+    const refs = persona.accounts;
+    const accountCond = refs.map(() => '(a.platform = ? AND a.username = ?)').join(' OR ');
+    const row = await this.db.get(`
+      SELECT COUNT(*) AS n FROM signals s LEFT JOIN accounts a ON a.id = s.account_id
+      WHERE s.used_for_content IS NULL AND ((${accountCond}) OR (CASE WHEN json_valid(s.metadata) THEN json_extract(s.metadata, '$.persona') END) = ?)`,
+    [...refs.flatMap(ref => [ref.platform, ref.username]), persona.slug]);
+    return Number(row?.n ?? 0);
+  }
+
+  #ts() {
+    return this.now().toISOString();
+  }
+}
+
+const URGENCY = { overdue: 0, due: 1, on_track: 2, no_target: 3 };
+
+const DRAFT_SELECT = `
+  SELECT d.*, o.status AS telegram_status, o.error AS telegram_error, o.content_hash AS telegram_content_hash
+  FROM drafts d LEFT JOIN telegram_outbox o ON o.request_id = d.telegram_request_id`;
+
+function formatDraft(row) {
+  const limit = LENGTH_LIMITS[row.platform];
+  const length = [...row.text].length;
+  return {
+    id: row.id,
+    persona: row.persona,
+    platform: row.platform,
+    account: row.account,
+    text: row.text,
+    length,
+    ...(limit && length > limit ? { warning: `Longer than ${limit} characters, the usual ${row.platform} limit.` } : {}),
+    status: row.status,
+    signal_ids: parseJson(row.signal_ids, []),
+    notes: row.notes,
+    created_by: row.created_by,
+    publishing: PLATFORM_CATALOG[row.platform]?.publishing ?? null,
+    ...(row.telegram_request_id ? {
+      telegram: {
+        request_id: row.telegram_request_id, status: row.telegram_status ?? null,
+        content_hash: row.telegram_content_hash ?? null, error: row.telegram_error ?? null,
+      },
+    } : {}),
+    published_url: row.published_url,
+    published_at: row.published_at,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function assertText(text, platform) {
+  if (typeof text !== 'string' || !text.trim()) throw new Error('text cannot be empty.');
+  const max = HARD_LIMITS[platform] ?? MAX_TEXT;
+  if (text.length > max) throw new Error(`text is longer than ${max} characters allowed for ${platform}.`);
+  return text;
+}
+
+function assertId(id) {
+  const value = Number(id);
+  if (!Number.isInteger(value) || value < 1) throw new Error('id must be a positive integer.');
+  return value;
+}
+
+function assertUrl(url) {
+  let parsed;
+  try { parsed = new URL(url); } catch { throw new Error('url must be an absolute http(s) URL.'); }
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('url must be an absolute http(s) URL.');
+}
+
+/**
+ * Parse a human posting cadence: "daily", "weekly", "2 posts per week",
+ * "3/week", "every 2 days", "monthly", "щодня", "3 рази на тиждень", "5/тиждень".
+ * @returns {{ text: string, per_week: number, interval_days: number } | null}
+ */
+export function parseFrequency(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const text = value.trim();
+  const s = text.toLowerCase();
+  const perWeek = n => (n > 0 && n <= 100 ? { text, per_week: n, interval_days: Math.round(7 / n * 100) / 100 } : null);
+  if (/^(daily|every ?day|щодня|щоденно|кожен день|кожного дня)$/.test(s)) return perWeek(7);
+  if (/^(weekly|every ?week|щотижня|щотижнево|раз на тиждень)$/.test(s)) return perWeek(1);
+  if (/^(biweekly|every (2|two) weeks|раз на два тижні)$/.test(s)) return perWeek(0.5);
+  if (/^(monthly|every ?month|щомісяця|раз на місяць)$/.test(s)) return perWeek(7 / 30);
+  let match = s.match(/every\s+(\d+(?:\.\d+)?)\s*days?|кожні\s+(\d+)\s*(?:дні|днів|день)/);
+  if (match) return perWeek(7 / Number(match[1] ?? match[2]));
+  const number = '(\\d+(?:[.,]\\d+)?)';
+  match = s.match(new RegExp(`${number}\\s*(?:x|×|posts?|пост(?:и|ів)?|раз(?:и|ів)?)?\\s*(?:/|per|a|в|на)\\s*(day|день|week|wk|тиждень|month|місяць)`));
+  if (match) {
+    const n = Number(match[1].replace(',', '.'));
+    const unit = match[2];
+    if (['day', 'день'].includes(unit)) return perWeek(n * 7);
+    if (['month', 'місяць'].includes(unit)) return perWeek(n * 7 / 30);
+    return perWeek(n);
+  }
+  return null;
+}
