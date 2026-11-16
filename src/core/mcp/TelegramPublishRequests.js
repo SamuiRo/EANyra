@@ -49,6 +49,16 @@ export class TelegramPublishRequests {
     });
   }
 
+  /** Wait for in-flight publications (a kill mid-send leaves an uncertain post). */
+  async drain({ timeoutMs = 35_000 } = {}) {
+    const children = [...this.children];
+    await Promise.all(children.map(child => new Promise(resolve => {
+      if (child.exitCode !== null || child.signalCode) return resolve();
+      const timer = setTimeout(resolve, timeoutMs);
+      child.once('exit', () => { clearTimeout(timer); resolve(); });
+    })));
+  }
+
   close() {
     for (const child of this.children) child.kill();
   }

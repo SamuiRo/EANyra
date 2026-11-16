@@ -409,6 +409,18 @@ Host header, requires a same-origin custom header on every POST, uses
 HttpOnly SameSite=Strict session cookies, throttles failed logins and sends a
 strict Content-Security-Policy.
 
+## Stopping Safely
+
+Press Ctrl+C once in `npm run scrape`, `npm start`, `npm run serve` or the MCP
+server: collection finishes the current account, saves refreshed X logins to
+the vault, records the run as partial and releases the lock; long pauses
+between X profiles are cut short. Press Ctrl+C again to force. A running job
+can also be stopped with the MCP tool `scraper_job_stop` or the Stop button on
+the web «Задачі» tab. The remaining accounts are collected on the next run.
+
+Console output: `LOG_LEVEL=debug|info|warn|error|silent`, or `--quiet` /
+`--debug` on any `npm run nyra -- <command>`.
+
 ## CLI
 
 Use `npm run nyra -- <command>` when the `eanyra` binary is not globally linked.

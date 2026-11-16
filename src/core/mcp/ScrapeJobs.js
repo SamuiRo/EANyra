@@ -23,7 +23,7 @@ export class ScrapeJobs {
     this.getVaultKey = getVaultKey;
     this.store = store ?? new JobStore(mcpExecutor(mcpDb));
     this.source = source;
-    this.children = new Set();
+    this.children = new Map();   // job_id → worker process
     this.starting = false;
   }
 
@@ -69,12 +69,12 @@ export class ScrapeJobs {
       void fail(`Could not start the scrape worker: ${error.message}`);
       throw error;
     }
-    this.children.add(child);
+    this.children.set(jobId, child);
     let exited = false;
     const done = message => {
       if (exited) return;
       exited = true;
-      this.children.delete(child);
+      this.children.delete(jobId);
       // No-op when the worker already recorded its outcome.
       if (message) void fail(message);
     };
@@ -89,7 +89,39 @@ export class ScrapeJobs {
     }
   }
 
+  /**
+   * Ask a running job to stop after its current account. The worker saves
+   * sessions, finalizes the run (partial) and releases the scrape lock.
+   */
+  async stop(jobId) {
+    const child = this.children.get(jobId);
+    if (!child) {
+      const job = await this.get(jobId);
+      if (!['queued', 'running'].includes(job.status)) return { ...job, note: 'The job has already finished.' };
+      throw new Error('This job runs in another process; stop it there (or wait for it to finish).');
+    }
+    child.send({ type: 'stop' }, () => {});
+    return { ...await this.get(jobId), stopping: true,
+      note: 'Stopping after the current account. Poll scraper_job_get; X profiles can take a few minutes.' };
+  }
+
+  /** Graceful stop of every worker; kill whatever is still running after timeoutMs. */
+  async shutdown({ timeoutMs = 90_000 } = {}) {
+    const children = [...this.children.values()];
+    await Promise.all(children.map(child => new Promise(resolve => {
+      if (child.exitCode !== null || child.signalCode) return resolve();
+      const timer = setTimeout(() => { child.kill(); resolve(); }, timeoutMs);
+      child.once('exit', () => { clearTimeout(timer); resolve(); });
+      try {
+        child.send({ type: 'stop' }, () => {});
+      } catch {
+        child.kill();
+      }
+    })));
+  }
+
+  /** Immediate kill (second Ctrl+C). */
   close() {
-    for (const child of this.children) child.kill();
+    for (const child of this.children.values()) child.kill();
   }
 }

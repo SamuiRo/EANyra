@@ -190,6 +190,19 @@ function alertsCard(alerts) {
   );
 }
 
+async function stopJob(job) {
+  const ok = await confirmDialog('Зупинити збір?',
+    'Поточний акаунт буде дозібрано, логіни збережуться, решта акаунтів збереться наступного разу.', 'Зупинити');
+  if (!ok) return;
+  try {
+    const result = await api('/api/jobs/stop', { method: 'POST', body: { job_id: job.job_id } });
+    toast(result.note ?? 'Зупиняється…', 7000);
+  } catch (error) {
+    toast(error.message, 7000);
+  }
+  render();
+}
+
 async function startScrape(args, label) {
   try {
     const job = await tool('scraper_run', args);
@@ -460,13 +473,16 @@ const VIEWS = {
       h('h2', {}, 'Задачі збору'),
       h('p', { class: 'muted' }, 'Задачі з MCP, браузера й планувальника. Оновлюється автоматично, поки є активна.'),
       jobs.length ? h('div', { class: 'table-wrap' }, h('table', {},
-        h('thead', {}, h('tr', {}, h('th', {}, 'Створено'), h('th', {}, 'Джерело'), h('th', {}, 'Що'), h('th', {}, 'Стан'), h('th', {}, 'Результат'))),
+        h('thead', {}, h('tr', {}, h('th', {}, 'Створено'), h('th', {}, 'Джерело'), h('th', {}, 'Що'), h('th', {}, 'Стан'), h('th', {}, 'Результат'), h('th', {}, ''))),
         h('tbody', {}, jobs.map(job => h('tr', { class: job.result?.run_id ? 'clickable' : '', onclick: job.result?.run_id ? () => showRun(job.result.run_id, true) : null },
           h('td', {}, when(job.created_at)),
           h('td', {}, job.source),
           h('td', { class: 'mono' }, job.accounts?.join(', ') ?? job.platform ?? 'усі акаунти'),
           h('td', {}, badge(job.status)),
           h('td', { class: 'preserve' }, job.error ?? (job.result ? `+${job.result.posts_saved ?? 0} постів, +${job.result.signals_saved ?? 0} сигналів` : '—')),
+          h('td', {}, ['queued', 'running'].includes(job.status)
+            ? h('button', { class: 'small', onclick: event => { event.stopPropagation(); stopJob(job); } }, 'Зупинити')
+            : null),
         ))))) : empty('Задач ще не було.'),
       h('div', { id: 'run-detail' }),
     );

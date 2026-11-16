@@ -57,6 +57,15 @@ export async function startWebServer({ host = WEB.host, port = WEB.port, schedul
       const vault = await getVault({ interactive: false }).catch(() => null);
       return { encrypted: hasVault, unlocked: Boolean(vault), sessions: sessionReport(entries, vault) };
     },
+    'POST /api/jobs/stop': async ({ body }) => {
+      if (typeof body.job_id !== 'string') throw Object.assign(new Error('job_id is required.'), { status: 400 });
+      try {
+        return await jobs.stop(body.job_id);
+      } catch (error) {
+        if (!scheduledJobs) throw error;
+        return scheduledJobs.stop(body.job_id);
+      }
+    },
     'POST /api/context/sync': async () => {
       if (!models) throw Object.assign(new Error('Context sync is not available in this process.'), { status: 501 });
       const { updated, skipped, errors, warnings } = await new UserContextRepository(models).sync();
@@ -126,8 +135,9 @@ export async function startWebServer({ host = WEB.host, port = WEB.port, schedul
   });
 
   let scheduler = null;
+  let scheduledJobs = null;
   if (schedule) {
-    const scheduledJobs = new ScrapeJobs({ source: 'scheduler' });
+    scheduledJobs = new ScrapeJobs({ source: 'scheduler' });
     scheduler = new Scheduler(async () => {
       const job = await scheduledJobs.start({});
       print(`Scheduled collection started: job ${job.job_id}`, 'system');
@@ -153,12 +163,17 @@ export async function startWebServer({ host = WEB.host, port = WEB.port, schedul
     print(`MCP for AI clients → ${url}mcp (header Authorization: Bearer <token from \`npm run nyra -- mcp token\`>)`, 'info');
   }
 
+  // Graceful: no new requests, collection stops after its current account,
+  // in-flight Telegram publications finish.
   const shutdown = async () => {
     scheduler?.stop();
-    await mcpSessions?.close();
-    jobs.close();
-    publications.close();
     server.close();
+    await mcpSessions?.close();
+    await Promise.all([
+      jobs.shutdown({ timeoutMs: 90_000 }),
+      scheduledJobs?.shutdown({ timeoutMs: 90_000 }),
+    ]);
+    await publications.drain({ timeoutMs: 35_000 });
     await mcpDb.closeDb().catch(() => {});
   };
   return { server, url, shutdown };

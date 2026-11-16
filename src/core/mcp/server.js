@@ -8,6 +8,7 @@ import { closeDb } from './db.js';
 import { TelegramPublishRequests } from './TelegramPublishRequests.js';
 import { migrateInWorker } from './migrateWorker.js';
 import { createMcpServer, McpHttpSessions } from './mcpServer.js';
+import { onShutdown } from '../../shared/shutdown.js';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 //
@@ -98,14 +99,14 @@ function log(msg) {
   process.stderr.write(`[eanyra-mcp] ${msg}\n`);
 }
 
+// Collection workers stop after their current account (sessions saved);
+// in-flight Telegram publications may finish so their state is never lost.
 async function shutdown() {
-  jobs.close();
-  publications.close();
+  await jobs.shutdown({ timeoutMs: 90_000 });
+  await publications.drain({ timeoutMs: 35_000 });
   await Promise.allSettled([...servers].map(server => server.close()));
   await httpSessions?.close();
   await closeDb();
-  process.exit(0);
 }
-process.once('SIGINT', shutdown);
-process.once('SIGTERM', shutdown);
-if (TRANSPORT === 'stdio') process.stdin.once('end', shutdown);
+onShutdown({ graceful: shutdown, timeoutMs: 150_000, log });
+if (TRANSPORT === 'stdio') process.stdin.once('end', () => shutdown().finally(() => process.exit(0)));

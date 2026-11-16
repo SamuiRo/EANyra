@@ -195,7 +195,19 @@ of newly persisted records, including GitHub signals.
 - Default CLI behavior with no command: start daemon mode
 
 The scheduler catches run errors so a failed scrape does not stop future cron
-ticks.
+ticks, and `noOverlap` skips a tick while a collection is still running.
+
+### Stopping
+
+`ScraperOrchestrator.run(selection, { signal })` checks the signal between
+accounts and cuts pauses short; its `finally` still closes runtime clients
+(saving X storage state) and releases the scrape lock, and the run is
+recorded as `partial` ("Stopped on request"). `shared/shutdown.js` installs
+two-stage SIGINT/SIGTERM handling (graceful, then forced) used by the CLI,
+daemon, web server and MCP server. Scrape workers stop on an IPC
+`{ type: 'stop' }` (or their own SIGINT); `ScrapeJobs.shutdown()` waits for
+them before killing, and `TelegramPublishRequests.drain()` lets in-flight
+publications finish.
 
 ## Platform Modules
 

@@ -43,6 +43,7 @@ import { validatePosts, validateSignals, describeRejected } from '../teapot/reco
 import { runProblemChecks } from '../notify/index.js';
 import { SCRAPER }              from '../../config/app.config.js';
 import { print, sleep }         from '../../shared/utils.js';
+import { abortableSleep }       from '../../shared/shutdown.js';
 import { normalizeSelection, accountKey, sessionOf } from '../../config/accountConfig.js';
 import { Credentials } from '../secrets/Credentials.js';
 import { acquireScrapeLock } from './ScrapeLock.js';
@@ -92,9 +93,12 @@ export class ScraperOrchestrator {
    * Execute a full scrape run, optionally filtered to one platform.
    *
    * @param {{ platform?: string, account?: string, accounts?: string[] }} [opts]
+   * @param {{ signal?: AbortSignal }} [control] aborting stops after the current
+   *   account: sessions are saved, the run is finalized and the lock released.
    */
-  async run(opts = {}) {
+  async run(opts = {}, { signal } = {}) {
     const { platform, accounts: targets } = normalizeSelection(opts);
+    this.#signal = signal ?? null;
     const release = await (this.deps.lockPath ? acquireScrapeLock(this.deps.lockPath) : acquireScrapeLock());
     let scraperRun;
     try {
@@ -183,12 +187,18 @@ export class ScraperOrchestrator {
     this.#telegramScrapers = new Map();
 
     const queue = orderForCollection(accounts, account => this.#sessionOf(account));
+    let stopped = 0;
     // A rejected login skips only the accounts that use it.
     const sessionErrors = new Map();
     let twitterStarted = false;
 
     try {
       for (let i = 0; i < queue.length; i++) {
+        if (this.#signal?.aborted) {
+          stopped = queue.length - i;
+          print(`Stop requested: ${stopped} account(s) left for the next run.`, 'warning');
+          break;
+        }
         const account = queue[i];
         const session = this.#sessionOf(account);
         const sessionKey = `${account.platform}:${session}`;
@@ -215,6 +225,11 @@ export class ScraperOrchestrator {
           else if (this.#activeTwitterSession?.name === session) await this.#humanPause();
           else await this.#sessionSwitchPause();
           twitterStarted = true;
+          if (this.#signal?.aborted) {   // the pause was cut short by a stop request
+            stopped = queue.length - i;
+            print(`Stop requested: ${stopped} account(s) left for the next run.`, 'warning');
+            break;
+          }
         }
 
         try {
@@ -240,10 +255,13 @@ export class ScraperOrchestrator {
     }
 
     const stats = { accountsProcessed: accountsDone, postsSaved: totals.posts, signalsSaved: totals.signals };
+    if (stopped) failed.push(`Stopped on request: ${stopped} account(s) not collected in this run`);
     if (failed.length === 0) {
       await this.scraperRunRepo.finish(scraperRun, stats);
     } else if (accountsDone > 0) {
       await this.scraperRunRepo.partialFinish(scraperRun, { ...stats, errorMessage: failed.join(' | ') });
+    } else if (stopped && failed.length === 1) {
+      await this.scraperRunRepo.fail(scraperRun, 'Stopped on request before any account was collected.');
     } else {
       await this.scraperRunRepo.fail(scraperRun, `All accounts failed: ${failed.join(' | ')}`);
     }
@@ -398,8 +416,11 @@ export class ScraperOrchestrator {
     await this.#sleep(delayMs);
   }
 
+  #signal = null;
+
   #sleep(ms) {
-    return (this.deps.pause ?? sleep)(ms);
+    if (this.deps.pause) return this.deps.pause(ms, this.#signal);
+    return this.#signal ? abortableSleep(ms, this.#signal) : sleep(ms);
   }
 }
 

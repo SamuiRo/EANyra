@@ -83,7 +83,11 @@ the current repository state, not on the older README.
 - [ ] **Review browser anti-detection patches.** Browser API monkey-patching can
   break page behavior and may not reduce detection risk. Keep only measured,
   tested changes.
-- [ ] **Add explicit shutdown/cleanup to MCP transports and SQLite connections.**
+- [x] **Graceful shutdown.** First Ctrl+C/SIGTERM stops collection after the
+  current account (X sessions saved, run finalized as partial, lock released,
+  long pauses cut short); a second forces. Applies to `scrape`, `start`,
+  `serve` and MCP; workers stop over IPC, in-flight Telegram publications
+  finish, connections close. `scraper_job_stop` and a web Stop button.
 - [ ] **Review HTTP MCP deployment security.** Before binding beyond localhost,
   add authentication, origin policy, request limits, and session lifecycle
   tests.
@@ -105,7 +109,8 @@ the current repository state, not on the older README.
   examples use `nyra`, and messages still describe the product as an
   X-only monitoring tool.
 - [x] **Add a documented Node.js engine requirement** to `package.json`.
-- [ ] **Add structured logging levels and optional quiet/debug modes.**
+- [x] **Logging levels.** `LOG_LEVEL` (debug, info, warn, error, silent) and
+  CLI `--quiet` / `--debug`.
 - [x] **Database backup and recovery.** `npm run backup` (online snapshot,
   manifest with hashes) and `npm run instance:restore` (verify, park current
   files, refuse during collection).

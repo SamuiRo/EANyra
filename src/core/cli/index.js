@@ -32,9 +32,14 @@ import { ScraperOrchestrator }        from '../orchestrator/ScraperOrchestrator.
 import { Scheduler }                  from '../scheduler/Scheduler.js';
 import { PKG, NODE_ENV, SUPPORTED_PLATFORMS, PATHS, DB, INSTANCE_DIR } from '../../config/app.config.js';
 import { createBackup, timestamp } from '../instance/Backup.js';
+import { onShutdown }             from '../../shared/shutdown.js';
 import path                       from 'node:path';
 import { banner, print }              from '../../shared/utils.js';
 import { WELCOME_MESSAGE, SUB_TITLE } from '../../shared/message.js';
+
+// --quiet / --debug apply before Commander parses, so startup output obeys them too.
+if (process.argv.includes('--quiet')) process.env.LOG_LEVEL = 'warn';
+if (process.argv.includes('--debug')) process.env.LOG_LEVEL = 'debug';
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 
@@ -76,16 +81,34 @@ class Nyra {
 
   // ── Run modes ─────────────────────────────────────────────────────────────
 
+  /** Aborted by the first Ctrl+C: the active run stops after its current account. */
+  #stop = new AbortController();
+  #activeRun = null;
+
   async #scrapeOnce({ platform, accounts } = {}) {
     const orchestrator = new ScraperOrchestrator(this.#models, { credentials: this.#credentials ?? undefined });
-    await orchestrator.run({ platform, accounts });
+    this.#activeRun = orchestrator.run({ platform, accounts }, { signal: this.#stop.signal });
+    try {
+      await this.#activeRun;
+    } finally {
+      this.#activeRun = null;
+    }
   }
 
   async runOnce(opts = {}) {
     print(`Mode: single run${opts.platform ? ` (platform: ${opts.platform})` : ''}`, 'system');
+    const removeHandlers = onShutdown({
+      // The run itself finishes, saves sessions and releases the lock.
+      graceful: async () => {
+        this.#stop.abort();
+        await this.#activeRun?.catch(() => {});
+        await database.disconnect().catch(() => {});
+      },
+    });
     try {
       await this.#scrapeOnce(opts);
     } finally {
+      removeHandlers();
       await database.disconnect();
     }
   }
@@ -97,15 +120,15 @@ class Nyra {
     const scheduler = new Scheduler(() => this.#scrapeOnce());
     await scheduler.start();
 
-    const shutdown = async signal => {
-      print(`Received ${signal} — shutting down…`, 'system');
-      scheduler.stop();
-      await database.disconnect();
-      process.exit(0);
-    };
-
-    process.on('SIGINT',  () => shutdown('SIGINT'));
-    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    onShutdown({
+      graceful: async signal => {
+        print(`Received ${signal} — stopping the scheduler…`, 'system');
+        scheduler.stop();
+        this.#stop.abort();
+        await this.#activeRun?.catch(() => {});
+        await database.disconnect().catch(() => {});
+      },
+    });
   }
 
   async main() {
@@ -130,7 +153,9 @@ function buildCLI(nyra) {
   program
     .name('eanyra')
     .description('Social media monitoring pipeline for AI agent data pipelines')
-    .version(PKG.version, '-v, --version', 'Print version and exit');
+    .version(PKG.version, '-v, --version', 'Print version and exit')
+    .option('--quiet', 'Only warnings and errors (same as LOG_LEVEL=warn)')
+    .option('--debug', 'Include debug output (same as LOG_LEVEL=debug)');
 
   program
     .command('start')
@@ -175,13 +200,13 @@ function buildCLI(nyra) {
         mcp: Boolean(options.mcp),
         models: nyra.models,
       });
-      const stop = async () => {
-        await shutdown();
-        await database.disconnect().catch(() => {});
-        process.exit(0);
-      };
-      process.once('SIGINT', stop);
-      process.once('SIGTERM', stop);
+      onShutdown({
+        timeoutMs: 150_000,
+        graceful: async () => {
+          await shutdown();
+          await database.disconnect().catch(() => {});
+        },
+      });
     });
 
   program

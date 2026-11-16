@@ -84,6 +84,16 @@ const LOG_TYPES = {
   },
 };
 
+// ─── Log levels ──────────────────────────────────────────────────────────────
+
+/** LOG_LEVEL: debug < info < warn < error < silent (default info). */
+const LEVELS = { debug: 0, info: 1, warn: 2, error: 3, silent: 4 };
+const TYPE_LEVEL = { debug: 0, info: 1, system: 1, data: 1, success: 1, warning: 2, error: 3 };
+
+export function logLevel() {
+  return LEVELS[String(process.env.LOG_LEVEL ?? '').toLowerCase()] ?? LEVELS.info;
+}
+
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
@@ -92,6 +102,7 @@ const LOG_TYPES = {
  * @param {'info'|'system'|'data'|'warning'|'success'|'debug'|'error'} type
  */
 export function print(text, type = 'info') {
+  if ((TYPE_LEVEL[type] ?? LEVELS.info) < logLevel()) return;
   const cfg       = LOG_TYPES[type] ?? LOG_TYPES.info;
   const timestamp = new Date().toISOString().replace('T', '_').substring(0, 19);
   const sep       = chalk.hex(colors.dim)(symbols.separator);
@@ -106,6 +117,7 @@ export function print(text, type = 'info') {
  * Print a styled banner with optional subtitle.
  */
 export function banner(text, subtitle = null) {
+  if (logLevel() > LEVELS.info) return;
   console.log('\n');
   console.log(
     gradient([colors.dark_gray, colors.silver, colors.warm_white])(text),

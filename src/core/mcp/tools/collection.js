@@ -40,6 +40,13 @@ export function buildCollectionTools(jobs) {
       handler: ({ job_id }) => jobs.get(job_id),
     },
     {
+      name: 'scraper_job_stop',
+      description: 'Stop a running collection job gracefully: the current account finishes, logins are saved, the run is recorded as partial and the remaining accounts are collected next time. Use when the user asks to stop or a run takes too long.',
+      inputSchema: { type: 'object', required: ['job_id'], properties: { job_id: { type: 'string', minLength: 1 } } },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      handler: ({ job_id }) => jobs.stop(job_id),
+    },
+    {
       name: 'scraper_jobs_list',
       description: 'List recent background collection jobs from any requester (MCP, CLI, web), newest first.',
       inputSchema: {
