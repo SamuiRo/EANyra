@@ -131,10 +131,43 @@ the `default` session from `.env` exists.
 
 | Data | Protection |
 |---|---|
-| Logins, tokens, API keys | Encrypted vault |
+| Logins, tokens, API keys | Encrypted vault (master password), plus EFS once protected |
 | Temporary login browser profile | Deleted right after `npm run login` |
-| `pot.sqlite` (collected public posts, drafts, run history) | Not encrypted; contains published content, not credentials |
-| `instance/context/*.yaml` (voice, bio, projects) | Not encrypted |
+| `pot.sqlite` (posts, drafts, ideas, run history) | Windows EFS after `npm run instance:protect` |
+| `instance/context/*.yaml`, exports, imports, backups | Windows EFS after `npm run instance:protect` |
+| Root `.env` (settings) | Windows EFS after `npm run instance:protect` |
 
-Database and context encryption at rest can be added later (SQLCipher or
-encrypted file storage); use Windows BitLocker for full-disk protection today.
+### Encrypting the instance folder (Windows EFS)
+
+```bash
+npm run instance:protect -- --status   # what is still plaintext
+npm run instance:protect               # encrypt instance/ and .env
+```
+
+Stop `npm run serve`, `npm start` and MCP first: files held open by another
+process stay unencrypted (the command lists them; run it again). Folders are
+marked, so files created later (new exports, backups, the database's WAL)
+are encrypted automatically. Everything keeps working for your Windows user;
+other users and anyone reading the disk directly see only ciphertext.
+
+**Back up the EFS certificate once**, otherwise a Windows reinstall or a lost
+profile makes these files unreadable:
+
+```bash
+cipher /x "%USERPROFILE%\Documents\efs-backup"
+```
+
+Keep the `.pfx` and its password somewhere safe (not on the same disk).
+
+Notes:
+
+- Copies to a non-NTFS drive (FAT/exFAT USB sticks, some cloud folders) are
+  written decrypted; Windows may warn. `secrets.vault` inside a backup stays
+  encrypted with the master password regardless.
+- EFS needs Windows Pro/Enterprise and NTFS. On macOS or Linux use FileVault,
+  LUKS or fscrypt for the instance folder.
+- `npm run nyra -- vault status` shows how many instance files are encrypted.
+- Why not SQLCipher: its Node package ships no prebuilt binaries and needs a
+  C++ toolchain on every machine, and the database would be unreadable to MCP
+  read tools whenever the vault is locked. EFS gives encryption at rest for
+  the whole instance with no new dependency.

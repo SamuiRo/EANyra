@@ -372,6 +372,20 @@ Settings live in `instance/notifications.json` (no secrets; example in
 `instance_example/notifications.json.example`). The web overview shows the
 same status and a test button.
 
+## Encryption at Rest
+
+Logins and tokens are always in the master-password vault. To keep the
+database, context, exports and backups out of plaintext on disk too, encrypt
+the instance folder with Windows EFS:
+
+```bash
+npm run instance:protect -- --status
+npm run instance:protect
+```
+
+Then back up the EFS certificate once (`cipher /x`). Details and caveats:
+[Accounts, sessions and encryption](docs/ACCOUNTS_AND_SECRETS.md).
+
 ## Backup and Restore
 
 ```bash
@@ -466,6 +480,7 @@ when `eanyra` is not globally linked; both run the same CLI.
 | `npm start` | Start the cron daemon |
 | `npm run backup [-- --out <dir>] [--include-env]` | Snapshot database, vault, accounts, alerts and context |
 | `npm run instance:restore -- <dir> [--yes]` | Verify and restore a backup |
+| `npm run instance:protect [-- --status]` | Encrypt instance/ and .env at rest with Windows EFS |
 | `npm run lint` / `npm run check` | ESLint / lint + tests |
 | `npm run serve [-- --schedule] [--mcp] [--port <n>]` | Local web UI on 127.0.0.1, optionally with cron collection and MCP at `/mcp` |
 | `npm run nyra -- mcp token [--rotate]` | Create/show/rotate the Bearer token for MCP at `/mcp` |

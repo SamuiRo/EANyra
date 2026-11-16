@@ -21,6 +21,7 @@ import {
 } from '../secrets/vaultAccess.js';
 import { dpapiAvailable } from '../secrets/dpapi.js';
 import { sessionReport } from '../secrets/sessionReport.js';
+import { efsAvailable, protectionStatus } from '../instance/fileProtection.js';
 
 export { sessionReport };
 import {
@@ -88,6 +89,13 @@ export function registerVaultCommands(program) {
       if (leftovers.length) {
         print('Plaintext credentials still on disk (remove with `vault migrate --purge`):', 'warning');
         describePlaintext(leftovers);
+      }
+      if (efsAvailable()) {
+        const files = await protectionStatus({ instanceDir: PATHS.instanceDir, envFile: PATHS.envFile }).catch(() => null);
+        if (files) {
+          print(`Files encrypted at rest (Windows EFS): ${files.encrypted.length} of ${files.total}` +
+            (files.plaintext.length ? ' — run `npm run instance:protect`.' : '.'), files.plaintext.length ? 'warning' : 'success');
+        }
       }
     });
 

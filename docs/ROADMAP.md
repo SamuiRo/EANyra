@@ -145,7 +145,10 @@ the current repository state, not on the older README.
 - [x] **Move remaining MCP queries into services.** Resolved by design: the
   tool registry is the shared service layer; MCP and the web UI call the same
   handlers with the same validation, so there is no duplicated query code.
-- [ ] **Encrypt the database and context at rest** (SQLCipher or equivalent).
+- [x] **Encrypt the database and context at rest.** Windows EFS for the whole
+  instance folder and `.env` (`npm run instance:protect`, status in `vault
+  status`); SQLCipher evaluated and rejected (no prebuilt binaries, C++
+  toolchain on every machine, locked vault would block MCP reads).
 
 - [x] **Posting-gap analysis.** `content_plan_get` and the web content plan.
 - [x] **Problem alerts.** Telegram bot and/or Discord webhook digests when a

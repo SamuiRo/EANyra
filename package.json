@@ -33,6 +33,7 @@
     "instance:init": "node src/core/instance/cli.js init",
     "instance:migrate": "node src/core/instance/cli.js migrate",
     "instance:restore": "node src/core/instance/cli.js restore",
+    "instance:protect": "node src/core/instance/cli.js protect",
     "backup": "node src/core/cli/index.js backup"
   },
   "repository": {
