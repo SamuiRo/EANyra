@@ -39,6 +39,8 @@ export const PATHS = {
   exportsDir:      envPath('EXPORTS_DIR', path.join(DATA_DIR, 'exports')),
   /** Encrypted credentials (AES-256-GCM, master password). */
   vaultFile:       envPath('VAULT_PATH', path.join(INSTANCE_DIR, 'secrets.vault')),
+  /** Where problem alerts go (Telegram bot, Discord webhook). No secrets. */
+  notificationsConfig: envPath('NOTIFICATIONS_CONFIG_PATH', path.join(INSTANCE_DIR, 'notifications.json')),
 };
 
 export const VAULT = {

@@ -1,0 +1,10 @@
+{
+  "telegram": { "enabled": true, "bot": "default", "chat_id": "123456789" },
+  "discord": { "enabled": false, "webhook": "default" },
+  "rules": {
+    "auth_expiring_days": 3,
+    "stale_hours": 48,
+    "repeat_hours": 24,
+    "notify_resolved": true
+  }
+}

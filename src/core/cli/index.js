@@ -16,6 +16,7 @@
  *   eanyra secrets …            → store GitHub / bot tokens and Telegram API keys
  *   eanyra sessions             → which login each account uses and its state
  *   eanyra serve [--schedule]   → local web UI on 127.0.0.1
+ *   eanyra notify …             → problem alerts via Telegram bot / Discord webhook
  */
 
 import { Command }                    from 'commander';
@@ -23,6 +24,7 @@ import database                       from '../teapot/database.js';
 import { registerContextCommands }    from './contextCommands.js';
 import { registerExportCommands }     from './exportCommands.js';
 import { registerVaultCommands }      from './vaultCommands.js';
+import { registerNotifyCommands }     from './notifyCommands.js';
 import { Credentials }                from '../secrets/Credentials.js';
 import { registerModels }             from '../teapot/models/index.js';
 import { SchemaMigrator }             from '../teapot/SchemaMigrator.js';
@@ -183,6 +185,7 @@ function buildCLI(nyra) {
   registerContextCommands(program, nyra.models);
   registerExportCommands(program, nyra.models);
   registerVaultCommands(program);
+  registerNotifyCommands(program);
 
   // Default: no command → daemon (backwards-compat)
   program.action(async () => {

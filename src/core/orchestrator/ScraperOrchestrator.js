@@ -40,6 +40,7 @@ import { SourceStateRepository } from '../teapot/repositories/SourceStateReposit
 import { linkPublishedDrafts } from '../services/draftLinks.js';
 import { sequelizeExecutor } from '../services/sql.js';
 import { validatePosts, validateSignals, describeRejected } from '../teapot/recordValidation.js';
+import { runProblemChecks } from '../notify/index.js';
 import { SCRAPER }              from '../../config/app.config.js';
 import { print, sleep }         from '../../shared/utils.js';
 import { normalizeSelection, accountKey, sessionOf } from '../../config/accountConfig.js';
@@ -112,12 +113,33 @@ export class ScraperOrchestrator {
         print(`Could not link drafts to posts: ${error.message}`, 'warning');
       }
       await scraperRun.reload();
+      await this.#alertProblems();
       return scraperRun.toJSON();
     } catch (error) {
-      if (scraperRun) await this.scraperRunRepo.fail(scraperRun, error);
+      if (scraperRun) {
+        await this.scraperRunRepo.fail(scraperRun, error);
+        await this.#alertProblems();
+      }
       throw error;
     } finally {
       await release();
+    }
+  }
+
+  /** Problem alerts never affect the run's own result. */
+  async #alertProblems() {
+    if (!this.db || this.deps.notify === false) return;
+    try {
+      const check = this.deps.notify ?? runProblemChecks;
+      const { configured, result, setupProblems } = await check({
+        db: this.db, credentials: this.#credentials,
+        ...(this.deps.accountsConfigPath ? { accountsConfigPath: this.deps.accountsConfigPath } : {}),
+      });
+      if (!configured) return;
+      for (const message of [...(setupProblems ?? []), ...(result?.failed ?? [])]) print(`Alert delivery: ${message}`, 'warning');
+      if (result?.sent) print(`Problem alert sent via ${result.delivered.join(', ')}.`, 'system');
+    } catch (error) {
+      print(`Problem alerts failed: ${error.message}`, 'warning');
     }
   }
 

@@ -29,6 +29,7 @@ export const SECRET_KINDS = Object.freeze({
   'telegram-bot': 'Telegram bot token for publishing',
   'github':       'GitHub personal access token',
   'mcp-token':    'Bearer token for MCP clients of `eanyra serve` (/mcp)',
+  'discord-webhook': 'Discord webhook URL for problem alerts',
 });
 
 export const DEFAULT_SESSION = 'default';

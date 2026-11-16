@@ -132,8 +132,11 @@ the current repository state, not on the older README.
 - [ ] **Encrypt the database and context at rest** (SQLCipher or equivalent).
 
 - [x] **Posting-gap analysis.** `content_plan_get` and the web content plan.
-- [ ] **Proactive reminders.** Notify (e.g. Telegram bot message to the author)
-  when an account becomes overdue.
+- [x] **Problem alerts.** Telegram bot and/or Discord webhook digests when a
+  login breaks or is about to expire, collection fails, data goes stale or a
+  Telegram delivery is uncertain; deduplicated, with resolved notices.
+- [ ] **Optional content reminders** (overdue accounts from the content plan)
+  through the same channels, if wanted.
 - [x] **Twitter network-response extraction with DOM fallback.** Intercept
   already-loaded GraphQL responses to obtain exact metrics, complete text, and
   richer metadata while preserving browser navigation and human-paced

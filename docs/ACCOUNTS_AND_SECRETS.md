@@ -22,6 +22,8 @@ Accounts without `session` use the session named `default`.
 | `telegram-api/default` | `npm run nyra -- secrets set telegram-api` | Telegram API id/hash for every session |
 | `telegram-bot/<bot>` | `npm run nyra -- secrets set telegram-bot <bot>` | Bot API publishing (`"bot"` field) |
 | `github/<session>` | `npm run nyra -- secrets set github <s>` | GitHub collection |
+| `discord-webhook/<name>` | `npm run nyra -- notify discord` | Problem alerts to Discord |
+| `mcp-token/default` | `npm run nyra -- mcp token` | MCP clients of `npm run serve -- --mcp` |
 
 ## Several own X accounts
 

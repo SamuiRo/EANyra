@@ -328,6 +328,35 @@ MCP prompts (prompt menu of the MCP client): `write_post`, `content_week`,
 `repurpose_signal`, `performance_review`. X and LinkedIn are never published
 by the agent.
 
+## Problem Alerts
+
+EANyra writes to you only when something is wrong, via a Telegram bot and/or
+a Discord webhook:
+
+- a login is missing, logged out or expired (X, Telegram, GitHub, bot);
+- an X login cookie expires within `auth_expiring_days` (default 3);
+- accounts whose collection failed (grouped by the same error);
+- an account not collected for `stale_hours` (default 48);
+- the whole collection run failed;
+- a Telegram post whose delivery is uncertain.
+
+Checks run after every collection (CLI, scheduler, MCP, web). One digest per
+check; an unchanged problem is repeated at most every `repeat_hours` (24), and
+a problem that disappears is reported once as resolved.
+
+```bash
+# Telegram: open your bot, press Start, then
+npm run nyra -- notify telegram-chat
+# Discord: paste the webhook URL into the hidden prompt (stored in the vault)
+npm run nyra -- notify discord
+npm run nyra -- notify test        # send a test message
+npm run nyra -- notify status      # channels + problems right now (sends nothing)
+```
+
+Settings live in `instance/notifications.json` (no secrets; example in
+`instance_example/notifications.json.example`). The web overview shows the
+same status and a test button.
+
 ## Web UI
 
 `npm run serve` starts a local web interface on `http://127.0.0.1:3030`
@@ -370,6 +399,8 @@ Use `npm run nyra -- <command>` when the `eanyra` binary is not globally linked.
 | `npm start` | Start the cron daemon |
 | `npm run serve [-- --schedule] [--mcp] [--port <n>]` | Local web UI on 127.0.0.1, optionally with cron collection and MCP at `/mcp` |
 | `npm run nyra -- mcp token [--rotate]` | Create/show/rotate the Bearer token for MCP at `/mcp` |
+| `npm run nyra -- notify telegram-chat` / `discord` | Enable problem alerts via a Telegram bot or a Discord webhook |
+| `npm run nyra -- notify status` / `test` / `check` / `off <channel>` | Inspect, test, run or disable alerts |
 | `npm run scrape` | Collect all active configured accounts once |
 | `npm run scrape:twitter` | Collect Twitter/X accounts once |
 | `npm run scrape:github` | Collect GitHub accounts once |

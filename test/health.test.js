@@ -52,6 +52,7 @@ test('runs record per-account outcomes, split post/signal counts and account hea
   const orphan = await models.ScraperRun.create({ status: 'running', started_at: new Date('2026-11-01T00:00:00Z') });
 
   const orchestrator = new ScraperOrchestrator(models, {
+    notify: false, // never send real alerts from tests
     credentials: new Credentials({ legacy: { telegram: {} } }),
     accountsConfigPath, lockPath: path.join(dir, 'lock'), pause: async () => {}, collectors,
   });

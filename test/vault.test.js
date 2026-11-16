@@ -181,6 +181,7 @@ test('orchestrator isolates a failing login to its own accounts', async t => {
   const connects = [];
   const opened = [];
   const orchestrator = new ScraperOrchestrator(models, {
+    notify: false, // never send real alerts from tests
     credentials: new Credentials({ vault, legacy: { telegram: { apiId: 1, apiHash: 'h' } } }),
     accountsConfigPath,
     lockPath: path.join(dir, 'scrape.lock'),

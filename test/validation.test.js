@@ -138,6 +138,7 @@ test('one bad record no longer fails the whole account', async t => {
   const models = registerModels(sequelize);
   await new SchemaMigrator(sequelize).migrate();
   const orchestrator = new ScraperOrchestrator(models, {
+    notify: false, // never send real alerts from tests
     credentials: new Credentials({ legacy: { telegram: {} } }),
     accountsConfigPath, lockPath: path.join(dir, 'lock'), pause: async () => {},
     collectors: {

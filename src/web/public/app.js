@@ -166,6 +166,30 @@ async function render() {
   }
 }
 
+function alertsCard(alerts) {
+  const channel = (label, value) => h('span', { class: 'row' }, label,
+    value ? badge(value.enabled ? 'увімкнено' : 'вимкнено', value.enabled ? 'ok' : 'skipped') : badge('не налаштовано', 'skipped'));
+  const test = async () => {
+    try {
+      const { results } = await api('/api/notify/test', { method: 'POST' });
+      toast(results.join(' · ') || 'Немає увімкнених каналів.', 8000);
+    } catch (error) {
+      toast(error.message, 8000);
+    }
+  };
+  return card(
+    h('div', { class: 'row between' }, h('h2', {}, 'Сповіщення про проблеми'),
+      alerts.configured ? h('button', { class: 'small', onclick: test }, 'Надіслати тест') : null),
+    h('div', { class: 'row' }, channel('Telegram', alerts.telegram), channel('Discord', alerts.discord)),
+    alerts.error && h('p', { class: 'error' }, alerts.error),
+    !alerts.configured && h('p', { class: 'muted' }, 'Налаштування з терміналу: npm run nyra -- notify telegram-chat (після /start у вашому боті) або npm run nyra -- notify discord.'),
+    alerts.problems.length
+      ? h('div', { class: 'stack' }, h('div', { class: 'muted' }, 'Зараз виявлено (повідомлення надсилаються після кожного збору, без повторів частіше ніж раз на добу):'),
+        alerts.problems.map(text => h('div', { class: 'preserve' }, text)))
+      : h('p', { class: 'muted' }, 'Проблем не виявлено.'),
+  );
+}
+
 async function startScrape(args, label) {
   try {
     const job = await tool('scraper_run', args);
@@ -212,9 +236,10 @@ async function syncContext() {
 
 const VIEWS = {
   async overview() {
-    const [status, plan] = await Promise.all([
+    const [status, plan, alerts] = await Promise.all([
       tool('scraper_status', { history_limit: 10 }),
       tool('content_plan_get').catch(() => null),
+      api('/api/notify').catch(() => null),
     ]);
     autoRefresh(Boolean(status.active_job));
 
@@ -266,6 +291,7 @@ const VIEWS = {
         ))) : empty('Усі акаунти публікуються за планом.'),
       ),
       card(h('h2', {}, 'Потребують уваги'), attention),
+      alerts && alertsCard(alerts),
       card(h('h2', {}, 'Останні прогони'), h('p', { class: 'muted' }, 'Натисніть рядок, щоб побачити результат по кожному акаунту.'), runs),
       h('div', { id: 'run-detail' }),
     ];

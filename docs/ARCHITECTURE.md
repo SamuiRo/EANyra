@@ -217,6 +217,18 @@ it owns sessions and runtime clients (`runtime.twitterSession(name)`,
 `runtime.telegramScraper(name)`, `runtime.credentials`), pacing, persistence by
 `output`, account health and per-account run records.
 
+## Problem Alerts
+
+`core/notify/`: `problems.js` derives problems with stable keys from the
+session report, `accounts.last_error`, stale accounts, the latest run and the
+Telegram outbox; `Notifier.js` sends one digest of new, repeated (after
+`repeat_hours`) and resolved problems and keeps state in `source_state`
+(source `notify`); `channels.js` delivers through the Telegram Bot API or a
+Discord webhook (no mentions, secrets never in errors). If every channel
+fails, the state is kept so the next check retries. `ScraperOrchestrator`
+calls `runProblemChecks` after every run; alert errors never change the run's
+result. Configuration: `instance/notifications.json` (`config/notifyConfig.js`).
+
 ## Shared Services
 
 `core/services/` holds logic shared by all front ends. Services take a small

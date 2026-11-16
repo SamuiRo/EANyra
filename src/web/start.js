@@ -26,6 +26,8 @@ import { WebAuth, tokenVerifier } from './auth.js';
 import { createWebServer } from './server.js';
 import { createMcpServer, McpHttpSessions } from '../core/mcp/mcpServer.js';
 import { Credentials } from '../core/secrets/Credentials.js';
+import { loadNotifyConfig } from '../config/notifyConfig.js';
+import { buildChannels, runProblemChecks } from '../core/notify/index.js';
 
 /**
  * @param {{ host?: string, port?: number, schedule?: boolean, mcp?: boolean,
@@ -65,6 +67,34 @@ export async function startWebServer({ host = WEB.host, port = WEB.port, schedul
       platform: body.platform, account: body.account || undefined, persona: body.persona || undefined,
       text: body.text, notes: body.notes || null, created_by: 'user',
     }),
+    // Alerts: what is configured and what is wrong right now (sends nothing).
+    'GET /api/notify': async () => {
+      const config = await loadNotifyConfig().catch(error => ({ error: error.message }));
+      const credentials = await Credentials.open({ interactive: false }).catch(() => new Credentials());
+      const { problems } = await runProblemChecks({ db, credentials, config: null });
+      return {
+        configured: Boolean(config && !config.error),
+        error: config?.error ?? null,
+        telegram: config?.telegram ? { enabled: config.telegram.enabled, bot: config.telegram.bot } : null,
+        discord: config?.discord ? { enabled: config.discord.enabled } : null,
+        problems: problems.map(problem => problem.text),
+      };
+    },
+    'POST /api/notify/test': async () => {
+      const config = await loadNotifyConfig();
+      if (!config) throw Object.assign(new Error('Alerts are not configured: npm run nyra -- notify telegram-chat / notify discord.'), { status: 400 });
+      const { channels, problems } = buildChannels(config, await Credentials.open({ interactive: false }));
+      const results = [...problems];
+      for (const channel of channels) {
+        try {
+          await channel.send('EANyra: тестове сповіщення з вебінтерфейсу.');
+          results.push(`${channel.name}: доставлено`);
+        } catch (error) {
+          results.push(`${channel.name}: ${error.message}`);
+        }
+      }
+      return { results };
+    },
     'GET /api/telegram/drafts': async ({ query }) => {
       const limit = Math.min(Math.max(Number(query.get('limit')) || 50, 1), 200);
       return db.all(`SELECT request_id, account, text, status, error, receipt, created_at, updated_at
