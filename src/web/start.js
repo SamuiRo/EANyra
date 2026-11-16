@@ -57,8 +57,8 @@ export async function startWebServer({ host = WEB.host, port = WEB.port, schedul
     },
     'POST /api/context/sync': async () => {
       if (!models) throw Object.assign(new Error('Context sync is not available in this process.'), { status: 501 });
-      const { updated, skipped, errors } = await new UserContextRepository(models).sync();
-      return { updated, skipped, errors };
+      const { updated, skipped, errors, warnings } = await new UserContextRepository(models).sync();
+      return { updated, skipped, errors, warnings };
     },
     // Drafts written by the author in the browser (the AI uses draft_create).
     'POST /api/drafts': async ({ body }) => content.createDraft({

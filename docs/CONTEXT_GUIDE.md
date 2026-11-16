@@ -254,9 +254,13 @@ results to its accounts, for example to calibrate style only on anime posts.
    removes that grouping.
 7. Prints updated, skipped, and failed entries.
 
-The current implementation validates YAML syntax and database constraints, but
-does not perform complete schema validation. Before syncing, check that arrays,
-objects, URLs, languages, and project slugs use the intended types and values.
+Every file is validated against the field tables above (also persona
+overrides). Errors name the exact field, for example
+`platforms.yaml: twitter.max_length must be a positive whole number`; a file
+with errors is not synced and its previously synced version stays in use.
+Warnings never block: unknown keys (with a hint such as `did you mean
+"posting_frequency"?`) and a `posting_frequency` the content plan cannot read.
+The web UI shows the same errors and warnings after «Синхронізувати контекст».
 
 Useful inspection commands:
 

@@ -9,6 +9,14 @@ import {
   assertExclusiveMembership,
   accountKey,
 } from '../../../config/personaConfig.js';
+import {
+  validateVoice,
+  validateBio,
+  validatePlatforms,
+  validateProject,
+} from '../../../config/contextSchema.js';
+
+const TOP_LEVEL_VALIDATORS = { voice: validateVoice, bio: validateBio, platforms: validatePlatforms };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -40,10 +48,11 @@ export class UserContextRepository {
 
   /**
    * Read all YAML files and upsert into DB.
-   * Returns a summary { updated, skipped, errors }.
+   * Returns a summary { updated, skipped, errors, warnings }.
+   * A file with errors is not stored; its previously synced version stays.
    */
   async sync() {
-    const results = { updated: [], skipped: [], errors: [] };
+    const results = { updated: [], skipped: [], errors: [], warnings: [] };
     const now     = new Date();
 
     // ── voice.yaml ──
@@ -106,8 +115,9 @@ export class UserContextRepository {
     }
 
     try {
-      const raw   = fs.readFileSync(filePath, 'utf8');
-      const value = parseYaml(raw);
+      const raw = fs.readFileSync(filePath, 'utf8');
+      const { value, warnings } = TOP_LEVEL_VALIDATORS[key](parseYaml(raw));
+      results.warnings.push(...warnings.map(warning => `${filename}: ${warning}`));
 
       await this.UserContext.upsert({ key, value, synced_at: now });
       results.updated.push(key);
@@ -134,10 +144,12 @@ export class UserContextRepository {
       const filePath = path.join(projectsDir, file);
       try {
         const raw  = fs.readFileSync(filePath, 'utf8');
-        const data = parseYaml(raw);
+        const fileSlug = path.basename(file, '.yaml');
+        const { value: data, warnings } = validateProject(parseYaml(raw), fileSlug);
+        results.warnings.push(...warnings.map(warning => `projects/${file}: ${warning}`));
 
         // slug falls back to filename without extension
-        const slug = data.slug ?? path.basename(file, '.yaml');
+        const slug = data.slug ?? fileSlug;
         const archived = data.archive === true;
 
         await this.Project.upsert({
@@ -222,7 +234,10 @@ export class UserContextRepository {
     for (const file of files) {
       try {
         const data = parseYaml(fs.readFileSync(path.join(personasDir, file), 'utf8'));
-        personas.push(parsePersona(data, path.basename(file, '.yaml'), configured));
+        const persona = parsePersona(data, path.basename(file, '.yaml'), configured);
+        results.warnings.push(...persona.warnings.map(warning => `personas/${file}: ${warning}`));
+        delete persona.warnings;
+        personas.push(persona);
       } catch (err) {
         results.errors.push(`personas/${file}: ${err.message}`);
       }

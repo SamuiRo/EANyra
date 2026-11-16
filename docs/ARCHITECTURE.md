@@ -423,8 +423,11 @@ Important fields:
 
 Deduplication constraint: unique `(platform, platform_id)`.
 
-`PostRepository.saveBatch()` refreshes engagement and scrape timestamps on
-duplicates but does not update text, links, flags, or media.
+`PostRepository.saveBatch()` refreshes mutable fields on duplicates. Before
+saving, `teapot/recordValidation.js` drops malformed records (missing ids,
+wrong platform, invalid dates) with a reason and repairs recoverable values,
+so one bad record cannot fail an account's whole batch; the run records the
+account as `partial` with the reasons.
 
 #### `signals`
 
@@ -525,8 +528,9 @@ or a project YAML file removed since the previous sync, is marked `archived` in
 SQLite. Sync is currently explicit through `eanyra context sync`; daemon
 startup and scrape commands do not invoke it.
 
-YAML syntax and database constraints are enforced, but there is no complete
-context schema validation. Project discovery ignores templates beginning with
+`config/contextSchema.js` validates voice, bio, platforms, projects and persona
+overrides; a file with errors is skipped and its previous version kept, and
+warnings are returned with the sync result. Project discovery ignores templates beginning with
 `_` and committed `.example.yaml` files. See the
 [Author Context Guide](CONTEXT_GUIDE.md) for the user-facing contract and the
 roadmap for known defects.

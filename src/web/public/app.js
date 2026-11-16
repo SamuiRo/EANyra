@@ -201,8 +201,9 @@ const sessionKind = row => (row.ok ? (row.state.startsWith('from .env') ? 'stale
 async function syncContext() {
   try {
     const result = await api('/api/context/sync', { method: 'POST' });
-    const errors = result.errors?.length ? ` Помилки: ${result.errors.map(e => e.error ?? e).join('; ')}` : '';
-    toast(`Контекст синхронізовано: оновлено ${result.updated?.length ?? 0}.${errors}`, errors ? 9000 : 4000);
+    const errors = result.errors?.length ? ` Помилки (файли не оновлено): ${result.errors.join('; ')}` : '';
+    const warnings = result.warnings?.length ? ` Попередження: ${result.warnings.join('; ')}` : '';
+    toast(`Контекст синхронізовано: оновлено ${result.updated?.length ?? 0}.${errors}${warnings}`, errors || warnings ? 15000 : 4000);
     render();
   } catch (error) {
     toast(`Синхронізація не вдалася: ${error.message}`, 7000);

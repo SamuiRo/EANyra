@@ -39,6 +39,7 @@ import { ScraperRunRepository } from '../teapot/repositories/ScraperRunRepositor
 import { SourceStateRepository } from '../teapot/repositories/SourceStateRepository.js';
 import { linkPublishedDrafts } from '../services/draftLinks.js';
 import { sequelizeExecutor } from '../services/sql.js';
+import { validatePosts, validateSignals, describeRejected } from '../teapot/recordValidation.js';
 import { SCRAPER }              from '../../config/app.config.js';
 import { print, sleep }         from '../../shared/utils.js';
 import { normalizeSelection, accountKey, sessionOf } from '../../config/accountConfig.js';
@@ -240,12 +241,17 @@ export class ScraperOrchestrator {
       runtime: this.#runtime,
       repos: { postRepo: this.postRepo, signalRepo: this.signalRepo, stateRepo: this.stateRepo },
     });
+    // Drop malformed records instead of failing the whole account's batch.
+    const { valid, rejected } = info.output === 'signals'
+      ? validateSignals(records)
+      : validatePosts(records, account.platform);
     const repo  = info.output === 'signals' ? this.signalRepo : this.postRepo;
-    const saved = await repo.saveBatch(account.id, records);
+    const saved = await repo.saveBatch(account.id, valid);
     await this.accountRepo.markScraped(account.id, scrapedAt ?? new Date());
     print(`  → ${records.length} ${info.output} collected, ${saved} new saved.`, 'data');
-    if (warning) print(`  → ${warning}`, 'warning');
-    return { output: info.output, found: records.length, saved, warning };
+    const warnings = [warning, describeRejected(rejected)].filter(Boolean);
+    for (const message of warnings) print(`  → ${message}`, 'warning');
+    return { output: info.output, found: records.length, saved, warning: warnings.join(' | ') || undefined };
   }
 
   async #recordFailure(scraperRun, account, outcome) {

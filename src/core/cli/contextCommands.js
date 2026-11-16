@@ -25,7 +25,7 @@ export function registerContextCommands(program, models) {
     .action(async () => {
       print('Syncing context from YAML files…', 'system');
 
-      const { updated, skipped, errors } = await repo.sync();
+      const { updated, skipped, errors, warnings } = await repo.sync();
 
       if (updated.length) {
         print(`Updated: ${updated.join(', ')}`, 'success');
@@ -33,10 +33,12 @@ export function registerContextCommands(program, models) {
       if (skipped.length) {
         print(`Skipped: ${skipped.join(', ')}`, 'warning');
       }
+      for (const warning of warnings) print(`Warning: ${warning}`, 'warning');
       if (errors.length) {
         for (const err of errors) {
           print(`Error: ${err}`, 'error');
         }
+        print('Files with errors were not synced; their previous version stays in use.', 'warning');
       }
 
       if (!errors.length) {

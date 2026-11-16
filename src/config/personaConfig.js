@@ -1,4 +1,15 @@
 import { parseAccountRef, accountKey } from './accountConfig.js';
+import { validateVoice, validateBio, validatePlatforms, ContextValidationError } from './contextSchema.js';
+
+/** Run a file validator on a persona section, naming fields "<section>.<field>". */
+function prefixed(section, validate) {
+  try {
+    return validate().warnings.map(warning => `${section}.${warning}`);
+  } catch (error) {
+    if (!(error instanceof ContextValidationError)) throw error;
+    throw new ContextValidationError(error.errors.map(message => `${section}.${message}`));
+  }
+}
 
 /**
  * Personas group the accounts that represent one identity or theme across
@@ -39,6 +50,16 @@ export function parsePersona(data, fileSlug, configured) {
       throw new Error(`${field} must be a mapping.`);
     }
   }
+  // Overrides follow the same field rules as voice.yaml, bio.yaml, platforms.yaml.
+  const warnings = [
+    ...prefixed('voice', () => validateVoice(data.voice)),
+    ...prefixed('bio', () => validateBio(data.bio)),
+    ...prefixed('platforms', () => validatePlatforms(data.platforms)),
+  ];
+  const KNOWN = ['slug', 'name', 'description', 'topics', 'accounts', 'voice', 'bio', 'platforms', 'projects'];
+  for (const key of Object.keys(data)) {
+    if (!KNOWN.includes(key)) warnings.push(`${key} is not a known persona field and is ignored`);
+  }
   if (data.projects !== undefined &&
       (!Array.isArray(data.projects) || data.projects.some(project => typeof project !== 'string'))) {
     throw new Error('projects must be a list of project slugs.');
@@ -54,6 +75,7 @@ export function parsePersona(data, fileSlug, configured) {
     platforms: data.platforms ?? {},
     // Omitted: all active projects apply. [] means none of them.
     projects: data.projects ?? null,
+    warnings,
   };
 }
 

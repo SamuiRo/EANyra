@@ -49,20 +49,21 @@ the current repository state, not on the older README.
 - [x] **Replace startup schema alteration with versioned migrations.**
   Startup schema creation and upgrades now run exclusively through idempotent
   versioned migrations.
-- [ ] **Add automated tests.** Minimum coverage should include CSV parsing,
-  model/repository deduplication, context sync, export selection, MCP tools,
-  GitHub mapping, and Twitter DOM parsing fixtures.
+- [x] **Add automated tests.** `npm test` covers parsing, repositories,
+  migrations, context sync and validation, export, MCP over stdio and HTTP,
+  the vault, the web server, collection and the content loop.
 - [ ] **Add linting and formatting checks.** There is currently no repeatable
   code-quality command in `package.json`.
 - [x] **Validate account configuration.** Reject missing usernames, unsupported
   platforms, duplicate account keys, and malformed JSON with actionable
   messages.
-- [ ] **Validate author context YAML.** Add schemas and actionable errors for
-  top-level files and projects, including types, project slug/filename
-  agreement, status values, and malformed URLs.
-- [ ] **Validate normalized records before persistence.** For example,
-  LinkedIn rows without a stable `platform_id` should be skipped explicitly
-  rather than reaching a database constraint error.
+- [x] **Validate author context YAML.** `config/contextSchema.js`: field
+  types, language codes, project slug/filename, status, URLs, the same rules
+  for persona overrides; a file with errors keeps its previous version;
+  unknown keys and unreadable cadence are warnings with "did you mean" hints.
+- [x] **Validate normalized records before persistence.** Malformed records
+  are dropped with a reason (run outcome `partial`) instead of failing the
+  account's whole batch.
 - [x] **Improve scheduler concurrency behavior.** A database-scoped file lock
   prevents overlapping scheduler, CLI, and MCP collection. Crash recovery of
   stale lock files remains manual.
@@ -125,8 +126,9 @@ the current repository state, not on the older README.
   Telegram publishes after approval.
 - [x] **Durable job queue.** Collection jobs live in the `jobs` table and
   survive MCP restarts; `scraper_jobs_list` shows them.
-- [ ] **Move remaining MCP queries into services** (posts, signals, context) as
-  the web server needs them.
+- [x] **Move remaining MCP queries into services.** Resolved by design: the
+  tool registry is the shared service layer; MCP and the web UI call the same
+  handlers with the same validation, so there is no duplicated query code.
 - [ ] **Encrypt the database and context at rest** (SQLCipher or equivalent).
 
 - [x] **Posting-gap analysis.** `content_plan_get` and the web content plan.
