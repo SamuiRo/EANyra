@@ -97,7 +97,7 @@ export class LinkedinImporter {
       text:        share.text        ?? '',
       lang:        null,
       posted_at:   share.date        ?? null,
-      media_urls:  [],
+      media_urls:  share.mediaUrl ? [share.mediaUrl] : [],
       shared_url:  share.sharedUrl   ?? null,
       raw_url:     share.shareLink   ?? null,
       likes:       0,

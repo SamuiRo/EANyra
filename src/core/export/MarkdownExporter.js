@@ -157,6 +157,12 @@ function renderContext(context, requestedSections) {
       for (const item of v.taboo) parts.push(`- ⛔ ${item}`);
       parts.push(``);
     }
+    if (typeof v.example_post === 'string' && v.example_post.trim()) {
+      parts.push(`**Example post in this voice:**`);
+      parts.push(``);
+      for (const line of v.example_post.trim().split(/\r?\n/)) parts.push(`> ${line}`);
+      parts.push(``);
+    }
   }
 
   if (context.platforms) {
@@ -171,7 +177,12 @@ function renderContext(context, requestedSections) {
       if (Array.isArray(rules.formats) && rules.formats.length) {
         parts.push(`- **Formats:** ${rules.formats.join(', ')}`);
       }
-      if (rules.frequency)  parts.push(`- **Frequency:** ${rules.frequency}`);
+      if (Array.isArray(rules.avoid) && rules.avoid.length) {
+        parts.push(`- **Avoid:** ${rules.avoid.join(', ')}`);
+      }
+      // posting_frequency is the documented field; frequency is the legacy spelling.
+      const frequency = rules.posting_frequency || rules.frequency;
+      if (frequency) parts.push(`- **Posting frequency:** ${frequency}`);
       parts.push(``);
     }
   }

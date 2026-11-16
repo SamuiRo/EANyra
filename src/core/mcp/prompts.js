@@ -74,7 +74,8 @@ export const PROMPTS = [
     build: ({ persona, days = '30' }) => [
       `Review my post performance${persona ? ` for persona "${persona}"` : ''} over the last ${days} days.`,
       '',
-      `1. posts_stats${persona ? ` with persona "${persona}"` : ''} and since_days ${days}.`,
+      `1. content_performance_get${persona ? ` with persona "${persona}"` : ''} and days ${days}: how drafts from EANyra performed vs. each account's median, by signal type and by author (AI vs. me).`,
+      `   Then posts_stats${persona ? ` with persona "${persona}"` : ''} and since_days ${days}.`,
       `2. posts_get type "top_engagement" and type "recent"${persona ? ` with persona "${persona}"` : ''}, since_days ${days}.`,
       '3. Compare the top posts with the rest: topics, format, length, hooks, time of posting, language.',
       '4. Give 5 concrete, evidence-based recommendations, each citing example posts.',

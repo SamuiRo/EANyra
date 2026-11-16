@@ -53,6 +53,10 @@ LinkedIn публікуєте ви самі: кнопка відкриває о�
 використаними. Telegram: `draft_prepare_telegram` → підтвердження →
 `telegram_post_publish`. Ідеї з розмови зберігаються через `signal_add`.
 
+Після наступного збору опубліковані чернетки автоматично прив'язуються до
+зібраних постів; `content_performance_get` показує, які чернетки та які типи
+матеріалу дали більше реакцій, ніж типовий пост акаунта.
+
 Промпти в меню MCP-клієнта: `write_post`, `content_week`, `repurpose_signal`,
 `performance_review`.
 

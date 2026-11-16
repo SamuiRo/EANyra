@@ -135,6 +135,22 @@ const migrations = [
       await addIndexIfMissing(queryInterface, 'drafts', 'drafts_platform_account', ['platform', 'account'], transaction);
     },
   },
+  {
+    name: '20261118_feedback_and_checkpoints',
+    async up({ queryInterface, transaction }) {
+      // Collected post a published draft became (engagement feedback).
+      await addColumnIfMissing(queryInterface, 'drafts', 'post_id', {
+        type: DataTypes.INTEGER, allowNull: true, references: { model: 'posts', key: 'id' }, onDelete: 'SET NULL',
+      }, transaction);
+      // Durable per-source checkpoints, e.g. the last seen README sha per repo.
+      await createTableIfMissing(queryInterface, 'source_state', {
+        source:     { type: DataTypes.STRING(64), allowNull: false, primaryKey: true },
+        key:        { type: DataTypes.STRING(255), allowNull: false, primaryKey: true },
+        value:      { type: DataTypes.TEXT, allowNull: true },
+        updated_at: { type: DataTypes.DATE, allowNull: false },
+      }, transaction);
+    },
+  },
 ];
 
 export class SchemaMigrator {

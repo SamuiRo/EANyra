@@ -36,6 +36,9 @@ import { AccountRepository }    from '../teapot/repositories/AccountRepository.j
 import { PostRepository }       from '../teapot/repositories/PostRepository.js';
 import { SignalRepository }     from '../teapot/repositories/SignalRepository.js';
 import { ScraperRunRepository } from '../teapot/repositories/ScraperRunRepository.js';
+import { SourceStateRepository } from '../teapot/repositories/SourceStateRepository.js';
+import { linkPublishedDrafts } from '../services/draftLinks.js';
+import { sequelizeExecutor } from '../services/sql.js';
 import { SCRAPER }              from '../../config/app.config.js';
 import { print, sleep }         from '../../shared/utils.js';
 import { normalizeSelection, accountKey, sessionOf } from '../../config/accountConfig.js';
@@ -75,6 +78,10 @@ export class ScraperOrchestrator {
     this.postRepo       = new PostRepository(models.Post);
     this.signalRepo     = new SignalRepository(models.Signal);
     this.scraperRunRepo = new ScraperRunRepository(models.ScraperRun);
+    // Created lazily: selection is validated before any database access.
+    const sequelize     = models.Post?.sequelize;
+    this.stateRepo      = sequelize ? new SourceStateRepository(sequelize) : null;
+    this.db             = sequelize ? sequelizeExecutor(sequelize) : null;
   }
 
   // ── Public API ────────────────────────────────────────────────────────────
@@ -95,6 +102,14 @@ export class ScraperOrchestrator {
       await this.deps.onRunStarted?.(scraperRun.toJSON());
       this.#credentials = this.deps.credentials ?? await Credentials.open();
       await this.#runAccounts(scraperRun, { platform, targets });
+      // Newly collected posts may be drafts the author published: link them
+      // so the AI sees how each draft performed.
+      try {
+        const linked = this.db ? await linkPublishedDrafts(this.db) : 0;
+        if (linked) print(`Linked ${linked} published draft(s) to collected posts.`, 'system');
+      } catch (error) {
+        print(`Could not link drafts to posts: ${error.message}`, 'warning');
+      }
       await scraperRun.reload();
       return scraperRun.toJSON();
     } catch (error) {
@@ -223,7 +238,7 @@ export class ScraperOrchestrator {
       entry: this.#config.get(accountKey(account)),
       session,
       runtime: this.#runtime,
-      repos: { postRepo: this.postRepo, signalRepo: this.signalRepo },
+      repos: { postRepo: this.postRepo, signalRepo: this.signalRepo, stateRepo: this.stateRepo },
     });
     const repo  = info.output === 'signals' ? this.signalRepo : this.postRepo;
     const saved = await repo.saveBatch(account.id, records);

@@ -10,9 +10,8 @@ the current repository state, not on the older README.
 
 ## Priority 1: Data Correctness
 
-- [ ] **Persist the first observed GitHub README SHA.** README change detection
-  only reads prior `readme_change` signals. The first SHA is never stored, so
-  later changes cannot reliably be detected.
+- [x] **Persist the first observed GitHub README SHA.** Baselines live in
+  `source_state`; quiet repositories get a one-time baseline read.
 - [x] **Clarify and fix GitHub commit ownership.** Commit collection now filters
   the GitHub commits endpoint by the configured account author.
 - [x] **Fix Twitter reply detection.** Network-response extraction now uses
@@ -22,8 +21,7 @@ the current repository state, not on the older README.
   that conversation discovery recovers all 25 known posts, including 20
   replies, while live `from:<username>` search returned no authored posts.
   Exhaustive historical reply discovery remains unproven.
-- [ ] **Preserve LinkedIn media URLs.** `MediaUrl` is parsed from `Shares.csv`
-  but is discarded when building the normalized post.
+- [x] **Preserve LinkedIn media URLs.** `MediaUrl` is stored in `media_urls`.
 - [x] **Support multiple accounts with the same username on different
   platforms.** Composite `(platform, username)` identity, migration preserving
   child records, and platform-aware account sync are implemented.
@@ -41,9 +39,8 @@ the current repository state, not on the older README.
   ignores templates beginning with `_` and any `.example.yaml` files. Reusable
   templates and the original examples are committed under `instance_example/`;
   real project YAML under `instance/` is gitignored.
-- [ ] **Preserve all authored context in Markdown exports.** The exporter omits
-  `voice.example_post` and checks platform `frequency` while the documented
-  field and examples use `posting_frequency`.
+- [x] **Preserve all authored context in Markdown exports.** `example_post`,
+  `posting_frequency` (legacy `frequency`) and platform `avoid` are exported.
 - [x] **Update full duplicate records where appropriate.** `PostRepository`
   refreshes mutable content, links, media, flags, engagement, and scrape time.
 
@@ -142,8 +139,9 @@ the current repository state, not on the older README.
 - [x] **Manual signal ingestion.** `signal_add` (MCP) and the web idea form.
 - [x] **Signal-to-post attribution.** Drafts keep their source `signal_ids`;
   publication marks them used.
-- [ ] **Link published drafts to collected posts** (match `published_url` with
-  collected `raw_url`) to report engagement per draft and per signal.
+- [x] **Link published drafts to collected posts** and report engagement per
+  draft, signal type and author (`content_performance_get`, web «Що працює»).
+- [ ] **Telegram backfill checkpoints** can reuse `source_state`.
 - [ ] **Incremental LinkedIn import management.** Track import files, account
   ownership, and import history explicitly.
 - [ ] **Optional community feedback sources.** Evaluate Discord and similar

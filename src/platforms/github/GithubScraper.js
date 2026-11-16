@@ -130,7 +130,12 @@ export class GithubScraper {
       }
 
       // ── Commits (grouped by week) ─────────────────────────────────────────
-      if (!repo.pushed_at || new Date(repo.pushed_at) < since) continue;
+      if (!repo.pushed_at || new Date(repo.pushed_at) < since) {
+        // No push, so the README cannot have changed. Still record a first
+        // baseline once, otherwise its next change could not be detected.
+        if (!this.readmeShas[`${username}/${repo.name}`]) await this.#checkReadme(username, repo, signals);
+        continue;
+      }
 
       let commits = [];
       try {
@@ -172,28 +177,7 @@ export class GithubScraper {
         });
       }
 
-      // ── README change ─────────────────────────────────────────────────────
-      const readmeKey = `${username}/${repo.name}`;
-      const prevSha   = this.readmeShas[readmeKey];
-
-      const readme = await this.client.getReadme(username, repo.name);
-      if (readme && prevSha && readme.sha !== prevSha) {
-        signals.push({
-          source:      'github',
-          source_id:   `readme_change:${repo.full_name}:${readme.sha}`,
-          signal_type: 'readme_change',
-          title:       `README updated — ${repo.name}`,
-          body:        '',
-          url:         readme.html_url,
-          occurred_at: new Date(),
-          metadata:    { repo: repo.name, prev_sha: prevSha, new_sha: readme.sha },
-          scraped_at:  new Date(),
-        });
-      }
-
-      if (readme) {
-        this.readmeShas[readmeKey] = readme.sha;
-      }
+      await this.#checkReadme(username, repo, signals);
     }
 
     print(`[GitHub] @${username}: ${signals.length} signal(s) collected.`, 'data');
@@ -201,6 +185,31 @@ export class GithubScraper {
   }
 
   // ── Private ───────────────────────────────────────────────────────────────
+
+  /** Emit readme_change when the README sha differs from the known baseline. */
+  async #checkReadme(username, repo, signals) {
+    const readmeKey = `${username}/${repo.name}`;
+    const prevSha   = this.readmeShas[readmeKey];
+
+    const readme = await this.client.getReadme(username, repo.name);
+    if (readme && prevSha && readme.sha !== prevSha) {
+      signals.push({
+        source:      'github',
+        source_id:   `readme_change:${repo.full_name}:${readme.sha}`,
+        signal_type: 'readme_change',
+        title:       `README updated — ${repo.name}`,
+        body:        '',
+        url:         readme.html_url,
+        occurred_at: new Date(),
+        metadata:    { repo: repo.name, prev_sha: prevSha, new_sha: readme.sha },
+        scraped_at:  new Date(),
+      });
+    }
+
+    if (readme) {
+      this.readmeShas[readmeKey] = readme.sha;
+    }
+  }
 
   /**
    * The earliest date we care about — now minus GITHUB.lookbackDays.

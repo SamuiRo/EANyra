@@ -271,7 +271,9 @@ const VIEWS = {
   },
 
   async content() {
-    const [plan, personas] = await Promise.all([tool('content_plan_get'), tool('personas_list')]);
+    const [plan, personas, perf] = await Promise.all([
+      tool('content_plan_get'), tool('personas_list'), tool('content_performance_get', { days: 90 }).catch(() => null),
+    ]);
     const state = VIEWS.content.state ??= { show: 'active', persona: '', platform: '' };
     const list = h('div', { class: 'stack' }, empty('Завантаження…'));
 
@@ -316,6 +318,7 @@ const VIEWS = {
       ),
       newDraftForm(personas),
       card(h('div', { class: 'row between' }, h('h2', {}, 'Чернетки'), filters), list),
+      perf && performanceCard(perf),
     ];
   },
 
@@ -712,6 +715,10 @@ function renderContentDraft(draft) {
       draft.signal_ids.length ? h('span', {}, `на основі ${draft.signal_ids.length} сигн.`) : null,
       draft.published_url && safeLink(draft.published_url, 'відкрити пост'),
     ),
+    draft.post && h('div', { class: 'post-meta' },
+      h('strong', {}, 'Результат:'), h('span', {}, `♥ ${fmt(draft.post.likes)}`), h('span', {}, `↻ ${fmt(draft.post.reposts)}`),
+      h('span', {}, `💬 ${fmt(draft.post.replies)}`), draft.post.views !== null && h('span', {}, `👁 ${fmt(draft.post.views)}`)),
+    draft.status === 'published' && !draft.post && h('div', { class: 'muted' }, 'Метрики з’являться після наступного збору цього акаунта.'),
     textView,
     draft.notes && h('div', { class: 'muted preserve' }, draft.notes),
     draft.warning && h('p', { class: 'error' }, `Довше за ${LIMIT[draft.platform]} символів.`),
@@ -720,6 +727,39 @@ function renderContentDraft(draft) {
     actions.length && h('div', { class: 'draft-actions' }, actions),
   );
   return node;
+}
+
+function ratio(value) {
+  if (value === null || value === undefined) return '—';
+  return h('span', { class: `badge ${value >= 1.2 ? 'ok' : value <= 0.8 ? 'error' : 'skipped'}` }, `×${value}`);
+}
+
+function performanceCard(perf) {
+  const types = Object.entries(perf.by_signal_type);
+  return card(
+    h('h2', {}, 'Що працює (90 днів)'),
+    h('p', { class: 'muted' }, '×1 — як типовий пост цього акаунта, ×2 — вдвічі більше реакцій (лайки + 2·репости + відповіді).'),
+    perf.measured ? [
+      h('div', { class: 'grid' },
+        h('div', {}, h('div', { class: 'muted' }, 'Чернетки від ШІ'), h('div', { class: 'row' }, ratio(perf.by_author.ai.median_vs_account), h('span', { class: 'muted' }, `${perf.by_author.ai.measured} пост.`))),
+        h('div', {}, h('div', { class: 'muted' }, 'Написані вручну'), h('div', { class: 'row' }, ratio(perf.by_author.author.median_vs_account), h('span', { class: 'muted' }, `${perf.by_author.author.measured} пост.`))),
+      ),
+      types.length ? h('div', { class: 'row' }, h('span', { class: 'muted' }, 'За типом матеріалу:'),
+        types.map(([type, entry]) => h('span', { class: 'row' }, h('span', { class: 'mono' }, type), ratio(entry.median_vs_account)))) : null,
+      h('div', { class: 'table-wrap' }, h('table', {},
+        h('thead', {}, h('tr', {}, h('th', {}, 'Пост'), h('th', {}, 'Акаунт'), h('th', {}, 'Реакції'), h('th', {}, 'Відносно типового'))),
+        h('tbody', {}, perf.drafts.slice(0, 10).map(d => h('tr', {},
+          h('td', { class: 'preserve' }, d.text.length > 120 ? `${d.text.slice(0, 120)}…` : d.text),
+          h('td', { class: 'mono' }, `${d.platform}/${d.account ?? '—'}`),
+          h('td', {}, `♥ ${fmt(d.likes)} ↻ ${fmt(d.reposts)} 💬 ${fmt(d.replies)}`),
+          h('td', {}, ratio(d.vs_median)),
+        ))))),
+    ] : empty(perf.published
+      ? `Опубліковано ${perf.published}, але пости ще не зібрані. Запустіть збір відповідних акаунтів.`
+      : 'Ще немає опублікованих чернеток за цей період.'),
+    perf.not_yet_collected.length && perf.measured
+      ? h('p', { class: 'muted' }, `Ще без метрик: ${perf.not_yet_collected.length} (чекають на збір).`) : null,
+  );
 }
 
 async function markPublished(draft) {

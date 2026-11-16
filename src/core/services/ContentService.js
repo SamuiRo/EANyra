@@ -18,6 +18,7 @@ import { PLATFORM_CATALOG } from '../../platforms/catalog.js';
 import { mergePersonaContext } from '../../config/personaConfig.js';
 import { normalizeAccount } from '../../config/accountConfig.js';
 import { parseJson } from './sql.js';
+import { linkPublishedDrafts } from './draftLinks.js';
 
 export const DRAFT_STATUSES = ['draft', 'approved', 'published', 'discarded'];
 /** Soft limits shown as warnings; Telegram's is enforced by its API. */
@@ -165,6 +166,97 @@ export class ContentService {
       );
       await this.#markSignalsUsed(parseJson(row.signal_ids, []), ts);
     }
+    await linkPublishedDrafts(this.db);
+  }
+
+  // ── Performance feedback ──────────────────────────────────────────────────
+
+  /**
+   * How published drafts performed, relative to each account's own median
+   * post (score = likes + 2·reposts + replies), plus which source signals
+   * and which authorship (AI vs. author) led to above-median posts.
+   */
+  async performance({ persona, platform, days = 90 } = {}) {
+    await this.reconcileTelegram();
+    const since = new Date(this.now().getTime() - days * DAY).toISOString();
+    const conds = ["d.status = 'published'", 'd.published_at >= ?'];
+    const params = [since];
+    if (persona) { conds.push('d.persona = ?'); params.push(persona); }
+    if (platform) { conds.push('d.platform = ?'); params.push(platform); }
+    const drafts = await this.db.all(`${DRAFT_SELECT} WHERE ${conds.join(' AND ')} ORDER BY d.published_at DESC`, params);
+
+    const medians = new Map();
+    const medianFor = async accountId => {
+      if (!medians.has(accountId)) {
+        const rows = await this.db.all(`
+          SELECT likes + 2 * reposts + replies AS score FROM posts
+          WHERE account_id = ? AND is_repost = 0 AND is_reply = 0 AND posted_at >= ? ORDER BY score`,
+        [accountId, since]);
+        medians.set(accountId, rows.length ? median(rows.map(row => Number(row.score))) : null);
+      }
+      return medians.get(accountId);
+    };
+
+    const measured = [];
+    const unmatched = [];
+    for (const row of drafts) {
+      const draft = formatDraft(row);
+      if (!draft.post) {
+        unmatched.push({ id: draft.id, platform: draft.platform, account: draft.account, published_url: draft.published_url });
+        continue;
+      }
+      const base = await medianFor(row.post_account_id);
+      measured.push({ ...draft, score: draft.post.score, account_median: base, vs_median: base ? round(draft.post.score / base) : null });
+    }
+
+    const signalStats = new Map();
+    for (const draft of measured) {
+      for (const id of draft.signal_ids) {
+        const entry = signalStats.get(id) ?? { ratios: [], drafts: [] };
+        if (draft.vs_median !== null) entry.ratios.push(draft.vs_median);
+        entry.drafts.push(draft.id);
+        signalStats.set(id, entry);
+      }
+    }
+    const signalRows = signalStats.size
+      ? await this.db.all(`SELECT id, source, signal_type, title FROM signals WHERE id IN (${[...signalStats.keys()].map(() => '?').join(', ')})`, [...signalStats.keys()])
+      : [];
+    const byType = {};
+    for (const signal of signalRows) {
+      const stats = signalStats.get(signal.id);
+      const bucket = byType[`${signal.source}/${signal.signal_type}`] ??= { ratios: [], drafts: 0 };
+      bucket.ratios.push(...stats.ratios);
+      bucket.drafts += stats.drafts.length;
+    }
+    const summarize = list => {
+      const ratios = list.filter(value => value !== null);
+      return { drafts: list.length, measured: ratios.length, median_vs_account: ratios.length ? round(median(ratios)) : null };
+    };
+
+    return {
+      window_days: days,
+      published: drafts.length,
+      measured: measured.length,
+      by_author: {
+        ai: summarize(measured.filter(d => d.created_by === 'ai').map(d => d.vs_median)),
+        author: summarize(measured.filter(d => d.created_by === 'user').map(d => d.vs_median)),
+      },
+      by_signal_type: Object.fromEntries(Object.entries(byType).map(([type, entry]) => [type, {
+        drafts: entry.drafts, median_vs_account: entry.ratios.length ? round(median(entry.ratios)) : null,
+      }])),
+      drafts: measured
+        .sort((a, b) => (b.vs_median ?? -1) - (a.vs_median ?? -1))
+        .map(({ id, persona: p, platform: pl, account, text, created_by, signal_ids, post, account_median, vs_median, notes }) => ({
+          id, persona: p, platform: pl, account, created_by, signal_ids, notes,
+          text: text.length > 280 ? `${text.slice(0, 280)}…` : text,
+          likes: post.likes, reposts: post.reposts, replies: post.replies, views: post.views,
+          score: post.score, account_median, vs_median, url: post.raw_url,
+        })),
+      not_yet_collected: unmatched,
+      how_to_read: 'vs_median = draft score / median score of the same account\'s posts in the window ' +
+        '(1.0 = typical, 2.0 = twice as engaging). not_yet_collected drafts have no collected post yet: run ' +
+        'scraper_run for those accounts, or the URL could not be matched (LinkedIn activity links).',
+    };
   }
 
   // ── Manual signals ────────────────────────────────────────────────────────
@@ -347,8 +439,20 @@ export class ContentService {
 const URGENCY = { overdue: 0, due: 1, on_track: 2, no_target: 3 };
 
 const DRAFT_SELECT = `
-  SELECT d.*, o.status AS telegram_status, o.error AS telegram_error, o.content_hash AS telegram_content_hash
-  FROM drafts d LEFT JOIN telegram_outbox o ON o.request_id = d.telegram_request_id`;
+  SELECT d.*, o.status AS telegram_status, o.error AS telegram_error, o.content_hash AS telegram_content_hash,
+         p.likes AS post_likes, p.reposts AS post_reposts, p.replies AS post_replies, p.views AS post_views,
+         p.posted_at AS post_posted_at, p.raw_url AS post_raw_url, p.account_id AS post_account_id
+  FROM drafts d
+  LEFT JOIN telegram_outbox o ON o.request_id = d.telegram_request_id
+  LEFT JOIN posts p ON p.id = d.post_id`;
+
+function median(values) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+const round = value => Math.round(value * 100) / 100;
 
 function formatDraft(row) {
   const limit = LENGTH_LIMITS[row.platform];
@@ -374,6 +478,13 @@ function formatDraft(row) {
     } : {}),
     published_url: row.published_url,
     published_at: row.published_at,
+    ...(row.post_id ? {
+      post: {
+        id: row.post_id, likes: row.post_likes ?? 0, reposts: row.post_reposts ?? 0, replies: row.post_replies ?? 0,
+        views: row.post_views ?? null, posted_at: row.post_posted_at, raw_url: row.post_raw_url,
+        score: (row.post_likes ?? 0) + 2 * (row.post_reposts ?? 0) + (row.post_replies ?? 0),
+      },
+    } : {}),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };

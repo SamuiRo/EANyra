@@ -8,7 +8,7 @@
  *     { records: RawPost[]|RawSignal[], scrapedAt?: Date, note?: string }
  *
  * runtime: { credentials, twitterSession(name), telegramScraper(name) }
- * repos:   { postRepo, signalRepo }
+ * repos:   { postRepo, signalRepo, stateRepo }
  */
 
 import { LINKEDIN, SCRAPER, TELEGRAM } from '../config/app.config.js';
@@ -44,8 +44,17 @@ export const COLLECTORS = Object.freeze({
           `No GitHub token for session "${session}". Run \`npm run nyra -- secrets set github ${session}\`.`,
         ), { code: 'GITHUB_TOKEN_MISSING' });
       }
-      const readmeShas = await repos.signalRepo.getGithubReadmeShas(account.username);
-      return { records: await createGithubScraper(token, readmeShas).scrapeAccount(account.username) };
+      const prefix = `${account.username}/`;
+      // Persisted baseline wins: it also covers READMEs that never changed yet.
+      const readmeShas = {
+        ...await repos.signalRepo.getGithubReadmeShas(account.username),
+        ...(repos.stateRepo ? await repos.stateRepo.getAll('github_readme', prefix) : {}),
+      };
+      const scraper = createGithubScraper(token, readmeShas);
+      const records = await scraper.scrapeAccount(account.username);
+      await repos.stateRepo?.setMany('github_readme',
+        Object.entries(scraper.readmeShas).filter(([key, sha]) => key.startsWith(prefix) && sha));
+      return { records };
     },
   },
 

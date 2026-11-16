@@ -50,6 +50,25 @@ export function buildContentTools({ publications, content = createContentService
       handler: ({ persona } = {}) => content.contentPlan({ persona }),
     },
     {
+      name: 'content_performance_get',
+      description:
+        'Learn from results. For drafts published in the window: engagement of the collected post ' +
+        '(likes, reposts, replies, views) relative to the same account\'s median post (vs_median), which ' +
+        'signal types led to stronger posts, and AI-written vs. author-written drafts. Use it before writing ' +
+        'to repeat what worked, and in performance reviews. Published drafts appear here after the next ' +
+        'collection of their account.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          persona: { type: 'string', minLength: 1 },
+          platform: { type: 'string', enum: PUBLISHING_PLATFORMS },
+          days: { type: 'integer', minimum: 1, maximum: 365, default: 90 },
+        },
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+      handler: args => content.performance(args),
+    },
+    {
       name: 'signal_add',
       description:
         'Save material for future posts as a signal: an idea, an article/link or a note the author ' +

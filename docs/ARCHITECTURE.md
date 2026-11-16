@@ -221,7 +221,8 @@ workers) and on the direct sqlite3 connection (MCP, the planned web server):
 |---|---|
 | `JobStore` | Durable background jobs (`jobs` table), orphan recovery by worker PID |
 | `StatusService` | Health, freshness per platform and account, per-run account outcomes |
-| `ContentService` | Drafts, manual signals, signal→publication attribution, content plan |
+| `ContentService` | Drafts, manual signals, signal→publication attribution, content plan, performance |
+| `draftLinks` | Map a published URL to the collector's `platform_id`; link drafts to collected posts |
 
 ### Twitter/X
 
@@ -457,6 +458,19 @@ Posts prepared by the agent (`created_by: ai`) or the author (`user`):
 `telegram_outbox` request (`draft-<id>-<text hash>`, so preparing the same text
 twice is idempotent). A sent outbox request marks its draft published; any
 publication marks the draft's signals `used_for_content`.
+
+`drafts.post_id` links a published draft to its collected post. After every
+collection run (and when drafts are read) `linkPublishedDrafts` reduces the
+published URL to the collector's `platform_id` (X status id, Telegram
+`channel:id`, LinkedIn share/ugcPost id) and fills `post_id`.
+`content_performance_get` scores posts as likes + 2·reposts + replies and
+compares each draft with the median of the same account in the window.
+
+#### `source_state`
+
+Durable checkpoints per source: `(source, key) → value`. GitHub stores the
+last seen README sha per repository (`github_readme`, `<user>/<repo>`), so the
+first README observed becomes the baseline for change detection.
 
 Manual signals (`signal_add`) use source `note`/`article`, `source_id`
 `manual:<uuid>` and `metadata.persona`, which `signals_get` honours.

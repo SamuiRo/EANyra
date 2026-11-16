@@ -319,6 +319,10 @@ content_plan_get ─► context_get(persona) ─► signals_get ─► posts_get
 | `draft_create` / `draft_update` / `drafts_list` / `draft_get` | Drafts per platform and account; persona derived from the account; source `signal_ids` |
 | `draft_prepare_telegram` | Turn a Telegram draft into an outbox request; publishing still needs `telegram_post_publish` and approval |
 | `draft_mark_published` | Record a post the author published themselves; marks its signals used |
+| `content_performance_get` | How published drafts performed vs. the account's median post, by signal type and AI vs. author |
+
+After each collection, published drafts are linked to the collected post by
+their URL, so engagement flows back to the draft and to the signals it used.
 
 MCP prompts (prompt menu of the MCP client): `write_post`, `content_week`,
 `repurpose_signal`, `performance_review`. X and LinkedIn are never published
