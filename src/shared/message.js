@@ -13,5 +13,5 @@ export const WELCOME_MESSAGE =
  `
 
 export const SUB_TITLE =
-  "  X Monitoring Tool\n" +
+  "  AI-assisted social media workspace · X · Telegram · LinkedIn · GitHub\n" +
   "  by StarLith\n";

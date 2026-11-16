@@ -423,7 +423,8 @@ Console output: `LOG_LEVEL=debug|info|warn|error|silent`, or `--quiet` /
 
 ## CLI
 
-Use `npm run nyra -- <command>` when the `eanyra` binary is not globally linked.
+Use `npm run nyra -- <command>` (the npm shortcut for the `eanyra` binary)
+when `eanyra` is not globally linked; both run the same CLI.
 
 | Command | Purpose |
 |---|---|

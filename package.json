@@ -1,7 +1,7 @@
 {
   "name": "eanyra",
   "version": "1.9.0",
-  "description": "Social media monitoring tool for AI agent data pipeline",
+  "description": "Local AI-assisted social media workspace: collects your own accounts (X, Telegram, LinkedIn, GitHub) into SQLite, plans and drafts posts with personas, and serves it all through MCP and a local web UI.",
   "main": "src/core/cli/index.js",
   "bin": {
     "eanyra": "src/core/cli/index.js"
@@ -39,7 +39,18 @@
     "type": "git",
     "url": "git+https://github.com/SamuiRo/EANyra.git"
   },
-  "keywords": [],
+  "keywords": [
+    "mcp",
+    "ai",
+    "social-media",
+    "content",
+    "twitter",
+    "telegram",
+    "linkedin",
+    "github",
+    "sqlite",
+    "playwright"
+  ],
   "author": "StarLith",
   "license": "ISC",
   "bugs": {

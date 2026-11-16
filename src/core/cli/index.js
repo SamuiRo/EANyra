@@ -152,7 +152,7 @@ function buildCLI(nyra) {
 
   program
     .name('eanyra')
-    .description('Social media monitoring pipeline for AI agent data pipelines')
+    .description('AI-assisted social media workspace: collection, content planning, drafts, MCP and a local web UI')
     .version(PKG.version, '-v, --version', 'Print version and exit')
     .option('--quiet', 'Only warnings and errors (same as LOG_LEVEL=warn)')
     .option('--debug', 'Include debug output (same as LOG_LEVEL=debug)');

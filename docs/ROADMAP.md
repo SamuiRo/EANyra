@@ -102,12 +102,13 @@ the current repository state, not on the older README.
   longer switches on platform.
 - [x] **Reduce duplicate browser stealth logic.** Interactive login now uses a
   normal headful browser without scraper-specific API patches.
-- [ ] **Remove unused configuration and helpers or connect them to behavior.**
-  Remaining: `TWITTER.homeUrl` and parts of cookie configuration (the unused
-  image/file helpers and `sharp` were removed).
-- [ ] **Normalize user-facing naming.** The package and CLI use `eanyra`, some
-  examples use `nyra`, and messages still describe the product as an
-  X-only monitoring tool.
+- [x] **Remove unused configuration and helpers.** Unused image/file helpers,
+  `sharp`, `TWITTER.homeUrl` and `PATHS.dataDir` removed; every documented
+  environment variable is read by the code and vice versa. The legacy
+  `BROWSER_DATA_PATH` / `BROWSER_COOKIES_PATH` remain for `vault migrate`.
+- [x] **Normalize user-facing naming.** Package, CLI help and banner describe
+  the multi-platform AI workspace; the product is EANyra, the binary
+  `eanyra`, and `npm run nyra -- <command>` is the documented npm shortcut.
 - [x] **Add a documented Node.js engine requirement** to `package.json`.
 - [x] **Logging levels.** `LOG_LEVEL` (debug, info, warn, error, silent) and
   CLI `--quiet` / `--debug`.

@@ -33,7 +33,6 @@ const DATA_DIR = envPath('DATA_DIR', path.join(INSTANCE_DIR, 'data'));
 export const PATHS = {
   instanceDir:    INSTANCE_DIR,
   envFile:        INSTANCE_ENV_PATH,
-  dataDir:         DATA_DIR,
   accountsConfig: envPath('ACCOUNTS_CONFIG_PATH', path.join(INSTANCE_DIR, 'accounts.json')),
   contextDir:      envPath('CONTEXT_DIR', path.join(INSTANCE_DIR, 'context')),
   exportsDir:      envPath('EXPORTS_DIR', path.join(DATA_DIR, 'exports')),
@@ -127,7 +126,6 @@ export const BROWSER = {
 export const TWITTER = {
   baseUrl:  process.env.TWITTER_BASE_URL  ?? 'https://x.com',
   loginUrl: process.env.TWITTER_LOGIN_URL ?? 'https://x.com/i/flow/login',
-  homeUrl:  process.env.TWITTER_HOME_URL  ?? 'https://x.com/home',
 };
 
 export const SCRAPER = {
