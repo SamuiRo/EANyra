@@ -29,6 +29,7 @@ import { Credentials } from '../core/secrets/Credentials.js';
 import { loadNotifyConfig } from '../config/notifyConfig.js';
 import { buildChannels, runProblemChecks } from '../core/notify/index.js';
 import { AccountConfigService } from '../core/services/AccountConfigService.js';
+import { ContextFileService } from '../core/services/ContextFileService.js';
 import { SessionLogins } from '../core/services/SessionLogins.js';
 import { PLATFORM_CATALOG as CATALOG } from '../platforms/catalog.js';
 
@@ -53,6 +54,12 @@ export async function startWebServer({ host = WEB.host, port = WEB.port, schedul
   const content = createContentService();
 
   const accountsFile = new AccountConfigService();
+  const contextFiles = new ContextFileService();
+  const syncContext = async () => {
+    if (!models) return null;
+    const { updated, skipped, errors, warnings } = await new UserContextRepository(models).sync();
+    return { updated, skipped, errors, warnings };
+  };
   // Logins and secrets need the vault (unlocked by the web login).
   const vaultCredentials = async () => {
     const vault = await getVault({ interactive: false }).catch(() => null);
@@ -138,6 +145,16 @@ export async function startWebServer({ host = WEB.host, port = WEB.port, schedul
         return scheduledJobs.stop(body.job_id);
       }
     },
+    // ── Context files (YAML) ──────────────────────────────────────────────
+    'GET /api/context/files': async () => contextFiles.list(),
+    'POST /api/context/read': async ({ body }) => contextFiles.read(body.path),
+    'POST /api/context/validate': async ({ body }) => contextFiles.validate(body.path, body.content),
+    'POST /api/context/save': async ({ body }) => {
+      const validation = await contextFiles.write(body.path, body.content);
+      return { saved: true, validation, sync: await syncContext() };
+    },
+    'POST /api/context/create': async ({ body }) => contextFiles.create(body.kind, String(body.slug ?? '')),
+    'POST /api/context/delete': async ({ body }) => ({ ...await contextFiles.remove(body.path), sync: await syncContext() }),
     'POST /api/context/sync': async () => {
       if (!models) throw Object.assign(new Error('Context sync is not available in this process.'), { status: 501 });
       const { updated, skipped, errors, warnings } = await new UserContextRepository(models).sync();

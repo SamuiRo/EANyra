@@ -238,6 +238,16 @@ returns the merged context for that persona. `posts_get`, `posts_search`,
 `posts_stats`, `accounts_list` and `signals_get` accept `persona` to limit
 results to its accounts, for example to calibrate style only on anime posts.
 
+## Editing in the Web UI
+
+`npm run serve` → tab «Контекст» edits the same files: the editor validates
+while you type (field-level errors block saving, warnings are hints), keeps
+your comments, and «Зберегти й синхронізувати» writes the file and runs the
+context sync, so the AI sees the change at once. New projects and personas
+start from the `_template.yaml` files; deleting one moves it to
+`context/.trash/` (the project is archived, the persona's accounts ungrouped
+on sync).
+
 ## Sync Semantics And Validation
 
 `npm run context:sync`:

@@ -121,8 +121,8 @@ the current repository state, not on the older README.
 - [x] **Web management: accounts and sessions.** Account CRUD/archive, all
   login kinds (X cookies or window, Telegram QR + 2FA, tokens, API keys),
   session deletion with password confirmation.
-- [ ] **Web management: context.** Edit voice, bio, platforms, projects and
-  personas in the browser with live validation and sync.
+- [x] **Web management: context.** YAML editor with live validation, sync on
+  save, templates and trash (2.1.0).
 - [ ] **Web management: settings and operations.** Alert channels and rules,
   LinkedIn export upload, backups, EFS status, vault remember/password.
 

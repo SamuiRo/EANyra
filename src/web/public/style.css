@@ -150,6 +150,15 @@ tr.clickable:hover td { background: var(--surface-2); }
 .draft textarea { min-height: 140px; }
 .counter.over { color: var(--err); font-weight: 600; }
 .plan-due { display: grid; gap: 6px; }
+.context-layout { display: grid; grid-template-columns: minmax(180px, 240px) 1fr; gap: 16px; align-items: start; }
+.file-list { display: grid; gap: 4px; }
+.file-list button { text-align: left; border: 0; background: transparent; padding: 6px 8px; }
+.file-list button.active { background: var(--info-bg); color: var(--accent); font-weight: 600; }
+.file-list h3 { margin: 10px 0 2px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.yaml-editor { width: 100%; min-height: 460px; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 13px; line-height: 1.5; tab-size: 2; white-space: pre; }
+.messages { display: grid; gap: 4px; font-size: 13px; }
+.messages .warn { color: var(--warn); }
+@media (max-width: 760px) { .context-layout { grid-template-columns: 1fr; } }
 
 .toast {
   position: fixed; right: 16px; bottom: 16px; max-width: min(420px, calc(100vw - 32px));

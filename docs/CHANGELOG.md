@@ -7,6 +7,18 @@ change (fixes, docs, internals); **minor** = new capability, existing setups
 keep working; **major** = an existing setup, configuration or integration may
 need action. History before 2.0.0 lives only in commit messages (`v1.x.y …`).
 
+## 2.1.0 — 2026-11-17
+
+### Added
+
+- Web tab «Контекст»: edit `voice.yaml`, `bio.yaml`, `platforms.yaml`,
+  projects and personas in the browser. Live validation with the same rules
+  as `context sync` (errors block saving, warnings hint), comments kept,
+  save syncs the context for the AI at once. New projects and personas start
+  from the templates; deleting moves the file to `context/.trash/`.
+
+No action needed when upgrading from 2.0.0.
+
 ## 2.0.0 — 2026-11-17
 
 Multi-account work with your own logins, encrypted credentials, a local web

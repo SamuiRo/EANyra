@@ -426,6 +426,9 @@ one-time access token.
   the page, GitHub / bot / Discord tokens, Telegram API keys, delete a session
   (master password required). Secret values are write-only and never shown.
   Needs the vault (`npm run nyra -- vault init`).
+- **Контекст:** edit voice, bio, platform rules, projects and personas as
+  YAML with live validation; saving syncs the AI context immediately;
+  deleted projects/personas go to `context/.trash/`.
 - **Пости / Сигнали:** browse and search collected posts by persona,
   platform and engagement; unused signals; add ideas and links as signals.
 - **Telegram:** drafts prepared by the AI (MCP) or in the form; publish only

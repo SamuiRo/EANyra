@@ -258,6 +258,7 @@ workers) and on the direct sqlite3 connection (MCP, the planned web server):
 | `ContentService` | Drafts, manual signals, signal→publication attribution, content plan, performance |
 | `draftLinks` | Map a published URL to the collector's `platform_id`; link drafts to collected posts |
 | `AccountConfigService` | Validated, atomic edits of `accounts.json` (whole-file validation, unknown fields preserved) |
+| `ContextFileService` | Whitelisted read/validate/write of context YAML (raw text kept), templates, trash |
 | `SessionLogins` | Web-driven logins: X cookie import or a login window (`core/browser/loginWindow.js`), Telegram QR with 2FA; results go to the vault |
 
 ### Twitter/X

@@ -443,6 +443,141 @@ const VIEWS = {
     ];
   },
 
+  async context() {
+    const files = await api('/api/context/files');
+    const state = VIEWS.context.state ??= { path: 'voice.yaml', original: null, content: null, dirty: false };
+    if (!files.some(file => file.path === state.path)) state.path = files[0]?.path;
+
+    const editor = h('textarea', { class: 'yaml-editor', spellcheck: 'false', 'aria-label': 'YAML' });
+    const messages = h('div', { class: 'messages' });
+    const title = h('h2', {});
+    const status = h('span', { class: 'muted' });
+    const save = h('button', { class: 'primary' }, 'Зберегти й синхронізувати');
+    const revert = h('button', { class: 'ghost' }, 'Відкотити');
+    const remove = h('button', { class: 'ghost' }, 'Видалити…');
+    let timer = null;
+
+    const showValidation = result => {
+      messages.replaceChildren(
+        ...result.errors.map(text => h('div', { class: 'error' }, `✖ ${text}`)),
+        ...result.warnings.map(text => h('div', { class: 'warn' }, `⚠ ${text}`)),
+        ...(result.ok && !result.warnings.length ? [h('div', { class: 'muted' }, '✓ Перевірено: помилок немає.')] : []),
+      );
+      save.disabled = !result.ok || !state.dirty;
+    };
+    const validate = async () => {
+      try {
+        showValidation(await api('/api/context/validate', { method: 'POST', body: { path: state.path, content: editor.value } }));
+      } catch (error) {
+        messages.replaceChildren(h('div', { class: 'error' }, error.message));
+      }
+    };
+    const markDirty = () => {
+      state.content = editor.value;
+      state.dirty = editor.value !== state.original;
+      status.textContent = state.dirty ? 'є незбережені зміни' : '';
+      revert.disabled = !state.dirty;
+      clearTimeout(timer);
+      timer = setTimeout(validate, 400);
+    };
+    editor.addEventListener('input', markDirty);
+    // Tab inserts two spaces instead of leaving the editor (YAML indentation).
+    editor.addEventListener('keydown', event => {
+      if (event.key !== 'Tab' || event.shiftKey) return;
+      event.preventDefault();
+      editor.setRangeText('  ', editor.selectionStart, editor.selectionEnd, 'end');
+      markDirty();
+    });
+
+    const open = async (rel, { force = false, preset } = {}) => {
+      if (!force && state.dirty && rel !== state.path &&
+          !await confirmDialog('Незбережені зміни', `Зміни у ${state.path} буде втрачено.`, 'Відкинути')) return;
+      const file = preset ?? await api('/api/context/read', { method: 'POST', body: { path: rel } });
+      state.path = rel;
+      state.exists = file.exists;
+      state.original = preset ? '' : file.content;
+      editor.value = file.content;
+      state.dirty = Boolean(preset);
+      title.textContent = rel;
+      status.textContent = file.exists ? '' : 'файлу ще немає — буде створено при збереженні';
+      remove.hidden = !/^(projects|personas)\//.test(rel) || !file.exists;
+      revert.disabled = !state.dirty;
+      list.querySelectorAll('button[data-path]').forEach(button => button.classList.toggle('active', button.dataset.path === rel));
+      await validate();
+    };
+
+    save.addEventListener('click', async () => {
+      try {
+        const result = await api('/api/context/save', { method: 'POST', body: { path: state.path, content: editor.value } });
+        state.original = editor.value;
+        state.dirty = false;
+        status.textContent = 'збережено';
+        const syncErrors = result.sync?.errors?.length ? ` Синхронізація: ${result.sync.errors.join('; ')}` : '';
+        toast(`Збережено й синхронізовано.${syncErrors}`, syncErrors ? 10000 : 4000);
+        // A file created by this save: refresh the list labels.
+        if (!state.exists || !files.some(file => file.path === state.path)) render();
+        else showValidation(result.validation);
+      } catch (error) {
+        messages.replaceChildren(h('div', { class: 'error' }, error.message));
+      }
+    });
+    revert.addEventListener('click', () => {
+      editor.value = state.original ?? '';
+      markDirty();
+    });
+    remove.addEventListener('click', async () => {
+      if (!await confirmDialog(`Видалити ${state.path}?`,
+        'Файл переміститься в context/.trash/. Проєкт стане архівним, персона розгрупує акаунти.', 'Видалити')) return;
+      try {
+        await api('/api/context/delete', { method: 'POST', body: { path: state.path } });
+        state.dirty = false;
+        state.path = 'voice.yaml';
+        toast('Переміщено в context/.trash/.');
+        render();
+      } catch (error) {
+        toast(error.message, 7000);
+      }
+    });
+
+    const create = async kind => {
+      const slug = await askDialog(kind === 'project' ? 'Новий проєкт' : 'Нова персона', 'Назва файлу (латиницею, через дефіс)', { placeholder: kind === 'project' ? 'my-project' : 'brand' });
+      if (!slug) return;
+      try {
+        const file = await api('/api/context/create', { method: 'POST', body: { kind, slug } });
+        const button = h('button', { dataset: { path: file.path }, onclick: () => open(file.path) }, `${file.path.split('/')[1]} (новий)`);
+        list.querySelector(`[data-group="${kind}"]`).after(button);
+        await open(file.path, { force: true, preset: file });
+      } catch (error) {
+        toast(error.message, 7000);
+      }
+    };
+
+    const group = (label, kind, items, newLabel) => [
+      h('h3', { dataset: { group: kind } }, label),
+      ...items.map(file => h('button', { dataset: { path: file.path }, onclick: () => open(file.path), title: file.description ?? '' },
+        file.path.replace(/^(projects|personas)\//, '').replace(/\.yaml$/, ''), file.exists ? '' : ' (немає)')),
+      newLabel && h('button', { class: 'muted', onclick: () => create(kind) }, `+ ${newLabel}`),
+    ];
+    const list = h('nav', { class: 'file-list', 'aria-label': 'Файли контексту' },
+      group('Загальні', 'top', files.filter(f => !f.path.includes('/')), null),
+      group('Проєкти', 'project', files.filter(f => f.path.startsWith('projects/')), 'проєкт'),
+      group('Персони', 'persona', files.filter(f => f.path.startsWith('personas/')), 'персона'),
+    );
+
+    const view = [card(
+      h('p', { class: 'muted' }, 'Голос, біо, правила платформ, проєкти й персони, з якими пише ШІ. Перевірка як у CLI: помилки блокують збереження, попередження — підказки. Коментарі у файлах зберігаються.'),
+      h('div', { class: 'context-layout' },
+        list,
+        h('div', { class: 'stack' },
+          h('div', { class: 'row between' }, title, status),
+          editor, messages,
+          h('div', { class: 'row end' }, remove, revert, save)),
+      ),
+    )];
+    queueMicrotask(() => open(state.path, { force: true }));
+    return view;
+  },
+
   async posts() {
     const personas = await tool('personas_list');
     const state = VIEWS.posts.state ??= { persona: '', platform: '', type: 'recent', search: '', limit: 30 };
