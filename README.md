@@ -647,6 +647,8 @@ Runtime configuration is centralized in `src/config/app.config.js`.
 
 ## Documentation
 
+- [Changelog](docs/CHANGELOG.md): what changed in each version and upgrade
+  notes (read before upgrading).
 - [Instance layout](docs/INSTANCE_GUIDE.md): editable files, initialization,
   migration from the legacy layout, and isolated instance selection.
 - [Accounts, sessions and encryption](docs/ACCOUNTS_AND_SECRETS.md): several
