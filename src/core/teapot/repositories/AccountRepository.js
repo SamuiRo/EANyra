@@ -114,6 +114,7 @@ export class AccountRepository {
     } catch (error) {
       throw new Error(
         `Cannot load accounts config from ${this.accountsConfigPath}: ${error.message}`,
+        { cause: error },
       );
     }
   }

@@ -30,7 +30,9 @@ import { registerModels }             from '../teapot/models/index.js';
 import { SchemaMigrator }             from '../teapot/SchemaMigrator.js';
 import { ScraperOrchestrator }        from '../orchestrator/ScraperOrchestrator.js';
 import { Scheduler }                  from '../scheduler/Scheduler.js';
-import { PKG, NODE_ENV, SUPPORTED_PLATFORMS } from '../../config/app.config.js';
+import { PKG, NODE_ENV, SUPPORTED_PLATFORMS, PATHS, DB, INSTANCE_DIR } from '../../config/app.config.js';
+import { createBackup, timestamp } from '../instance/Backup.js';
+import path                       from 'node:path';
 import { banner, print }              from '../../shared/utils.js';
 import { WELCOME_MESSAGE, SUB_TITLE } from '../../shared/message.js';
 
@@ -180,6 +182,27 @@ function buildCLI(nyra) {
       };
       process.once('SIGINT', stop);
       process.once('SIGTERM', stop);
+    });
+
+  program
+    .command('backup')
+    .description('Snapshot the database (online, integrity-checked) with the vault, accounts, alerts and context')
+    .option('--out <dir>', 'Backup folder (default instance/backups/eanyra-<time>); prefer another disk')
+    .option('--include-env', 'Also copy the root .env (may contain plaintext settings or legacy secrets)')
+    .action(async options => {
+      const outDir = path.resolve(options.out ?? path.join(INSTANCE_DIR, 'backups', `eanyra-${timestamp()}`));
+      const { manifest } = await createBackup({
+        sequelize: database.sequelize, outDir, includeEnv: Boolean(options.includeEnv), appVersion: PKG.version,
+        paths: {
+          db: DB.storagePath, vault: PATHS.vaultFile, accounts: PATHS.accountsConfig,
+          notifications: PATHS.notificationsConfig, context: PATHS.contextDir, env: PATHS.envFile,
+        },
+      });
+      const bytes = manifest.files.reduce((sum, file) => sum + file.bytes, 0);
+      print(`Backup ready: ${outDir} (${manifest.files.length} files, ${(bytes / 1024 / 1024).toFixed(1)} MiB, database integrity ok).`, 'success');
+      for (const note of manifest.notes) print(note, 'info');
+      print(`Restore: npm run instance:restore -- "${outDir}" --yes  (stop collection, MCP and the web UI first)`, 'info');
+      await database.disconnect();
     });
 
   registerContextCommands(program, nyra.models);

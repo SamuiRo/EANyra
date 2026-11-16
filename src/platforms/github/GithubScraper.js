@@ -17,7 +17,7 @@
  * Rate limiting: GitHub allows 5 000 requests/hour with a PAT.
  */
 
-import { GithubClient, GithubRateLimitError, GithubNotFoundError } from './client.js';
+import { GithubClient, GithubNotFoundError } from './client.js';
 import { print } from '../../shared/utils.js';
 import { GITHUB } from '../../config/app.config.js';
 

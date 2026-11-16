@@ -31,7 +31,7 @@ export async function migrateAccountIdentity(sequelize, migrationName) {
       await execute('ALTER TABLE accounts_identity_new RENAME TO accounts');
       // Discard any explicit legacy unique index over username alone.
       for (const { sql } of indexes) {
-        if (/CREATE UNIQUE INDEX/i.test(sql) && /\(\s*[`"\[]?username[`"\]]?\s*\)/i.test(sql)) continue;
+        if (/CREATE UNIQUE INDEX/i.test(sql) && /\(\s*[`"[]?username[`"\]]?\s*\)/i.test(sql)) continue;
         await execute(sql);
       }
       await execute('CREATE UNIQUE INDEX IF NOT EXISTS accounts_platform_username ON accounts (platform, username)');

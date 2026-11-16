@@ -7,6 +7,9 @@
     "eanyra": "src/core/cli/index.js"
   },
   "type": "module",
+  "engines": {
+    "node": "^20.19.0 || ^22.13.0 || >=24"
+  },
   "scripts": {
     "start": "node src/core/cli/index.js start",
     "nyra": "node src/core/cli/index.js",
@@ -24,9 +27,13 @@
     "login:telegram": "node src/core/cli/telegram-login.js",
     "import-cookies": "node src/core/cli/import-cookies.js",
     "test": "node --test",
+    "lint": "eslint .",
+    "check": "npm run lint && npm test",
     "mcp": "node src/core/mcp/start.js",
     "instance:init": "node src/core/instance/cli.js init",
-    "instance:migrate": "node src/core/instance/cli.js migrate"
+    "instance:migrate": "node src/core/instance/cli.js migrate",
+    "instance:restore": "node src/core/instance/cli.js restore",
+    "backup": "node src/core/cli/index.js backup"
   },
   "repository": {
     "type": "git",
@@ -56,6 +63,9 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.14.0",
+    "globals": "17.14.0",
     "sequelize-cli": "^6.6.2"
   }
 }

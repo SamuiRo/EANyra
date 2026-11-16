@@ -132,8 +132,6 @@ export async function humanScroll(page, { scrollDelayMs = SCRAPER.scrollDelayMs 
  * @param {import('playwright').Page} page
  */
 export async function simulatePageLanding(page) {
-  const viewportSize = page.viewportSize() ?? { width: 1280, height: 900 };
-
   // Move mouse somewhere on the page (arrives from "outside" at top-left)
   await humanMouseMove(
     page,

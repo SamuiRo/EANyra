@@ -10,12 +10,12 @@ export async function acquireScrapeLock(lockPath = `${DB.storagePath}.scrape.loc
   } catch (error) {
     if (error.code !== 'EEXIST') throw error;
     if (!await reclaimStaleLock(lockPath, isAlive)) {
-      throw new Error(`Another scrape is running. Lock: ${lockPath}. If the process crashed, remove this file after verifying no scraper is running.`);
+      throw new Error(`Another scrape is running. Lock: ${lockPath}. If the process crashed, remove this file after verifying no scraper is running.`, { cause: error });
     }
     try {
       handle = await fs.open(lockPath, 'wx');
     } catch (retryError) {
-      if (retryError.code === 'EEXIST') throw new Error(`Another scrape is running. Lock: ${lockPath}.`);
+      if (retryError.code === 'EEXIST') throw new Error(`Another scrape is running. Lock: ${lockPath}.`, { cause: retryError });
       throw retryError;
     }
   }

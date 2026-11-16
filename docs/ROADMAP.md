@@ -52,8 +52,13 @@ the current repository state, not on the older README.
 - [x] **Add automated tests.** `npm test` covers parsing, repositories,
   migrations, context sync and validation, export, MCP over stdio and HTTP,
   the vault, the web server, collection and the content loop.
-- [ ] **Add linting and formatting checks.** There is currently no repeatable
-  code-quality command in `package.json`.
+- [x] **Add linting checks.** ESLint (pinned, release-aged) via `npm run lint`;
+  `npm run check` runs lint and tests. Findings fixed (lost error causes,
+  dead code).
+- [ ] **Update vulnerable runtime dependencies.** `npm audit --omit=dev`
+  reports 24 issues (2 critical, 13 high), e.g. `@modelcontextprotocol/sdk`
+  ≤ 1.31, `sharp`/libvips, `body-parser`; upgrade with MCP/browser regression
+  tests.
 - [x] **Validate account configuration.** Reject missing usernames, unsupported
   platforms, duplicate account keys, and malformed JSON with actionable
   messages.
@@ -96,9 +101,11 @@ the current repository state, not on the older README.
 - [ ] **Normalize user-facing naming.** The package and CLI use `eanyra`, some
   examples use `nyra`, and messages still describe the product as an
   X-only monitoring tool.
-- [ ] **Add a documented Node.js engine requirement** to `package.json`.
+- [x] **Add a documented Node.js engine requirement** to `package.json`.
 - [ ] **Add structured logging levels and optional quiet/debug modes.**
-- [ ] **Document database backup and recovery procedures.**
+- [x] **Database backup and recovery.** `npm run backup` (online snapshot,
+  manifest with hashes) and `npm run instance:restore` (verify, park current
+  files, refuse during collection).
 
 ## Planned Features
 

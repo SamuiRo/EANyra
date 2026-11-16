@@ -90,7 +90,7 @@ export class Credentials {
   /** Runtime MTProto config: shared tuning + API keys + this session's string. */
   telegramConfig(session = DEFAULT_SESSION) {
     const api = this.telegramApi();
-    let sessionString = '';
+    let sessionString;
     if (this.vault) {
       sessionString = this.vault.get('telegram', session)?.session ?? '';
       if (!sessionString && session === DEFAULT_SESSION && this.legacy.telegram.session) {

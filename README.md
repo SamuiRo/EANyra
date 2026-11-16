@@ -40,7 +40,7 @@ signals. Twitter, LinkedIn, and Telegram publications are posts.
 
 ## Requirements
 
-- Node.js 20+; Node.js 22 is recommended
+- Node.js 20.19+, 22.13+ or 24+ (see `engines` in `package.json`); Node.js 22 is recommended
 - npm
 - a GitHub Personal Access Token for GitHub collection
 - a persistent Twitter/X login session for Twitter collection
@@ -357,6 +357,25 @@ Settings live in `instance/notifications.json` (no secrets; example in
 `instance_example/notifications.json.example`). The web overview shows the
 same status and a test button.
 
+## Backup and Restore
+
+```bash
+npm run backup                                   # → instance/backups/eanyra-<time>/
+npm run backup -- --out D:/Backups/eanyra-today  # prefer another disk or cloud folder
+npm run instance:restore -- <backup-dir>         # verify and show what would change
+npm run instance:restore -- <backup-dir> --yes   # restore (stop collection, MCP, web UI first)
+```
+
+A backup holds an online, integrity-checked snapshot of `pot.sqlite`
+(`VACUUM INTO`, safe while collection runs), the encrypted `secrets.vault`,
+`accounts.json`, `notifications.json`, `context/` and a `manifest.json` with
+SHA-256 of every file. `.env` is copied only with `--include-env`, because it
+may still contain plaintext settings. Restore verifies every hash first,
+refuses while a collection holds the scrape lock, and moves the current files
+(including SQLite `-wal`/`-shm`, which must not survive a database swap) to
+`instance/backups/pre-restore-<time>/`. The vault still needs the same master
+password; run `npm run nyra -- vault remember` again on a new PC or user.
+
 ## Web UI
 
 `npm run serve` starts a local web interface on `http://127.0.0.1:3030`
@@ -397,6 +416,9 @@ Use `npm run nyra -- <command>` when the `eanyra` binary is not globally linked.
 | Command | Purpose |
 |---|---|
 | `npm start` | Start the cron daemon |
+| `npm run backup [-- --out <dir>] [--include-env]` | Snapshot database, vault, accounts, alerts and context |
+| `npm run instance:restore -- <dir> [--yes]` | Verify and restore a backup |
+| `npm run lint` / `npm run check` | ESLint / lint + tests |
 | `npm run serve [-- --schedule] [--mcp] [--port <n>]` | Local web UI on 127.0.0.1, optionally with cron collection and MCP at `/mcp` |
 | `npm run nyra -- mcp token [--rotate]` | Create/show/rotate the Bearer token for MCP at `/mcp` |
 | `npm run nyra -- notify telegram-chat` / `discord` | Enable problem alerts via a Telegram bot or a Discord webhook |

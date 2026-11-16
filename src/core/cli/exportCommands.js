@@ -223,10 +223,6 @@ async function runExport(models, opts) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function isoDate(d) {
-  return d.toISOString().slice(0, 10);
-}
-
 function printSummary({ posts, signals, newPostIds, newSignalIds, outPath }) {
   const pTotal = posts.length;
   const pNew   = newPostIds.length;

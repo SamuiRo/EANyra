@@ -125,6 +125,7 @@ async function loadGramJs() {
     if (error.code === 'ERR_MODULE_NOT_FOUND') {
       throw new Error(
         'The "telegram" package is required for Telegram scraping. Run `npm install` first.',
+        { cause: error },
       );
     }
     throw error;

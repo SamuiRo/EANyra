@@ -64,7 +64,7 @@ export async function loadNotifyConfig(filePath = PATHS.notificationsConfig) {
   try {
     return validateNotifyConfig(JSON.parse(raw));
   } catch (error) {
-    throw new Error(`${filePath}: ${error.message}`);
+    throw new Error(`${filePath}: ${error.message}`, { cause: error });
   }
 }
 

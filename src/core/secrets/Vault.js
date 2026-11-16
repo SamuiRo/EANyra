@@ -194,7 +194,7 @@ export class Vault {
     try {
       raw = await fs.readFile(this.filePath, 'utf8');
     } catch (error) {
-      if (error.code === 'ENOENT') throw new Error(`Vault not found: ${this.filePath}. Run \`npm run nyra -- vault init\`.`);
+      if (error.code === 'ENOENT') throw new Error(`Vault not found: ${this.filePath}. Run \`npm run nyra -- vault init\`.`, { cause: error });
       throw error;
     }
     const envelope = JSON.parse(raw);
@@ -234,7 +234,7 @@ export class Vault {
           await fs.unlink(lockPath).catch(() => {});
           continue;
         }
-        if (Date.now() > deadline) throw new Error(`Vault is busy (lock: ${lockPath}).`);
+        if (Date.now() > deadline) throw new Error(`Vault is busy (lock: ${lockPath}).`, { cause: error });
         await new Promise(resolve => setTimeout(resolve, 50));
       }
     }
