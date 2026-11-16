@@ -165,8 +165,9 @@ the current repository state, not on the older README.
 - [x] **Incremental LinkedIn import management.** `linkedin_imports` history,
   unchanged-file skip, ownership conflicts, `linkedin import` / `history` CLI,
   UTC export dates, no silent empty imports.
-- [ ] **Optional community feedback sources.** Evaluate Discord and similar
-  sources as signals after manual signal ingestion and attribution are stable.
+- [x] **Community feedback from Discord.** Bot-read channels become `question`
+  / `community_message` signals (incremental, questions by default, no user
+  ids stored). Other communities (Slack, forums) only on demand.
 - [x] **Per-platform health and run metrics.**
 - [ ] **Container and remote MCP deployment documentation** after transport
   security and lifecycle are tested.

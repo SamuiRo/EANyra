@@ -28,6 +28,10 @@ export const PLATFORM_CATALOG = Object.freeze({
     id: 'telegram', displayName: 'Telegram', output: 'posts', session: 'telegram',
     collection: 'MTProto polling with a user session', publishing: 'auto',
   }),
+  discord: Object.freeze({
+    id: 'discord', displayName: 'Discord', output: 'signals', session: 'discord-bot',
+    collection: 'Bot reads configured channels over REST (questions and feedback)', publishing: null,
+  }),
 });
 
 export const PLATFORM_IDS = Object.freeze(Object.keys(PLATFORM_CATALOG));

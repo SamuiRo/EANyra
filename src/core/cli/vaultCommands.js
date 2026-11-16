@@ -125,11 +125,11 @@ export function registerVaultCommands(program) {
   const secrets = program.command('secrets').description('Manage tokens and API keys in the vault');
 
   secrets.command('set <kind> [name]')
-    .description(`Store a token. Kinds: github, telegram-bot, telegram-api. X and Telegram user logins: use npm run login / login:telegram`)
+    .description(`Store a token. Kinds: github, telegram-bot, discord-bot, telegram-api. X and Telegram user logins: use npm run login / login:telegram`)
     .action(async (kind, name = DEFAULT_SESSION) => {
       assertSessionName(name);
       const store = await requireVault();
-      if (kind === 'github' || kind === 'telegram-bot') {
+      if (kind === 'github' || kind === 'telegram-bot' || kind === 'discord-bot') {
         const token = (await askSecret(`${kind} token for "${name}": `)).trim();
         if (!token) throw new Error('Token cannot be empty.');
         await store.set(kind, name, { token });

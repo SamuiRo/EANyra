@@ -95,6 +95,15 @@ export function validateAccounts(entries) {
         throw new Error(`${platform}/${username}: publish_transport must be "bot" or "mtproto".`);
       }
     }
+    if (platform === 'discord' && !/^\d{15,25}$/.test(username)) {
+      throw new Error(`discord/${username}: username must be the numeric channel id (Developer Mode → Copy Channel ID).`);
+    }
+    if (entry.discord_filter !== undefined) {
+      if (platform !== 'discord') throw new Error(`${platform}/${username}: discord_filter is supported only for Discord.`);
+      if (!['questions', 'all'].includes(entry.discord_filter)) {
+        throw new Error(`${platform}/${username}: discord_filter must be "questions" or "all".`);
+      }
+    }
     if (entry.import_file !== undefined) {
       if (platform !== 'linkedin') throw new Error(`${platform}/${username}: import_file is supported only for LinkedIn.`);
       if (typeof entry.import_file !== 'string' || !IMPORT_FILE.test(entry.import_file)) {

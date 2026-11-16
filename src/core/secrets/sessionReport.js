@@ -1,4 +1,5 @@
 import { GITHUB, TELEGRAM } from '../../config/app.config.js';
+import { PLATFORM_CATALOG } from '../../platforms/catalog.js';
 import { sessionOf, SESSION_PLATFORMS, DEFAULT_SESSION } from '../../config/accountConfig.js';
 
 /**
@@ -14,7 +15,8 @@ export function sessionReport(entries, store, now = Date.now()) {
   };
   for (const entry of entries) {
     if (SESSION_PLATFORMS.includes(entry.platform)) {
-      row(entry.platform, sessionOf(entry)).accounts.push(`${entry.platform}/${entry.username}`);
+      // The secret kind can differ from the platform id (discord → discord-bot).
+      row(PLATFORM_CATALOG[entry.platform].session, sessionOf(entry)).accounts.push(`${entry.platform}/${entry.username}`);
     }
     if (entry.platform === 'telegram' && entry.publish_enabled === true &&
         (entry.publish_transport ?? 'bot') === 'bot') {
@@ -32,7 +34,7 @@ function describeSecret({ kind, name }, store, now) {
   if (!store) return { ok: name === DEFAULT_SESSION, state: name === DEFAULT_SESSION ? 'from .env (plaintext)' : 'needs the vault' };
   const value = store.get(kind, name);
   if (!value) {
-    const legacy = { 'telegram': TELEGRAM.session, 'telegram-bot': TELEGRAM.botToken, 'github': GITHUB.token }[kind];
+    const legacy = { 'telegram': TELEGRAM.session, 'telegram-bot': TELEGRAM.botToken, 'github': GITHUB.token, 'discord-bot': process.env.DISCORD_BOT_TOKEN }[kind];
     if (name === DEFAULT_SESSION && legacy) return { ok: true, state: 'from .env (plaintext, run vault migrate)' };
     return { ok: false, state: 'MISSING' };
   }

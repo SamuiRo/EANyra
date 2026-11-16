@@ -436,6 +436,26 @@ the web «Задачі» tab. The remaining accounts are collected on the next r
 Console output: `LOG_LEVEL=debug|info|warn|error|silent`, or `--quiet` /
 `--debug` on any `npm run nyra -- <command>`.
 
+## Discord Community Signals
+
+A Discord bot can read questions and feedback from your community channels
+and turn them into signals (material for posts), never posts.
+
+1. Create a bot in the Discord Developer Portal, enable the **Message Content**
+   intent, and invite it with View Channel + Read Message History only.
+2. Store its token: `npm run nyra -- secrets set discord-bot`.
+3. Add each channel by its numeric id (Discord Developer Mode → Copy Channel ID):
+
+```json
+{ "username": "123456789012345678", "display_name": "Server #feedback", "platform": "discord" }
+```
+
+By default only questions are kept (a sentence with "?"); set
+`"discord_filter": "all"` for a dedicated feedback channel. The first run
+reads the latest 100 messages, later runs only new ones. Bot and system
+messages are skipped and only the author's display name is stored. The AI
+finds them with `signals_get` (`source: "discord"`, `signal_type: "question"`).
+
 ## CLI
 
 Use `npm run nyra -- <command>` (the npm shortcut for the `eanyra` binary)

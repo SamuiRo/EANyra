@@ -211,7 +211,8 @@ publications finish.
 
 ## Platform Modules
 
-Platforms are registered in two places that must agree (enforced at import
+Platforms: Twitter/X, LinkedIn and Telegram (posts), GitHub and Discord
+(signals). Platforms are registered in two places that must agree (enforced at import
 time and by tests):
 
 - `platforms/catalog.js`: dependency-free metadata — id, display name, where

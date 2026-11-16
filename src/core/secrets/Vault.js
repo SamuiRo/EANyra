@@ -30,6 +30,7 @@ export const SECRET_KINDS = Object.freeze({
   'github':       'GitHub personal access token',
   'mcp-token':    'Bearer token for MCP clients of `eanyra serve` (/mcp)',
   'discord-webhook': 'Discord webhook URL for problem alerts',
+  'discord-bot':  'Discord bot token for reading community channels',
 });
 
 export const DEFAULT_SESSION = 'default';

@@ -138,6 +138,18 @@ export class Credentials {
     return this.legacy.githubToken ?? '';
   }
 
+  // ── Discord ─────────────────────────────────────────────────────────────────
+
+  discordBotToken(session = DEFAULT_SESSION) {
+    if (this.vault) {
+      const token = this.vault.get('discord-bot', session)?.token;
+      if (token || session !== DEFAULT_SESSION) return token ?? '';
+    } else {
+      this.#assertLegacySession(session);
+    }
+    return process.env.DISCORD_BOT_TOKEN ?? '';
+  }
+
   // ── MCP over HTTP (eanyra serve) ────────────────────────────────────────────
 
   /** Token MCP clients must send to /mcp; '' when none is configured. */

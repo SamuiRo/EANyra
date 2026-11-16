@@ -66,12 +66,12 @@ export const signalTools = [
       properties: {
         source: {
           type:        'string',
-          enum:        ['github', 'note', 'article', 'tool_review', 'news'],
+          enum:        ['github', 'discord', 'note', 'article', 'tool_review', 'news'],
           description: 'Filter by signal source. Omit for all sources.',
         },
         signal_type: {
           type:        'string',
-          enum:        ['release', 'commit_batch', 'new_repo', 'readme_change', 'idea', 'draft', 'article'],
+          enum:        ['release', 'commit_batch', 'new_repo', 'readme_change', 'question', 'community_message', 'idea', 'draft', 'article'],
           description: 'Filter by signal type. Omit for all types.',
         },
         used_for_content: {

@@ -13,7 +13,7 @@
 import { createHash } from 'node:crypto';
 
 const HOUR = 36e5;
-const LABEL = { twitter: 'X', telegram: 'Telegram', github: 'GitHub', linkedin: 'LinkedIn', 'telegram-bot': 'Telegram-бот' };
+const LABEL = { twitter: 'X', telegram: 'Telegram', github: 'GitHub', linkedin: 'LinkedIn', 'telegram-bot': 'Telegram-бот', 'discord-bot': 'Discord-бот' };
 
 /**
  * @param {import('../services/sql.js').Executor} db

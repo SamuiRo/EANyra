@@ -21,6 +21,7 @@ import { PLATFORM_IDS } from './catalog.js';
 import { createScraper as createTwitterScraper } from './twitter/index.js';
 import { createScraper as createGithubScraper } from './github/index.js';
 import { createScraper as createLinkedinImporter } from './linkedin/index.js';
+import { DiscordClient, messageToSignal, newerId } from './discord/DiscordClient.js';
 
 export const COLLECTORS = Object.freeze({
   twitter: {
@@ -112,6 +113,44 @@ export const COLLECTORS = Object.freeze({
           accountId: account.id, fileName: file.name, sha256: file.sha256, bytes: file.bytes,
           status: 'imported', rows: posts.length, newPosts: saved, conflicts, newestPostAt,
         }),
+      };
+    },
+  },
+
+  discord: {
+    async collect({ account, entry, session, runtime, repos, fetchImpl }) {
+      const token = runtime.credentials.discordBotToken(session);
+      if (!token) {
+        throw Object.assign(new Error(
+          `No Discord bot token for session "${session}". Run \`npm run nyra -- secrets set discord-bot ${session}\`.`,
+        ), { code: 'DISCORD_TOKEN_MISSING' });
+      }
+      const client = new DiscordClient({ token, ...(fetchImpl ? { fetchImpl } : {}) });
+      const channelId = account.username;
+      const channel = await client.channel(channelId);
+      const lastSeen = await repos.stateRepo?.get('discord_last_id', channelId);
+
+      // First run: the latest page only. Later: everything after the checkpoint.
+      const messages = [];
+      let after = lastSeen;
+      for (let page = 0; page < (lastSeen ? 10 : 1); page++) {
+        const batch = await client.messages(channelId, { after: after ?? undefined, limit: 100 });
+        messages.push(...batch);
+        if (batch.length < 100 || !lastSeen) break;
+        after = batch.reduce((max, message) => newerId(max, message.id), after);
+      }
+
+      const newest = messages.reduce((max, message) => newerId(max, message.id), lastSeen ?? null);
+      const records = messages
+        .map(message => messageToSignal(message, {
+          channelId, guildId: channel.guild_id, channelName: channel.name, filter: entry?.discord_filter ?? 'questions',
+        }))
+        .filter(Boolean);
+      return {
+        records,
+        onSaved: async () => {
+          if (newest && newest !== lastSeen) await repos.stateRepo?.setMany('discord_last_id', [[channelId, newest]]);
+        },
       };
     },
   },

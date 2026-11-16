@@ -29,7 +29,7 @@ async function fixture(t, accounts) {
 
 test('the platform catalog is the single registry for config, sessions and collectors', () => {
   assert.deepEqual(SUPPORTED_PLATFORMS, PLATFORM_IDS);
-  assert.deepEqual([...SESSION_PLATFORMS].sort(), ['github', 'telegram', 'twitter']);
+  assert.deepEqual([...SESSION_PLATFORMS].sort(), ['discord', 'github', 'telegram', 'twitter']);
   for (const id of PLATFORM_IDS) {
     assert.equal(typeof COLLECTORS[id]?.collect, 'function', id);
     assert.ok(['posts', 'signals'].includes(PLATFORM_CATALOG[id].output), id);

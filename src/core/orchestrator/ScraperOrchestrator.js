@@ -52,6 +52,7 @@ import { acquireScrapeLock } from './ScrapeLock.js';
 /** Errors that mean a login itself is unusable, not just one profile. */
 const SESSION_ERRORS = [
   TWITTER_SESSION_EXPIRED, 'TWITTER_SESSION_MISSING', 'TELEGRAM_SESSION_FAILED', 'GITHUB_TOKEN_MISSING',
+  'DISCORD_TOKEN_MISSING', 'DISCORD_UNAUTHORIZED',
 ];
 
 export class ScraperOrchestrator {
