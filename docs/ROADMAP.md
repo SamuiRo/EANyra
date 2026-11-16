@@ -118,8 +118,8 @@ the current repository state, not on the older README.
 - [x] **Local web server.** `eanyra serve` on 127.0.0.1: account/session health,
   collection jobs, posts and signals, context sync, and approval of
   AI-prepared Telegram drafts.
-- [ ] **Embed the MCP HTTP transport in `eanyra serve`** so one process serves
-  the browser and remote-capable agents.
+- [x] **Embed the MCP HTTP transport in `eanyra serve`** (`--mcp`, Bearer
+  token in the vault, browsers refused).
 - [x] **Unified drafts for all platforms.** AI prepares posts per persona and
   platform; X/LinkedIn stay manual-publish (compose link + mark published),
   Telegram publishes after approval.

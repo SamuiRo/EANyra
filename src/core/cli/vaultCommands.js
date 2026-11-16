@@ -6,7 +6,8 @@
 
 import fs from 'node:fs/promises';
 
-import { GITHUB, PATHS, TELEGRAM, VAULT } from '../../config/app.config.js';
+import { randomBytes } from 'node:crypto';
+import { GITHUB, PATHS, TELEGRAM, VAULT, WEB } from '../../config/app.config.js';
 import { validateAccounts, sessionOf, SESSION_PLATFORMS, DEFAULT_SESSION } from '../../config/accountConfig.js';
 import { askSecret, askText } from '../../shared/prompt.js';
 import { print } from '../../shared/utils.js';
@@ -160,6 +161,23 @@ export function registerVaultCommands(program) {
       print(removed ? `Deleted ${kind}/${name}.` : `${kind}/${name} was not stored.`, removed ? 'success' : 'warning');
     });
 
+  const mcp = program.command('mcp').description('MCP access for AI clients');
+  mcp.command('token')
+    .description('Create (or show) the token MCP clients send to `npm run serve` at /mcp')
+    .option('--rotate', 'Replace the token; clients using the old one stop working')
+    .action(async options => {
+      const store = await requireVault();
+      let token = store.get('mcp-token', DEFAULT_SESSION)?.token;
+      if (!token || options.rotate) {
+        token = randomBytes(32).toString('base64url');
+        await store.set('mcp-token', DEFAULT_SESSION, { token });
+        print(options.rotate ? 'MCP token rotated.' : 'MCP token created.', 'success');
+      }
+      print('Configure your MCP client with this header (keep it secret):', 'info');
+      process.stdout.write(`\n  Authorization: Bearer ${token}\n\n`);
+      print(`Endpoint: http://127.0.0.1:${WEB.port}/mcp while \`npm run serve\` runs.`, 'info');
+    });
+
   program.command('sessions')
     .description('Show which login each account uses and whether it is configured')
     .action(async () => {
@@ -222,7 +240,7 @@ export function sessionReport(entries, store, now = Date.now()) {
     }
   }
   for (const item of store?.list() ?? []) {
-    if (item.kind !== 'telegram-api') row(item.kind, item.name);
+    if (!['telegram-api', 'mcp-token'].includes(item.kind)) row(item.kind, item.name);
   }
   return [...rows.values()].map(item => ({ ...item, ...describeSecret(item, store, now) }))
     .sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));

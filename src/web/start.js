@@ -24,13 +24,16 @@ import { UserContextRepository } from '../core/teapot/repositories/UserContextRe
 import { print } from '../shared/utils.js';
 import { WebAuth, tokenVerifier } from './auth.js';
 import { createWebServer } from './server.js';
+import { createMcpServer, McpHttpSessions } from '../core/mcp/mcpServer.js';
+import { Credentials } from '../core/secrets/Credentials.js';
 
 /**
- * @param {{ host?: string, port?: number, schedule?: boolean,
+ * @param {{ host?: string, port?: number, schedule?: boolean, mcp?: boolean,
  *           models?: { UserContext: object, Project: object } }} [opts]
  *   models enables "sync context" from the browser (YAML → database).
+ *   mcp mounts the MCP server at /mcp (Bearer token from `eanyra mcp token`).
  */
-export async function startWebServer({ host = WEB.host, port = WEB.port, schedule = false, models } = {}) {
+export async function startWebServer({ host = WEB.host, port = WEB.port, schedule = false, mcp = false, models } = {}) {
   const hasVault = await new Vault(PATHS.vaultFile).exists();
   let token = null;
   const auth = new WebAuth({
@@ -69,10 +72,27 @@ export async function startWebServer({ host = WEB.host, port = WEB.port, schedul
     },
   };
 
+  const tools = buildTools({ jobs, publications });
+  // Same tools and job manager for the browser and for AI clients.
+  const mcpSessions = mcp
+    ? new McpHttpSessions({ createServer: () => createMcpServer({ tools, log: message => print(`[mcp] ${message}`, 'system') }) })
+    : null;
   const server = createWebServer({
-    host, port, auth, mode: hasVault ? 'vault' : 'token',
-    tools: buildTools({ jobs, publications }), routes,
-    info: { version: PKG.version, scheduler: schedule },
+    host, port, auth, mode: hasVault ? 'vault' : 'token', tools, routes,
+    info: { version: PKG.version, scheduler: schedule, mcp },
+    ...(mcpSessions ? {
+      mcp: {
+        handle: (req, res) => mcpSessions.handle(req, res),
+        // Read on every request: the vault may be unlocked after startup.
+        token: async () => {
+          try {
+            return (await Credentials.open({ interactive: false })).mcpToken();
+          } catch {
+            return '';
+          }
+        },
+      },
+    } : {}),
   });
 
   let scheduler = null;
@@ -99,9 +119,13 @@ export async function startWebServer({ host = WEB.host, port = WEB.port, schedul
   } else {
     print('Log in with your master password.', 'info');
   }
+  if (mcpSessions) {
+    print(`MCP for AI clients → ${url}mcp (header Authorization: Bearer <token from \`npm run nyra -- mcp token\`>)`, 'info');
+  }
 
   const shutdown = async () => {
     scheduler?.stop();
+    await mcpSessions?.close();
     jobs.close();
     publications.close();
     server.close();

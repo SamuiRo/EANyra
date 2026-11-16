@@ -138,6 +138,14 @@ export class Credentials {
     return this.legacy.githubToken ?? '';
   }
 
+  // ── MCP over HTTP (eanyra serve) ────────────────────────────────────────────
+
+  /** Token MCP clients must send to /mcp; '' when none is configured. */
+  mcpToken() {
+    if (this.vault) return this.vault.get('mcp-token', DEFAULT_SESSION)?.token ?? '';
+    return process.env.MCP_HTTP_TOKEN ?? '';
+  }
+
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
   #assertLegacySession(session) {

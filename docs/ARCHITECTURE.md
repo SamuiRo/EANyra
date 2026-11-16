@@ -69,6 +69,12 @@ browser ──► src/web/server.js ──► toolRegistry (same tools as MCP) �
   with idle expiry; login throttling.
 - `POST /api/tools/<name>` runs any registered tool through `callTool`, which
   validates arguments with the tool's JSON schema exactly like MCP.
+- `--mcp` mounts `core/mcp/mcpServer.js` (`createMcpServer`,
+  `McpHttpSessions`, shared with the standalone MCP server) at `/mcp`. It
+  requires `Authorization: Bearer` with the vault secret `mcp-token/default`
+  (legacy: `MCP_HTTP_TOKEN`), compared by SHA-256 digest in constant time,
+  refuses any `Origin`, and answers 503 while no token is readable (locked
+  vault).
 - `src/web/public/`: dependency-free UI; untrusted collected text is only set
   through `textContent`.
 

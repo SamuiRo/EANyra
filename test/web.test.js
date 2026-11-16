@@ -112,3 +112,48 @@ test('a vault-backed verifier treats a wrong master password as a failed login',
 test('the server refuses to bind beyond loopback', () => {
   assert.throws(() => createWebServer({ host: '0.0.0.0', auth: {}, tools: [] }), /local-only/);
 });
+
+test('serve mounts MCP at /mcp behind a Bearer token and refuses browsers', async t => {
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+  const { createMcpServer, McpHttpSessions } = await import('../src/core/mcp/mcpServer.js');
+  const tools = [{
+    name: 'echo_tool', description: 'Echo',
+    inputSchema: { type: 'object', required: ['text'], properties: { text: { type: 'string' } } },
+    handler: async ({ text }) => ({ echoed: text }),
+  }];
+  let token = 'correct-token';
+  const sessions = new McpHttpSessions({ createServer: () => createMcpServer({ tools }) });
+  const server = createWebServer({
+    port: 0, auth: new WebAuth({ verifyPassword: tokenVerifier('x') }), mode: 'token', tools,
+    mcp: { handle: (req, res) => sessions.handle(req, res), token: async () => token },
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { await sessions.close(); await new Promise(resolve => server.close(resolve)); });
+  const url = new URL(`http://127.0.0.1:${server.address().port}/mcp`);
+  const init = { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 't', version: '1' } } };
+  const post = headers => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', ...headers }, body: JSON.stringify(init) });
+
+  assert.equal((await post({})).status, 401);
+  assert.equal((await post({ Authorization: 'Bearer wrong' })).status, 401);
+  assert.equal((await post({ Authorization: 'Bearer correct-token', Origin: 'https://evil.example' })).status, 403);
+  // The web session cookie is not a substitute for the token.
+  assert.equal((await post({ Cookie: 'eanyra_session=anything' })).status, 401);
+
+  const client = new Client({ name: 'serve-test', version: '1.0' });
+  await client.connect(new StreamableHTTPClientTransport(url, { requestInit: { headers: { Authorization: 'Bearer correct-token' } } }));
+  t.after(() => client.close());
+  assert.deepEqual((await client.listTools()).tools.map(tool => tool.name), ['echo_tool']);
+  const result = await client.callTool({ name: 'echo_tool', arguments: { text: 'hi' } });
+  assert.deepEqual(JSON.parse(result.content[0].text), { echoed: 'hi' });
+  assert.ok((await client.listPrompts()).prompts.some(prompt => prompt.name === 'write_post'));
+
+  // Without a configured token (or with a locked vault) the endpoint is closed.
+  token = '';
+  assert.equal((await post({ Authorization: 'Bearer correct-token' })).status, 503);
+});
+
+test('/mcp is absent unless enabled', async t => {
+  const { request } = await start(t);
+  assert.equal((await request('/mcp', { raw: true })).status, 404);
+});

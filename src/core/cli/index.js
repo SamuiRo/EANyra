@@ -162,11 +162,13 @@ function buildCLI(nyra) {
     .description('Start the local web UI (127.0.0.1) for accounts, collection, posts and drafts')
     .option('--port <port>', 'Port (default WEB_PORT or 3030)')
     .option('--schedule', 'Also run scheduled collection (CRON_SCHEDULE) in this process')
+    .option('--mcp', 'Also serve MCP for AI clients at /mcp (token: npm run nyra -- mcp token)')
     .action(async options => {
       const { startWebServer } = await import('../../web/start.js');
       const { shutdown } = await startWebServer({
         ...(options.port ? { port: Number(options.port) } : {}),
         schedule: Boolean(options.schedule),
+        mcp: Boolean(options.mcp),
         models: nyra.models,
       });
       const stop = async () => {

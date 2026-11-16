@@ -353,7 +353,10 @@ one-time access token.
 
 The browser calls the same tools as the AI agent (`core/mcp/toolRegistry.js`),
 with the same validation. `npm run serve -- --schedule` also runs cron
-collection in the same process. The server binds to loopback only, checks the
+collection in the same process, and `npm run serve -- --mcp` exposes the MCP
+server at `/mcp` for AI clients (Bearer token from
+`npm run nyra -- mcp token`; browser origins refused), so the agent and the
+UI share one process, one job table and the unlocked vault. The server binds to loopback only, checks the
 Host header, requires a same-origin custom header on every POST, uses
 HttpOnly SameSite=Strict session cookies, throttles failed logins and sends a
 strict Content-Security-Policy.
@@ -365,7 +368,8 @@ Use `npm run nyra -- <command>` when the `eanyra` binary is not globally linked.
 | Command | Purpose |
 |---|---|
 | `npm start` | Start the cron daemon |
-| `npm run serve [-- --schedule] [--port <n>]` | Local web UI on 127.0.0.1 (optionally with cron collection) |
+| `npm run serve [-- --schedule] [--mcp] [--port <n>]` | Local web UI on 127.0.0.1, optionally with cron collection and MCP at `/mcp` |
+| `npm run nyra -- mcp token [--rotate]` | Create/show/rotate the Bearer token for MCP at `/mcp` |
 | `npm run scrape` | Collect all active configured accounts once |
 | `npm run scrape:twitter` | Collect Twitter/X accounts once |
 | `npm run scrape:github` | Collect GitHub accounts once |

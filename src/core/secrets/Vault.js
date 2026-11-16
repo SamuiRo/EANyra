@@ -28,6 +28,7 @@ export const SECRET_KINDS = Object.freeze({
   'telegram-api': 'Telegram API id and hash from my.telegram.org',
   'telegram-bot': 'Telegram bot token for publishing',
   'github':       'GitHub personal access token',
+  'mcp-token':    'Bearer token for MCP clients of `eanyra serve` (/mcp)',
 });
 
 export const DEFAULT_SESSION = 'default';

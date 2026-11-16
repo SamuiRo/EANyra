@@ -9,8 +9,11 @@
  *     browser sends one, a same-origin Origin (blocks CSRF)
  *   - strict Content-Security-Policy without inline scripts, no framing
  *   - request bodies are JSON and capped at 64 KiB
+ *   - optional /mcp for AI clients: Bearer token instead of the cookie, and
+ *     browser requests (any Origin) are refused
  */
 
+import { createHash, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
@@ -54,9 +57,11 @@ export class HttpError extends Error {
  *   routes?: Record<string, (ctx: { body: object, query: URLSearchParams }) => Promise<unknown>>,
  *   info?: object,
  *   onLogin?: () => Promise<void>|void,
+ *   mcp?: { handle: (req, res) => Promise<void>, token: () => Promise<string>|string },
  * }} options
+ *   mcp.token returns the expected Bearer token ('' disables /mcp).
  */
-export function createWebServer({ host = '127.0.0.1', port = 3030, auth, mode, tools, routes = {}, info = {}, onLogin }) {
+export function createWebServer({ host = '127.0.0.1', port = 3030, auth, mode, tools, routes = {}, info = {}, onLogin, mcp }) {
   if (!LOOPBACK.includes(host)) {
     throw new Error('The web server is local-only. Bind WEB_HOST to 127.0.0.1, localhost or ::1.');
   }
@@ -67,6 +72,15 @@ export function createWebServer({ host = '127.0.0.1', port = 3030, auth, mode, t
       const actualPort = server.address()?.port ?? port;
       const url = new URL(req.url, 'http://placeholder');
       assertHost(req, actualPort);
+
+      if (url.pathname === '/mcp') {
+        if (!mcp) throw new HttpError(404, 'MCP is not enabled. Start with `npm run serve -- --mcp`.');
+        // AI clients are not browsers; a page must never reach the agent tools.
+        if (req.headers.origin) throw new HttpError(403, 'Browser requests to /mcp are not allowed.');
+        await assertBearer(req, await mcp.token());
+        await mcp.handle(req, res);
+        return;
+      }
 
       if (req.method === 'GET' && STATIC[url.pathname]) {
         await sendStatic(res, ...STATIC[url.pathname]);
@@ -113,7 +127,7 @@ export function createWebServer({ host = '127.0.0.1', port = 3030, auth, mode, t
       throw new HttpError(404, 'Not found');
     } catch (error) {
       const status = error.status ?? 500;
-      if (status >= 500) process.stderr.write(`[eanyra-web] ${req.method} ${req.url}: ${error.stack ?? error.message}\n`);
+      if (!error.status) process.stderr.write(`[eanyra-web] ${req.method} ${req.url}: ${error.stack ?? error.message}\n`);
       if (!res.headersSent) sendJson(res, status, { error: error.message });
       else res.end();
     }
@@ -121,6 +135,18 @@ export function createWebServer({ host = '127.0.0.1', port = 3030, auth, mode, t
   server.headersTimeout = 20_000;
   server.requestTimeout = 60_000;
   return server;
+}
+
+async function assertBearer(req, expected) {
+  if (!expected) {
+    throw new HttpError(503, 'No MCP token is available: create one with `npm run nyra -- mcp token`, and unlock the vault (log in to the web UI or `vault remember`).');
+  }
+  const given = String(req.headers.authorization ?? '').match(/^Bearer\s+(\S+)$/i)?.[1] ?? '';
+  // Compare digests so the comparison time does not depend on the length.
+  const digest = value => createHash('sha256').update(value).digest();
+  if (!given || !timingSafeEqual(digest(given), digest(expected))) {
+    throw new HttpError(401, 'Invalid or missing MCP token.');
+  }
 }
 
 function assertHost(req, port) {
