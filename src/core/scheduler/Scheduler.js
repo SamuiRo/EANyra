@@ -31,9 +31,12 @@ export class Scheduler {
       await this.#execute();
     }
 
+    // node-cron 4 starts the task immediately; noOverlap skips a tick while
+    // the previous collection is still running (it can take hours).
     this.task = cron.schedule(SCHEDULER.cronSchedule, () => this.#execute(), {
-      scheduled: true,
       timezone:  'UTC',
+      noOverlap: true,
+      name:      'eanyra-collection',
     });
 
     print(`Scheduler started. Next runs: ${SCHEDULER.cronSchedule} (UTC)`, 'system');

@@ -55,10 +55,13 @@ the current repository state, not on the older README.
 - [x] **Add linting checks.** ESLint (pinned, release-aged) via `npm run lint`;
   `npm run check` runs lint and tests. Findings fixed (lost error causes,
   dead code).
-- [ ] **Update vulnerable runtime dependencies.** `npm audit --omit=dev`
-  reports 24 issues (2 critical, 13 high), e.g. `@modelcontextprotocol/sdk`
-  ≤ 1.31, `sharp`/libvips, `body-parser`; upgrade with MCP/browser regression
-  tests.
+- [x] **Update vulnerable runtime dependencies.** 24 runtime advisories
+  (2 critical, 13 high) reduced to one accepted moderate: `sharp` removed
+  (unused), MCP SDK 1.32.2, zod 4.6.7, yaml 2.9.1, sqlite3 6.0.1, node-cron
+  4.6.0 and patched transitive packages, all at least two weeks old.
+  Accepted: `uuid` < 11.1.1 inside `sequelize` 6 (the advisory affects
+  v3/v5/v6 with a caller buffer; Sequelize only calls v1/v4; the fix needs a
+  major `uuid` Sequelize 6 does not support). Re-run `npm audit` regularly.
 - [x] **Validate account configuration.** Reject missing usernames, unsupported
   platforms, duplicate account keys, and malformed JSON with actionable
   messages.
@@ -96,8 +99,8 @@ the current repository state, not on the older README.
 - [x] **Reduce duplicate browser stealth logic.** Interactive login now uses a
   normal headful browser without scraper-specific API patches.
 - [ ] **Remove unused configuration and helpers or connect them to behavior.**
-  Examples include `TWITTER.homeUrl`, parts of cookie configuration, and
-  generic image/file helpers that are not used by the pipeline.
+  Remaining: `TWITTER.homeUrl` and parts of cookie configuration (the unused
+  image/file helpers and `sharp` were removed).
 - [ ] **Normalize user-facing naming.** The package and CLI use `eanyra`, some
   examples use `nyra`, and messages still describe the product as an
   X-only monitoring tool.

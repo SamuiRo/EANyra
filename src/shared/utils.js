@@ -1,12 +1,6 @@
 import chalk       from 'chalk';
 import gradient    from 'gradient-string';
 import fs          from 'fs/promises';
-import path        from 'path';
-import sharp       from 'sharp';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename);
 
 // ─── Palette (NieR Automata inspired) ───────────────────────────────────────
 
@@ -136,85 +130,6 @@ export function sleep(ms) {
 export function jitter(minMs, maxMs) {
   const delay = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs;
   return sleep(delay);
-}
-
-/**
- * Load image from assets/images/ directory.
- * @param {string} filename
- * @returns {Promise<Object|null>}
- */
-export async function loadImage(filename) {
-  try {
-    const imagePath = path.join(__dirname, '../assets/images', filename);
-    const data      = await fs.readFile(imagePath);
-    const ext       = path.extname(filename).toLowerCase();
-
-    const mimeTypes = {
-      '.png':  'image/png',
-      '.jpg':  'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.gif':  'image/gif',
-      '.webp': 'image/webp',
-    };
-
-    const metadata = await sharp(data).metadata();
-
-    return {
-      type:     'photo',
-      data,
-      filename: undefined,
-      mimeType: mimeTypes[ext] ?? 'image/png',
-      fileSize: data.length,
-      duration: undefined,
-      width:    metadata.width,
-      height:   metadata.height,
-    };
-  } catch (error) {
-    print(`Failed to load image ${filename}: ${error.message}`, 'error');
-    return null;
-  }
-}
-
-/**
- * Write JSON to file (overwrites).
- * @param {string} filePath
- * @param {*} data
- */
-export async function saveToJson(filePath, data) {
-  try {
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
-  } catch (error) {
-    print(`saveToJson error: ${error.message}`, 'error');
-  }
-}
-
-/**
- * Write text to file (overwrites).
- * @param {string} filePath
- * @param {string} text
- */
-export async function saveToTxt(filePath, text) {
-  try {
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, text, 'utf-8');
-  } catch (error) {
-    print(`saveToTxt error: ${error.message}`, 'error');
-  }
-}
-
-/**
- * Append text to file (creates if missing).
- * @param {string} filePath
- * @param {string} text
- */
-export async function appendToTxt(filePath, text) {
-  try {
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.appendFile(filePath, text + '\n', 'utf-8');
-  } catch (error) {
-    print(`appendToTxt error: ${error.message}`, 'error');
-  }
 }
 
 /**
