@@ -77,6 +77,9 @@ browser ──► src/web/server.js ──► toolRegistry (same tools as MCP) �
   vault).
 - `src/web/public/`: dependency-free UI; untrusted collected text is only set
   through `textContent`.
+- Management routes (`/api/accounts/*`, `/api/sessions/*`, `/api/secrets/*`)
+  require the vault; secrets are write-only, and deleting one re-checks the
+  master password (403 on mismatch, so the browser session survives).
 
 ## Repository Layout
 
@@ -254,6 +257,8 @@ workers) and on the direct sqlite3 connection (MCP, the planned web server):
 | `StatusService` | Health, freshness per platform and account, per-run account outcomes |
 | `ContentService` | Drafts, manual signals, signal→publication attribution, content plan, performance |
 | `draftLinks` | Map a published URL to the collector's `platform_id`; link drafts to collected posts |
+| `AccountConfigService` | Validated, atomic edits of `accounts.json` (whole-file validation, unknown fields preserved) |
+| `SessionLogins` | Web-driven logins: X cookie import or a login window (`core/browser/loginWindow.js`), Telegram QR with 2FA; results go to the vault |
 
 ### Twitter/X
 

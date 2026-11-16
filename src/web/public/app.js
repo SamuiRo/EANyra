@@ -102,11 +102,12 @@ function confirmDialog(title, body, okLabel = 'Підтвердити') {
   });
 }
 
-function askDialog(title, label, { value = '', placeholder = '' } = {}) {
+function askDialog(title, label, { value = '', placeholder = '', type = 'text' } = {}) {
   const dialog = $('#ask');
   $('#ask-title').textContent = title;
   $('#ask-label').textContent = label;
   const input = $('#ask-input');
+  input.type = type;
   input.value = value;
   input.placeholder = placeholder;
   return new Promise(resolve => {
@@ -363,47 +364,72 @@ const VIEWS = {
   },
 
   async accounts() {
-    const [list, personas, sessions] = await Promise.all([
+    const [list, personas, sessions, config, apiKeys] = await Promise.all([
       tool('accounts_list', { active_only: false }),
       tool('personas_list'),
       api('/api/sessions'),
+      api('/api/accounts/config'),
+      api('/api/secrets/api').catch(() => ({ telegram_api: false })),
     ]);
+    const stats = new Map(list.accounts.map(a => [`${a.platform}/${a.username}`, a]));
     const sessionByAccount = new Map();
     for (const row of sessions.sessions) {
-      for (const ref of row.accounts) sessionByAccount.set(ref.replace(' (publish)', ''), row);
+      for (const ref of row.accounts) {
+        if (!ref.endsWith('(publish)')) sessionByAccount.set(ref, row);
+      }
     }
-    const rows = list.accounts.map(a => {
-      const key = `${a.platform}/${a.username}`;
+    ACCOUNT_CONTEXT.platforms = config.platforms;
+    ACCOUNT_CONTEXT.sessions = sessions.sessions;
+
+    const rows = config.accounts.map(entry => {
+      const key = `${entry.platform}/${entry.username}`;
+      const a = stats.get(key);
       const s = sessionByAccount.get(key);
+      const archived = entry.archive === true;
+      const active = !archived && entry.active !== false;
       return h('tr', {},
-        h('td', {}, h('div', {}, a.display_name ?? a.username), h('div', { class: 'muted mono' }, key)),
-        h('td', {}, a.persona ?? '—'),
+        h('td', {}, h('div', {}, entry.display_name ?? entry.username), h('div', { class: 'muted mono' }, key)),
+        h('td', {}, a?.persona ?? '—'),
         h('td', {}, s ? h('span', {}, s.name, ' ', badge(sessionState(s.state), sessionKind(s))) : '—'),
-        h('td', {}, a.is_active ? when(a.last_scraped_at) : badge('архів', 'skipped')),
-        h('td', {}, fmt(a.posts_in_db), ' / ', fmt(a.signals_in_db)),
-        h('td', {}, a.is_active ? h('button', { class: 'small', onclick: () => startScrape({ platform: a.platform, account: a.username }, key) }, 'Зібрати') : null),
+        h('td', {}, archived ? badge('архів', 'skipped') : active ? when(a?.last_scraped_at) : badge('вимкнено', 'skipped')),
+        h('td', {}, fmt(a?.posts_in_db ?? 0), ' / ', fmt(a?.signals_in_db ?? 0)),
+        h('td', {}, h('div', { class: 'draft-actions' },
+          active && h('button', { class: 'small', onclick: () => startScrape({ platform: entry.platform, account: entry.username }, key) }, 'Зібрати'),
+          h('button', { class: 'small', onclick: () => editAccount(entry) }, 'Редагувати'),
+          h('button', { class: 'small ghost', onclick: () => archiveAccount(key, !archived) }, archived ? 'Відновити' : 'Архівувати'),
+        )),
       );
     });
+
     const sessionRows = sessions.sessions.map(s => h('tr', {},
       h('td', { class: 'mono' }, `${s.kind}/${s.name}`),
       h('td', {}, badge(sessionState(s.state), sessionKind(s))),
       h('td', {}, s.accounts.join(', ') || h('span', { class: 'muted' }, 'не використовується')),
+      h('td', {}, h('div', { class: 'draft-actions' }, sessionActions(s.kind, s.name, s))),
     ));
+
     return [
       card(
-        h('h2', {}, `Акаунти (${list.count})`),
-        h('p', { class: 'muted' }, 'Список редагується в instance/accounts.json; поле "session" задає логін акаунта.'),
-        h('div', { class: 'table-wrap' }, h('table', {},
+        h('div', { class: 'row between' }, h('h2', {}, `Акаунти (${config.accounts.length})`),
+          h('button', { class: 'primary small', onclick: () => editAccount(null) }, 'Додати акаунт')),
+        h('p', { class: 'muted' }, 'Зміни зберігаються в instance/accounts.json з перевіркою; застосовуються з наступним збором. Архів зберігає історію.'),
+        rows.length ? h('div', { class: 'table-wrap' }, h('table', {},
           h('thead', {}, h('tr', {}, h('th', {}, 'Акаунт'), h('th', {}, 'Персона'), h('th', {}, 'Сесія'), h('th', {}, 'Останній збір'), h('th', {}, 'Пости / сигнали'), h('th', {}, ''))),
-          h('tbody', {}, rows))),
+          h('tbody', {}, rows))) : empty('Акаунтів ще немає — додайте перший.'),
       ),
       card(
-        h('div', { class: 'row between' }, h('h2', {}, 'Сесії та токени'),
-          badge(sessions.encrypted ? (sessions.unlocked ? 'сховище відкрите' : 'сховище закрите') : 'без шифрування', sessions.encrypted ? (sessions.unlocked ? 'ok' : 'stale') : 'error')),
-        h('p', { class: 'muted' }, 'Логіни додаються з терміналу: npm run import-cookies -- --session <назва>, npm run login:telegram -- --session <назва>, npm run nyra -- secrets set …'),
+        h('div', { class: 'row between' }, h('h2', {}, 'Сесії та логіни'),
+          h('div', { class: 'row' },
+            badge(sessions.encrypted ? (sessions.unlocked ? 'сховище відкрите' : 'сховище закрите') : 'без шифрування', sessions.encrypted ? (sessions.unlocked ? 'ok' : 'stale') : 'error'),
+            h('button', { class: 'primary small', onclick: newSession, disabled: !sessions.encrypted }, 'Нова сесія'))),
+        !sessions.encrypted && h('p', { class: 'error' }, 'Логіни зберігаються лише в зашифрованому сховищі: npm run nyra -- vault init, потім перезапустіть npm run serve.'),
+        h('p', { class: 'muted' }, 'Значення секретів ніколи не показуються — їх можна лише задати або видалити.'),
         sessionRows.length ? h('div', { class: 'table-wrap' }, h('table', {},
-          h('thead', {}, h('tr', {}, h('th', {}, 'Сесія'), h('th', {}, 'Стан'), h('th', {}, 'Акаунти'))),
+          h('thead', {}, h('tr', {}, h('th', {}, 'Сесія'), h('th', {}, 'Стан'), h('th', {}, 'Акаунти'), h('th', {}, ''))),
           h('tbody', {}, sessionRows))) : empty('Немає сесій.'),
+        h('div', { class: 'row between' },
+          h('span', {}, 'Telegram API (my.telegram.org): ', badge(apiKeys.telegram_api ? 'задано' : 'не задано', apiKeys.telegram_api ? 'ok' : 'stale')),
+          h('button', { class: 'small', onclick: setTelegramApi, disabled: !sessions.encrypted }, 'Задати…')),
       ),
       card(
         h('div', { class: 'row between' }, h('h2', {}, `Персони (${personas.count})`),
@@ -631,6 +657,326 @@ function ideaForm(personas) {
     error,
   );
   return h('section', { class: 'card stack' }, h('details', {}, h('summary', {}, 'Додати ідею або посилання'), form));
+}
+
+// ── Accounts and sessions management ─────────────────────────────────────────
+
+const ACCOUNT_CONTEXT = { platforms: [], sessions: [] };
+const SESSION_KINDS = {
+  twitter: 'X (логін)', telegram: 'Telegram (логін)', github: 'GitHub (токен)',
+  'telegram-bot': 'Telegram-бот (токен)', 'discord-bot': 'Discord-бот (токен)',
+};
+const USERNAME_HINT = {
+  twitter: 'нік без @', telegram: 'username каналу без @ або -100…', github: 'логін GitHub',
+  linkedin: 'будь-яка назва профілю', discord: 'числовий id каналу (Developer Mode → Copy Channel ID)',
+};
+
+/** Generic modal: returns { body, close }; resolves `closed` when dismissed. */
+function openModal(title, ...content) {
+  const dialog = $('#modal');
+  $('#modal-title').textContent = title;
+  const body = $('#modal-body');
+  body.replaceChildren(...content.flat().filter(Boolean));
+  let onClose = null;
+  const close = () => {
+    if (dialog.open) dialog.close();
+  };
+  dialog.onclose = () => { onClose?.(); onClose = null; };
+  $('#modal-close').onclick = close;
+  dialog.showModal();
+  return { body, close, onClose: fn => { onClose = fn; } };
+}
+
+function field(label, input, hint) {
+  return h('label', { class: 'field' }, h('span', {}, label), input, hint && h('span', { class: 'muted' }, hint));
+}
+
+function sessionNames(kind) {
+  return [...new Set(['default', ...ACCOUNT_CONTEXT.sessions.filter(s => s.kind === kind).map(s => s.name)])];
+}
+
+function datalist(id, values) {
+  return h('datalist', { id }, values.map(value => h('option', { value })));
+}
+
+function editAccount(entry) {
+  const editing = Boolean(entry);
+  const platform = h('select', { disabled: editing },
+    ACCOUNT_CONTEXT.platforms.map(p => h('option', { value: p.id, selected: p.id === (entry?.platform ?? 'twitter') }, p.displayName)));
+  const username = h('input', { type: 'text', value: entry?.username ?? '', required: true });
+  const display = h('input', { type: 'text', value: entry?.display_name ?? '' });
+  const active = h('input', { type: 'checkbox', checked: entry ? entry.active !== false : true });
+  const session = h('input', { type: 'text', value: entry?.session ?? '', placeholder: 'default', list: 'session-names' });
+  const publish = h('input', { type: 'checkbox', checked: entry?.publish_enabled === true });
+  const bot = h('input', { type: 'text', value: entry?.bot ?? '', placeholder: 'default', list: 'bot-names' });
+  const transport = h('select', {}, [['', 'типово (бот)'], ['bot', 'бот'], ['mtproto', 'сесія користувача']]
+    .map(([v, t]) => h('option', { value: v, selected: (entry?.publish_transport ?? '') === v }, t)));
+  const importFile = h('input', { type: 'text', value: entry?.import_file ?? '', placeholder: 'Shares.csv' });
+  const discordFilter = h('select', {}, [['', 'лише питання'], ['all', 'усі повідомлення']]
+    .map(([v, t]) => h('option', { value: v, selected: (entry?.discord_filter ?? '') === v }, t)));
+  const hint = h('span', { class: 'muted' });
+  const extra = h('div', { class: 'stack' });
+  const error = h('p', { class: 'error' });
+  const lists = h('div', {});
+
+  const refresh = () => {
+    const p = platform.value;
+    const kind = ACCOUNT_CONTEXT.platforms.find(item => item.id === p)?.session;
+    hint.textContent = USERNAME_HINT[p] ?? '';
+    lists.replaceChildren(datalist('session-names', kind ? sessionNames(kind) : []), datalist('bot-names', sessionNames('telegram-bot')));
+    extra.replaceChildren(...[
+      kind && field('Сесія (логін)', session, 'Назва логіна зі сховища; порожньо — default.'),
+      p === 'telegram' && h('label', { class: 'row' }, publish, 'Дозволити публікацію в цей канал'),
+      p === 'telegram' && field('Бот для публікації', bot),
+      p === 'telegram' && field('Спосіб публікації', transport),
+      p === 'linkedin' && field('Файл експорту', importFile, 'У папці імпорту; окремий для кожного акаунта LinkedIn.'),
+      p === 'discord' && field('Що збирати', discordFilter),
+    ].filter(Boolean));
+  };
+  platform.addEventListener('change', refresh);
+  refresh();
+
+  const form = h('form', { class: 'stack', onsubmit: async event => {
+    event.preventDefault();
+    error.textContent = '';
+    const p = platform.value;
+    const account = {
+      platform: p, username: username.value.trim(), display_name: display.value.trim(), active: active.checked ? null : false,
+      ...(ACCOUNT_CONTEXT.platforms.find(item => item.id === p)?.session ? { session: session.value.trim() } : {}),
+      ...(p === 'telegram' ? { publish_enabled: publish.checked ? true : null, bot: bot.value.trim(), publish_transport: transport.value } : {}),
+      ...(p === 'linkedin' ? { import_file: importFile.value.trim() } : {}),
+      ...(p === 'discord' ? { discord_filter: discordFilter.value } : {}),
+    };
+    try {
+      await api('/api/accounts/save', { method: 'POST', body: { account, original_key: entry ? `${entry.platform}/${entry.username}` : '' } });
+      modal.close();
+      toast(editing ? 'Акаунт оновлено.' : 'Акаунт додано. Він збиратиметься з наступним прогоном.');
+      render();
+    } catch (e) {
+      error.textContent = e.message;
+    }
+  } },
+    field('Платформа', platform),
+    field('Акаунт', username, hint),
+    field('Назва для себе', display),
+    h('label', { class: 'row' }, active, 'Активний (збирати)'),
+    extra, lists,
+    h('div', { class: 'row end' }, h('button', { type: 'submit', class: 'primary' }, editing ? 'Зберегти' : 'Додати')),
+    error,
+  );
+  const modal = openModal(editing ? `Акаунт ${entry.platform}/${entry.username}` : 'Новий акаунт', form);
+}
+
+async function archiveAccount(key, archived) {
+  const ok = await confirmDialog(archived ? `Архівувати ${key}?` : `Відновити ${key}?`,
+    archived ? 'Акаунт більше не збиратиметься; пости й історія лишаються.' : 'Акаунт знову збиратиметься.', archived ? 'Архівувати' : 'Відновити');
+  if (!ok) return;
+  try {
+    await api('/api/accounts/archive', { method: 'POST', body: { key, archived } });
+    toast(archived ? 'Архівовано.' : 'Відновлено.');
+  } catch (error) {
+    toast(error.message, 7000);
+  }
+  render();
+}
+
+function sessionActions(kind, name, row) {
+  const actions = [];
+  if (kind === 'twitter') {
+    actions.push(h('button', { class: 'small', onclick: () => importCookies(name) }, 'Cookies…'));
+    actions.push(h('button', { class: 'small', onclick: () => twitterWindowLogin(name) }, 'Увійти у вікні…'));
+  } else if (kind === 'telegram') {
+    actions.push(h('button', { class: 'small', onclick: () => telegramQrLogin(name) }, 'Увійти через QR…'));
+  } else if (SESSION_KINDS[kind]) {
+    actions.push(h('button', { class: 'small', onclick: () => setToken(kind, name) }, 'Задати токен…'));
+  }
+  if (row && !/MISSING|needs the vault|from \.env/.test(row.state)) {
+    actions.push(h('button', { class: 'small ghost', onclick: () => deleteSecret(kind, name) }, 'Видалити…'));
+  }
+  return actions;
+}
+
+function newSession() {
+  const kind = h('select', {}, Object.entries(SESSION_KINDS).map(([v, t]) => h('option', { value: v }, t)));
+  const name = h('input', { type: 'text', value: 'default', pattern: '[a-z0-9][a-z0-9_-]{0,63}', required: true });
+  const modal = openModal('Нова сесія', h('form', { class: 'stack', onsubmit: event => {
+    event.preventDefault();
+    modal.close();
+    const n = name.value.trim();
+    if (kind.value === 'twitter') twitterChoice(n);
+    else if (kind.value === 'telegram') telegramQrLogin(n);
+    else setToken(kind.value, n);
+  } },
+  field('Тип', kind), field('Назва', name, 'Малими латинськими, напр. brand-a. Цю назву вказуєте в полі «Сесія» акаунта.'),
+  h('div', { class: 'row end' }, h('button', { type: 'submit', class: 'primary' }, 'Далі'))));
+}
+
+function twitterChoice(name) {
+  const modal = openModal(`X: сесія «${name}»`,
+    h('p', {}, 'Як додати логін?'),
+    h('div', { class: 'stack' },
+      h('button', { onclick: () => { modal.close(); importCookies(name); } }, 'Вставити cookies (рекомендовано)'),
+      h('button', { onclick: () => { modal.close(); twitterWindowLogin(name); } }, 'Увійти у вікні браузера на цьому ПК')));
+}
+
+function importCookies(name) {
+  const area = h('textarea', { placeholder: '[{"name":"auth_token","value":"…","domain":".x.com", …}]' });
+  const file = h('input', { type: 'file', accept: '.json,application/json' });
+  file.addEventListener('change', async () => { if (file.files[0]) area.value = await file.files[0].text(); });
+  const error = h('p', { class: 'error' });
+  const modal = openModal(`Cookies X для «${name}»`,
+    h('p', { class: 'muted' }, 'У звичайному браузері, де ви увійшли в X цим акаунтом, експортуйте cookies x.com розширенням (JSON) і вставте або виберіть файл. Видаліть файл експорту після імпорту.'),
+    file, area, error,
+    h('div', { class: 'row end' }, h('button', { class: 'primary', onclick: async () => {
+      error.textContent = '';
+      try {
+        const result = await api('/api/sessions/twitter/cookies', { method: 'POST', body: { name, cookies: area.value } });
+        area.value = '';
+        modal.close();
+        toast(`Сесію X «${name}» збережено в сховищі (${result.cookies} cookies).`);
+        render();
+      } catch (e) {
+        error.textContent = e.message;
+      }
+    } }, 'Зберегти')));
+}
+
+async function twitterWindowLogin(name) {
+  let login;
+  try {
+    login = await api('/api/sessions/twitter/login', { method: 'POST', body: { name } });
+  } catch (error) {
+    toast(error.message, 8000);
+    return;
+  }
+  const error = h('p', { class: 'error' });
+  let finished = false;
+  const modal = openModal(`Вхід у X: «${name}»`,
+    h('p', {}, login.message),
+    h('p', { class: 'muted' }, 'X іноді блокує вхід у браузері під автоматизацією — тоді скористайтесь імпортом cookies.'),
+    error,
+    h('div', { class: 'row end' },
+      h('button', { class: 'ghost', onclick: () => modal.close() }, 'Скасувати'),
+      h('button', { class: 'primary', onclick: async () => {
+        error.textContent = '';
+        try {
+          const result = await api('/api/sessions/twitter/finish', { method: 'POST', body: { id: login.id } });
+          finished = true;
+          modal.close();
+          toast(result.message);
+          render();
+        } catch (e) {
+          error.textContent = e.message;
+        }
+      } }, 'Готово, я увійшов')));
+  modal.onClose(() => { if (!finished) api('/api/sessions/login/cancel', { method: 'POST', body: { id: login.id } }).catch(() => {}); });
+}
+
+async function telegramQrLogin(name) {
+  let login;
+  try {
+    login = await api('/api/sessions/telegram/login', { method: 'POST', body: { name } });
+  } catch (error) {
+    toast(error.message, 8000);
+    return;
+  }
+  const message = h('p', {});
+  const qr = h('img', { alt: 'QR-код входу в Telegram', width: 240, height: 240, hidden: true });
+  const password = h('input', { type: 'password', autocomplete: 'off' });
+  const passwordForm = h('form', { class: 'stack', hidden: true, onsubmit: async event => {
+    event.preventDefault();
+    try {
+      await api('/api/sessions/telegram/password', { method: 'POST', body: { id: login.id, password: password.value } });
+      password.value = '';
+    } catch (e) {
+      message.textContent = e.message;
+    }
+  } }, field('Пароль 2FA', password), h('div', { class: 'row end' }, h('button', { type: 'submit', class: 'primary' }, 'Надіслати')));
+  let done = false;
+  const modal = openModal(`Вхід у Telegram: «${name}»`, message, qr, passwordForm,
+    h('div', { class: 'row end' }, h('button', { class: 'ghost', onclick: () => modal.close() }, 'Закрити')));
+  const show = state => {
+    message.textContent = state.message ?? '';
+    if (state.qr_svg) qr.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(state.qr_svg)}`;
+    qr.hidden = state.status !== 'qr';
+    passwordForm.hidden = state.status !== 'password';
+    if (state.status === 'password') password.focus();
+  };
+  show(login);
+  const timer = setInterval(async () => {
+    try {
+      const state = await api('/api/sessions/login/status', { method: 'POST', body: { id: login.id } });
+      show(state);
+      if (['done', 'failed', 'cancelled'].includes(state.status)) {
+        clearInterval(timer);
+        done = true;
+        if (state.status === 'done') {
+          modal.close();
+          toast(state.message);
+          render();
+        }
+      }
+    } catch {
+      clearInterval(timer);
+    }
+  }, 1500);
+  modal.onClose(() => {
+    clearInterval(timer);
+    if (!done) api('/api/sessions/login/cancel', { method: 'POST', body: { id: login.id } }).catch(() => {});
+  });
+}
+
+function setToken(kind, name) {
+  const input = h('input', { type: 'password', autocomplete: 'off', required: true });
+  const error = h('p', { class: 'error' });
+  const help = {
+    github: 'Fine-grained token з доступом лише на читання (Contents, Metadata).',
+    'telegram-bot': 'Токен від @BotFather.',
+    'discord-bot': 'Discord Developer Portal → Bot → Reset Token. Увімкніть Message Content intent.',
+  }[kind];
+  const modal = openModal(`${SESSION_KINDS[kind]}: «${name}»`, h('form', { class: 'stack', onsubmit: async event => {
+    event.preventDefault();
+    try {
+      await api('/api/secrets/set', { method: 'POST', body: { kind, name, token: input.value } });
+      input.value = '';
+      modal.close();
+      toast('Токен збережено в сховищі.');
+      render();
+    } catch (e) {
+      error.textContent = e.message;
+    }
+  } }, help && h('p', { class: 'muted' }, help), field('Токен', input), error,
+  h('div', { class: 'row end' }, h('button', { type: 'submit', class: 'primary' }, 'Зберегти'))));
+}
+
+function setTelegramApi() {
+  const apiId = h('input', { type: 'text', inputmode: 'numeric', required: true });
+  const apiHash = h('input', { type: 'password', autocomplete: 'off', required: true });
+  const error = h('p', { class: 'error' });
+  const modal = openModal('Telegram API', h('form', { class: 'stack', onsubmit: async event => {
+    event.preventDefault();
+    try {
+      await api('/api/secrets/set', { method: 'POST', body: { kind: 'telegram-api', api_id: apiId.value.trim(), api_hash: apiHash.value.trim() } });
+      modal.close();
+      toast('Ключі Telegram API збережено.');
+      render();
+    } catch (e) {
+      error.textContent = e.message;
+    }
+  } }, h('p', { class: 'muted' }, 'my.telegram.org → API development tools.'), field('api_id', apiId), field('api_hash', apiHash), error,
+  h('div', { class: 'row end' }, h('button', { type: 'submit', class: 'primary' }, 'Зберегти'))));
+}
+
+async function deleteSecret(kind, name) {
+  const password = await askDialog(`Видалити ${kind}/${name}?`, 'Підтвердіть майстер-паролем. Акаунти з цією сесією перестануть збиратись.', { type: 'password' });
+  if (password === null) return;
+  try {
+    const result = await api('/api/secrets/delete', { method: 'POST', body: { kind, name, password } });
+    toast(result.removed ? 'Видалено.' : 'Такої сесії не було.');
+  } catch (error) {
+    toast(error.message, 7000);
+  }
+  render();
 }
 
 // ── Content: drafts ───────────────────────────────────────────────────────────

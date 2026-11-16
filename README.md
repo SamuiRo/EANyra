@@ -420,8 +420,12 @@ one-time access token.
 - **Огляд:** collection health, freshness per platform, accounts needing
   attention with their last error, recent runs with per-account outcomes,
   one-click collection per platform or for everything.
-- **Акаунти:** accounts, personas and the state of every login session;
-  context sync after editing YAML.
+- **Акаунти:** add, edit, archive and restore accounts (validated writes to
+  `accounts.json`); manage every login without the terminal — paste or upload
+  X cookies, open an X login window on this PC, Telegram QR login with 2FA in
+  the page, GitHub / bot / Discord tokens, Telegram API keys, delete a session
+  (master password required). Secret values are write-only and never shown.
+  Needs the vault (`npm run nyra -- vault init`).
 - **Пости / Сигнали:** browse and search collected posts by persona,
   platform and engagement; unused signals; add ideas and links as signals.
 - **Telegram:** drafts prepared by the AI (MCP) or in the form; publish only

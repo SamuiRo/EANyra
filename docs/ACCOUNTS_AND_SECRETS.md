@@ -26,6 +26,16 @@ Accounts without `session` use the session named `default`.
 | `discord-bot/<session>` | `npm run nyra -- secrets set discord-bot <s>` | Reading Discord community channels |
 | `mcp-token/default` | `npm run nyra -- mcp token` | MCP clients of `npm run serve -- --mcp` |
 
+## Managing logins in the web UI
+
+Everything below also works without the terminal: `npm run serve`, tab
+«Акаунти» → «Сесії та логіни». «Нова сесія» creates any login kind; X offers
+cookie import (paste or upload the JSON) or a login window that opens on this
+PC (press «Готово» in the page after logging in); Telegram shows the QR code
+in the page and asks for the 2FA password there. Tokens and keys are entered
+in password fields and never sent back to the browser. Deleting a session asks
+for the master password again.
+
 ## Several own X accounts
 
 ```json

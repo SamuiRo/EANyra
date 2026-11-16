@@ -158,6 +158,9 @@ tr.clickable:hover td { background: var(--surface-2); }
 }
 dialog { max-width: min(560px, calc(100vw - 32px)); color: var(--text); }
 dialog::backdrop { background: rgb(0 0 0 / 45%); }
+dialog.wide { width: min(640px, calc(100vw - 32px)); max-width: none; }
+dialog img { display: block; margin: 0 auto; background: #fff; padding: 8px; border-radius: 8px; }
+.field > span.muted { font-size: 12px; }
 
 @media (max-width: 640px) {
   .topbar { gap: 8px; }

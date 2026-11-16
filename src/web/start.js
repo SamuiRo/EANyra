@@ -15,7 +15,7 @@ import { TelegramPublishRequests } from '../core/mcp/TelegramPublishRequests.js'
 import { buildTools } from '../core/mcp/toolRegistry.js';
 import { createContentService } from '../core/mcp/tools/content.js';
 import * as mcpDb from '../core/mcp/db.js';
-import { Vault } from '../core/secrets/Vault.js';
+import { Vault, SECRET_KINDS, assertSessionName } from '../core/secrets/Vault.js';
 import { getVault, unlockSharedVault } from '../core/secrets/vaultAccess.js';
 import { sessionReport } from '../core/cli/vaultCommands.js';
 import { Scheduler } from '../core/scheduler/Scheduler.js';
@@ -28,6 +28,9 @@ import { createMcpServer, McpHttpSessions } from '../core/mcp/mcpServer.js';
 import { Credentials } from '../core/secrets/Credentials.js';
 import { loadNotifyConfig } from '../config/notifyConfig.js';
 import { buildChannels, runProblemChecks } from '../core/notify/index.js';
+import { AccountConfigService } from '../core/services/AccountConfigService.js';
+import { SessionLogins } from '../core/services/SessionLogins.js';
+import { PLATFORM_CATALOG as CATALOG } from '../platforms/catalog.js';
 
 /**
  * @param {{ host?: string, port?: number, schedule?: boolean, mcp?: boolean,
@@ -49,7 +52,76 @@ export async function startWebServer({ host = WEB.host, port = WEB.port, schedul
   const db = mcpExecutor(mcpDb);
   const content = createContentService();
 
+  const accountsFile = new AccountConfigService();
+  // Logins and secrets need the vault (unlocked by the web login).
+  const vaultCredentials = async () => {
+    const vault = await getVault({ interactive: false }).catch(() => null);
+    if (!vault) {
+      throw Object.assign(new Error(hasVault
+        ? 'The vault is locked. Log in again.'
+        : 'Create the encrypted vault first: npm run nyra -- vault init (then restart npm run serve).'), { status: 409 });
+    }
+    return new Credentials({ vault });
+  };
+  const logins = new SessionLogins({ getCredentials: vaultCredentials });
+  const assertPassword = async password => {
+    if (!hasVault) return;
+    try {
+      await new Vault(PATHS.vaultFile).unlock(String(password ?? ''));
+    } catch {
+      // 403, not 401: a wrong confirmation must not end the browser session.
+      throw Object.assign(new Error('Wrong master password.'), { status: 403 });
+    }
+  };
+  const SETTABLE = { 'github': 'token', 'telegram-bot': 'token', 'discord-bot': 'token' };
+
   const routes = {
+    // ── Accounts (accounts.json) ──────────────────────────────────────────
+    'GET /api/accounts/config': async () => ({
+      accounts: await accountsFile.list(),
+      platforms: Object.values(CATALOG).map(({ id, displayName, session }) => ({ id, displayName, session })),
+    }),
+    'POST /api/accounts/save': async ({ body }) => accountsFile.save(body.account ?? {}, { originalKey: body.original_key || undefined }),
+    'POST /api/accounts/archive': async ({ body }) => accountsFile.setArchived(String(body.key ?? ''), body.archived !== false),
+
+    // ── Sessions and secrets (write-only: values never come back) ─────────
+    'POST /api/sessions/twitter/cookies': async ({ body }) => logins.importCookies(String(body.name ?? ''), body.cookies),
+    'POST /api/sessions/twitter/login': async ({ body }) => logins.startTwitter(String(body.name ?? '')),
+    'POST /api/sessions/twitter/finish': async ({ body }) => logins.finishTwitter(String(body.id ?? '')),
+    'POST /api/sessions/telegram/login': async ({ body }) => logins.startTelegram(String(body.name ?? '')),
+    'POST /api/sessions/telegram/password': async ({ body }) => logins.telegramPassword(String(body.id ?? ''), body.password),
+    'POST /api/sessions/login/status': async ({ body }) => logins.status(String(body.id ?? '')),
+    'POST /api/sessions/login/cancel': async ({ body }) => logins.cancel(String(body.id ?? '')),
+    'POST /api/secrets/set': async ({ body }) => {
+      const kind = String(body.kind ?? '');
+      const name = String(body.name ?? 'default');
+      assertSessionName(name);
+      const credentials = await vaultCredentials();
+      if (kind === 'telegram-api') {
+        const apiId = Number(body.api_id);
+        if (!Number.isInteger(apiId) || apiId <= 0) throw Object.assign(new Error('api_id must be a positive integer.'), { status: 400 });
+        if (!/^[a-f0-9]{32}$/i.test(String(body.api_hash ?? ''))) throw Object.assign(new Error('api_hash must be 32 hexadecimal characters.'), { status: 400 });
+        await credentials.vault.set('telegram-api', 'default', { api_id: apiId, api_hash: String(body.api_hash).toLowerCase() });
+        return { kind, name: 'default', saved: true };
+      }
+      if (!SETTABLE[kind]) throw Object.assign(new Error(`Use the dedicated login for ${kind}.`), { status: 400 });
+      const token = String(body.token ?? '').trim();
+      if (!token || token.length > 512) throw Object.assign(new Error('Enter the token.'), { status: 400 });
+      await credentials.vault.set(kind, name, { token });
+      return { kind, name, saved: true };
+    },
+    'POST /api/secrets/delete': async ({ body }) => {
+      await assertPassword(body.password);
+      const kind = String(body.kind ?? '');
+      if (!SECRET_KINDS[kind] || kind === 'mcp-token') throw Object.assign(new Error('Unknown secret kind.'), { status: 400 });
+      const credentials = await vaultCredentials();
+      return { removed: await credentials.vault.delete(kind, String(body.name ?? '')) };
+    },
+    'GET /api/secrets/api': async () => {
+      const vault = await getVault({ interactive: false }).catch(() => null);
+      return { telegram_api: Boolean(vault?.get('telegram-api', 'default')) };
+    },
+
     'GET /api/platforms': async () => PLATFORM_CATALOG,
     'GET /api/sessions': async () => {
       const entries = validateAccounts(JSON.parse(await fs.readFile(PATHS.accountsConfig, 'utf8')))
@@ -168,6 +240,7 @@ export async function startWebServer({ host = WEB.host, port = WEB.port, schedul
   const shutdown = async () => {
     scheduler?.stop();
     server.close();
+    await logins.closeAll();
     await mcpSessions?.close();
     await Promise.all([
       jobs.shutdown({ timeoutMs: 90_000 }),

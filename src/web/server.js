@@ -8,7 +8,7 @@
  *     SameSite=Strict); every POST needs the X-EANyra header and, when the
  *     browser sends one, a same-origin Origin (blocks CSRF)
  *   - strict Content-Security-Policy without inline scripts, no framing
- *   - request bodies are JSON and capped at 64 KiB
+ *   - request bodies are JSON and capped at 1 MiB
  *   - optional /mcp for AI clients: Bearer token instead of the cookie, and
  *     browser requests (any Origin) are refused
  */
@@ -23,7 +23,8 @@ import { callTool } from '../core/mcp/toolRegistry.js';
 
 const PUBLIC_DIR = fileURLToPath(new URL('./public/', import.meta.url));
 const LOOPBACK = ['127.0.0.1', 'localhost', '::1'];
-const MAX_BODY = 64 * 1024;
+// Large enough for cookie exports and context files.
+const MAX_BODY = 1024 * 1024;
 const STATIC = {
   '/':           ['index.html', 'text/html; charset=utf-8'],
   '/app.js':     ['app.js', 'text/javascript; charset=utf-8'],

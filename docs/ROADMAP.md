@@ -118,6 +118,14 @@ the current repository state, not on the older README.
 
 ## Planned Features
 
+- [x] **Web management: accounts and sessions.** Account CRUD/archive, all
+  login kinds (X cookies or window, Telegram QR + 2FA, tokens, API keys),
+  session deletion with password confirmation.
+- [ ] **Web management: context.** Edit voice, bio, platforms, projects and
+  personas in the browser with live validation and sync.
+- [ ] **Web management: settings and operations.** Alert channels and rules,
+  LinkedIn export upload, backups, EFS status, vault remember/password.
+
 - [x] **Telegram text publishing.** Explicitly enabled channels, Bot API identity
   lookup and admin checks, durable prepare/publish/get workflow and duplicate
   suppression. Twitter remains collection-only.
