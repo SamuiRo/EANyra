@@ -88,9 +88,10 @@ the current repository state, not on the older README.
   long pauses cut short); a second forces. Applies to `scrape`, `start`,
   `serve` and MCP; workers stop over IPC, in-flight Telegram publications
   finish, connections close. `scraper_job_stop` and a web Stop button.
-- [ ] **Review HTTP MCP deployment security.** Before binding beyond localhost,
-  add authentication, origin policy, request limits, and session lifecycle
-  tests.
+- [ ] **Review HTTP MCP deployment security.** Only needed to expose EANyra
+  beyond loopback (LAN or VPS without a tunnel): TLS, a multi-user model and
+  session lifecycle tests. Loopback, SSH tunnels and the container (published
+  on 127.0.0.1) are covered in [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Priority 3: Maintainability
 
@@ -187,8 +188,10 @@ the current repository state, not on the older README.
   / `community_message` signals (incremental, questions by default, no user
   ids stored). Other communities (Slack, forums) only on demand.
 - [x] **Per-platform health and run metrics.**
-- [ ] **Container and remote MCP deployment documentation** after transport
-  security and lifecycle are tested.
+- [x] **Container and network access documentation.** `Dockerfile`,
+  `compose.yaml` (port on host loopback only), SSH-tunnel access from the LAN,
+  [DEPLOYMENT.md](DEPLOYMENT.md) (4.1.0). The first image build on a machine
+  with Docker is still to be done.
 
 ## Completed Foundations
 

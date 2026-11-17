@@ -111,6 +111,9 @@ test('a vault-backed verifier treats a wrong master password as a failed login',
 
 test('the server refuses to bind beyond loopback', () => {
   assert.throws(() => createWebServer({ host: '0.0.0.0', auth: {}, tools: [] }), /local-only/);
+  assert.throws(() => createWebServer({ host: '192.168.1.10', auth: {}, tools: [], container: true }), /local-only/);
+  // Inside a container 0.0.0.0 is allowed; the Host check still accepts loopback names only.
+  assert.doesNotThrow(() => createWebServer({ host: '0.0.0.0', auth: {}, tools: [], container: true }));
 });
 
 test('serve mounts MCP at /mcp behind a Bearer token and refuses browsers', async t => {

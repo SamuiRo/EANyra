@@ -3,7 +3,9 @@
  *
  * Security model (local single-user):
  *   - binds to a loopback address only; the Host header must match it
- *     (blocks DNS rebinding)
+ *     (blocks DNS rebinding). Inside a container (EANYRA_CONTAINER=1) it may
+ *     bind 0.0.0.0 so the host can publish the port, but only as
+ *     127.0.0.1:<port> on the host: the Host check still accepts loopback names only
  *   - every API call except login needs a session cookie (HttpOnly,
  *     SameSite=Strict); every POST needs the X-EANyra header and, when the
  *     browser sends one, a same-origin Origin (blocks CSRF)
@@ -62,9 +64,10 @@ export class HttpError extends Error {
  * }} options
  *   mcp.token returns the expected Bearer token ('' disables /mcp).
  */
-export function createWebServer({ host = '127.0.0.1', port = 4450, auth, mode, tools, routes = {}, info = {}, onLogin, mcp }) {
-  if (!LOOPBACK.includes(host)) {
-    throw new Error('The web server is local-only. Bind WEB_HOST to 127.0.0.1, localhost or ::1.');
+export function createWebServer({ host = '127.0.0.1', port = 4450, auth, mode, tools, routes = {}, info = {}, onLogin, mcp, container = false }) {
+  if (!LOOPBACK.includes(host) && !(container && host === '0.0.0.0')) {
+    throw new Error('The web server is local-only. Bind WEB_HOST to 127.0.0.1, localhost or ::1' +
+      ' (0.0.0.0 only inside a container with EANYRA_CONTAINER=1, published as 127.0.0.1:<port>).');
   }
   const toolMap = new Map(tools.map(tool => [tool.name, tool]));
 

@@ -7,6 +7,21 @@ change (fixes, docs, internals); **minor** = new capability, existing setups
 keep working; **major** = an existing setup, configuration or integration may
 need action. History before 2.0.0 lives only in commit messages (`v1.x.y …`).
 
+## 4.1.0 — 2026-11-17
+
+### Added
+
+- Container: `Dockerfile` (Playwright image, non-root, instance on a volume),
+  `compose.yaml` publishing the UI on `127.0.0.1:4450` only, `.dockerignore`
+  keeping personal data out of the image. Inside a container
+  (`EANYRA_CONTAINER=1`) the web server may bind `0.0.0.0`; the Host check
+  still accepts loopback names only. Not yet built on a machine with Docker.
+- [docs/DEPLOYMENT.md](DEPLOYMENT.md): one PC, other devices on the LAN through
+  an SSH tunnel, container, and why a VPS is not supported as an exposed
+  service.
+
+No action needed when upgrading from 4.0.x.
+
 ## 4.0.2 — 2026-11-17
 
 ### Changed

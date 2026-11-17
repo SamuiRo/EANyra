@@ -440,6 +440,8 @@ password; run `npm run nyra -- vault remember` again on a new PC or user.
 
 ## Web UI
 
+Other devices, containers and servers: [Deployment](docs/DEPLOYMENT.md).
+
 `npm run serve` starts a local web interface on `http://localhost:4450`
 (also `http://127.0.0.1:4450`; port: `WEB_PORT` or `--port`). Log in with the master password; it also unlocks the
 vault for collection and publishing. Without a vault the terminal prints a

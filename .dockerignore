@@ -1,0 +1,14 @@
+# Never put personal data or secrets into the image.
+.env
+instance/
+data/
+node_modules/
+.git/
+.claude/
+.agents/
+docs/
+test/
+skills/
+*.log
+*.sqlite
+cookies*.json
