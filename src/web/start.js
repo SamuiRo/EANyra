@@ -30,6 +30,7 @@ import { loadNotifyConfig } from '../config/notifyConfig.js';
 import { buildChannels, runProblemChecks } from '../core/notify/index.js';
 import { AccountConfigService } from '../core/services/AccountConfigService.js';
 import { ContextFileService } from '../core/services/ContextFileService.js';
+import { buildSettingsRoutes } from './settingsRoutes.js';
 import { SessionLogins } from '../core/services/SessionLogins.js';
 import { PLATFORM_CATALOG as CATALOG } from '../platforms/catalog.js';
 
@@ -83,6 +84,7 @@ export async function startWebServer({ host = WEB.host, port = WEB.port, schedul
   const SETTABLE = { 'github': 'token', 'telegram-bot': 'token', 'discord-bot': 'token' };
 
   const routes = {
+    ...buildSettingsRoutes({ hasVault, sequelize: models?.UserContext?.sequelize, jobs }),
     // ── Accounts (accounts.json) ──────────────────────────────────────────
     'GET /api/accounts/config': async () => ({
       accounts: await accountsFile.list(),

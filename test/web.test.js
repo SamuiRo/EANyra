@@ -64,7 +64,7 @@ test('API requires login, a local Host, the custom header and same origin', asyn
   assert.equal((await request('/api/login', { method: 'POST', body: { password: 'secret-token' }, headers: { Origin: 'https://evil.example' } })).status, 403);
   assert.equal((await request('/api/login', { method: 'POST', body: { password: 'secret-token' }, headers: { 'Sec-Fetch-Site': 'cross-site' } })).status, 403);
   assert.equal((await request('/api/login', { method: 'POST', body: 'password=x', headers: { 'Content-Type': 'application/x-www-form-urlencoded' } })).status, 415);
-  assert.equal((await request('/api/login', { method: 'POST', body: 'x'.repeat(1100 * 1024) })).status, 413);
+  assert.equal((await request('/api/login', { method: 'POST', body: 'x'.repeat(5200 * 1024) })).status, 413);
   assert.equal((await request('/api/session', { method: 'DELETE' })).status, 405);
 });
 

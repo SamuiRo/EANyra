@@ -578,6 +578,138 @@ const VIEWS = {
     return view;
   },
 
+  async settings() {
+    const s = await api('/api/settings');
+    const post = (path, body = {}) => api(path, { method: 'POST', body });
+    const act = (fn, ok) => async () => {
+      try {
+        const result = await fn();
+        if (ok) toast(typeof ok === 'function' ? ok(result) : ok, 6000);
+        render();
+      } catch (error) {
+        toast(error.message, 8000);
+      }
+    };
+    const n = s.notify;
+
+    // ── Alerts ──
+    const bot = h('input', { type: 'text', value: n.telegram?.bot ?? 'default', list: 'alert-bots' });
+    const chatsBox = h('div', { class: 'stack' });
+    const findChats = async () => {
+      chatsBox.replaceChildren(h('span', { class: 'muted' }, 'Шукаю чати…'));
+      try {
+        const { chats } = await post('/api/settings/notify/telegram-chats', { bot: bot.value.trim() });
+        chatsBox.replaceChildren(...chats.map(chat => h('div', { class: 'row between' },
+          h('span', {}, `${chat.title || 'без назви'} · ${chat.type} · ${chat.id}`),
+          h('button', { class: 'small primary', onclick: act(() => post('/api/settings/notify', { telegram: { enabled: true, bot: bot.value.trim() || 'default', chat_id: chat.id } }), 'Telegram-сповіщення увімкнено.') }, 'Обрати'))));
+      } catch (error) {
+        chatsBox.replaceChildren(h('p', { class: 'error' }, error.message));
+      }
+    };
+    const webhook = h('input', { type: 'password', autocomplete: 'off', placeholder: 'https://discord.com/api/webhooks/…' });
+    const rules = n.rules ?? {};
+    const ruleInput = (key, value) => h('input', { type: 'number', min: 0, step: 1, value: String(value), dataset: { rule: key } });
+    const rulesForm = h('form', { class: 'filters', onsubmit: event => {
+      event.preventDefault();
+      const values = Object.fromEntries([...rulesForm.querySelectorAll('[data-rule]')].map(input =>
+        [input.dataset.rule, input.type === 'checkbox' ? input.checked : Number(input.value)]));
+      act(() => post('/api/settings/notify', { rules: values }), 'Правила збережено.')();
+    } },
+    h('label', {}, 'Попереджати про логін X за, дн', ruleInput('auth_expiring_days', rules.auth_expiring_days ?? 3)),
+    h('label', {}, 'Дані застарілі після, год', ruleInput('stale_hours', rules.stale_hours ?? 48)),
+    h('label', {}, 'Повторювати не частіше, год', ruleInput('repeat_hours', rules.repeat_hours ?? 24)),
+    h('label', { class: 'row' }, h('input', { type: 'checkbox', checked: rules.notify_resolved !== false, dataset: { rule: 'notify_resolved' } }), 'Писати «вирішено»'),
+    h('button', { type: 'submit' }, 'Зберегти правила'));
+
+    const alerts = card(
+      h('div', { class: 'row between' }, h('h2', {}, 'Сповіщення про проблеми'),
+        h('button', { class: 'small', disabled: !n.configured, onclick: act(async () => (await api('/api/notify/test', { method: 'POST' })).results.join(' · ') || 'Немає увімкнених каналів.', r => r) }, 'Надіслати тест')),
+      n.error && h('p', { class: 'error' }, n.error),
+      h('h3', {}, 'Telegram-бот'),
+      h('div', { class: 'row' },
+        n.telegram ? badge(n.telegram.enabled ? `увімкнено → чат ${n.telegram.chat_id}` : 'вимкнено', n.telegram.enabled ? 'ok' : 'skipped') : badge('не налаштовано', 'skipped'),
+        n.telegram && h('button', { class: 'small ghost', onclick: act(() => post('/api/settings/notify', { telegram: { enabled: !n.telegram.enabled } }), n.telegram.enabled ? 'Вимкнено.' : 'Увімкнено.') }, n.telegram.enabled ? 'Вимкнути' : 'Увімкнути')),
+      h('p', { class: 'muted' }, 'Відкрийте свого бота в Telegram і натисніть Start, потім «Знайти чат». Токен бота задається в «Акаунти» → «Нова сесія» → Telegram-бот.'),
+      h('div', { class: 'filters' }, h('label', {}, 'Бот', bot), h('button', { onclick: findChats }, 'Знайти чат')),
+      datalist('alert-bots', ['default']),
+      chatsBox,
+      h('h3', {}, 'Discord-вебхук'),
+      h('div', { class: 'row' },
+        n.discord ? badge(n.discord.enabled ? (n.discord.webhook_set ? 'увімкнено' : 'увімкнено, але вебхука немає') : 'вимкнено', n.discord.enabled && n.discord.webhook_set ? 'ok' : 'skipped') : badge('не налаштовано', 'skipped'),
+        n.discord && h('button', { class: 'small ghost', onclick: act(() => post('/api/settings/notify', { discord: { enabled: !n.discord.enabled } }), n.discord.enabled ? 'Вимкнено.' : 'Увімкнено.') }, n.discord.enabled ? 'Вимкнути' : 'Увімкнути')),
+      h('div', { class: 'filters' }, h('label', {}, 'URL вебхука (зберігається зашифровано)', webhook),
+        h('button', { onclick: act(() => post('/api/settings/notify/discord-webhook', { url: webhook.value }), 'Discord-вебхук збережено й увімкнено.') }, 'Зберегти')),
+      h('h3', {}, 'Правила'), rulesForm,
+    );
+
+    // ── LinkedIn ──
+    const liAccount = h('select', {}, s.linkedin.accounts.map(a => h('option', { value: a.username }, `${a.username} → ${a.import_file}`)));
+    const liFile = h('input', { type: 'file', accept: '.csv,text/csv' });
+    const linkedin = card(
+      h('h2', {}, 'Імпорт LinkedIn'),
+      h('p', { class: 'muted' }, 'LinkedIn → Settings → Data privacy → Get a copy of your data → Posts. Розпакуйте архів і виберіть Shares.csv. Імпорт запуститься одразу.'),
+      s.linkedin.accounts.length ? h('div', { class: 'filters' },
+        h('label', {}, 'Акаунт', liAccount), h('label', {}, 'Shares.csv', liFile),
+        h('button', { class: 'primary', onclick: act(async () => {
+          if (!liFile.files[0]) throw new Error('Виберіть файл Shares.csv.');
+          return post('/api/settings/linkedin/upload', { account: liAccount.value, content: await liFile.files[0].text() });
+        }, r => `Збережено як ${r.saved}; імпорт запущено (вкладка «Задачі»).`) }, 'Завантажити й імпортувати'))
+        : empty('Немає акаунтів LinkedIn — додайте у вкладці «Акаунти».'),
+      s.linkedin.history.length ? h('div', { class: 'table-wrap' }, h('table', {},
+        h('thead', {}, h('tr', {}, h('th', {}, 'Коли'), h('th', {}, 'Акаунт'), h('th', {}, 'Файл'), h('th', {}, 'Стан'), h('th', {}, 'Рядків / нових'))),
+        h('tbody', {}, s.linkedin.history.map(row => h('tr', {},
+          h('td', {}, when(row.imported_at)), h('td', {}, row.username), h('td', { class: 'mono' }, row.file_name),
+          h('td', {}, badge(row.status, row.status === 'imported' ? 'ok' : 'error'), row.error ? h('div', { class: 'error' }, row.error) : null),
+          h('td', {}, `${row.rows} / ${row.new_posts}${row.conflicts ? ` (конфліктів ${row.conflicts})` : ''}`),
+        ))))) : null,
+    );
+
+    // ── Backups and encryption at rest ──
+    const includeEnv = h('input', { type: 'checkbox' });
+    const backups = card(
+      h('div', { class: 'row between' }, h('h2', {}, 'Бекапи'),
+        h('div', { class: 'row' }, h('label', { class: 'row' }, includeEnv, 'з .env'),
+          h('button', { class: 'primary small', onclick: act(() => post('/api/settings/backup', { include_env: includeEnv.checked }),
+            r => `Бекап готовий: ${r.dir} (${r.files} файлів, ${(r.bytes / 1048576).toFixed(1)} МБ).`) }, 'Створити бекап'))),
+      h('p', { class: 'muted' }, 'Знімок бази без зупинки збору + сховище, акаунти, сповіщення, контекст. Скопіюйте папку на інший диск. Відновлення: зупиніть сервер і виконайте npm run instance:restore -- <папка> --yes.'),
+      s.backups.length ? h('div', { class: 'table-wrap' }, h('table', {},
+        h('thead', {}, h('tr', {}, h('th', {}, 'Папка'), h('th', {}, 'Створено'), h('th', {}, 'Версія'), h('th', {}, 'Розмір'))),
+        h('tbody', {}, s.backups.map(b => h('tr', {}, h('td', { class: 'mono' }, b.name), h('td', {}, when(b.created_at)), h('td', {}, b.version ?? '—'), h('td', {}, `${(b.bytes / 1048576).toFixed(1)} МБ`)))))) : empty('Бекапів ще немає.'),
+    );
+    const efs = card(
+      h('h2', {}, 'Шифрування на диску (Windows EFS)'),
+      !s.efs.available ? h('p', { class: 'muted' }, 'Доступно лише у Windows. На macOS/Linux використовуйте FileVault, LUKS або fscrypt.')
+        : s.efs.error ? h('p', { class: 'error' }, s.efs.error)
+          : [h('div', { class: 'row' }, badge(`${s.efs.encrypted} з ${s.efs.total} зашифровано`, s.efs.encrypted === s.efs.total ? 'ok' : 'stale')),
+            s.efs.plaintext.length ? h('div', { class: 'muted mono' }, s.efs.plaintext.join(', ')) : null,
+            h('p', { class: 'muted' }, 'Щоб зашифрувати: зупиніть npm run serve, npm start і MCP, виконайте npm run instance:protect, потім один раз збережіть сертифікат: cipher /x.')],
+    );
+
+    // ── Vault and MCP ──
+    const current = h('input', { type: 'password', autocomplete: 'current-password' });
+    const next = h('input', { type: 'password', autocomplete: 'new-password' });
+    const repeat = h('input', { type: 'password', autocomplete: 'new-password' });
+    const v = s.vault;
+    const vaultCard = card(
+      h('h2', {}, 'Сховище й доступ'),
+      !v.encrypted ? h('p', { class: 'error' }, 'Сховища ще немає: npm run nyra -- vault init, потім перезапустіть npm run serve.') : [
+        h('div', { class: 'row between' },
+          h('span', {}, 'Запам’ятати на цьому ПК (MCP і розклад без пароля): ', badge(v.remembered ? 'так' : 'ні', v.remembered ? 'ok' : 'skipped')),
+          v.dpapi && h('button', { class: 'small', onclick: act(() => post(v.remembered ? '/api/settings/vault/forget' : '/api/settings/vault/remember'), v.remembered ? 'Забуто.' : 'Запам’ятовано (Windows DPAPI).') }, v.remembered ? 'Забути' : 'Запам’ятати')),
+        h('h3', {}, 'Змінити майстер-пароль'),
+        h('form', { class: 'filters', onsubmit: event => {
+          event.preventDefault();
+          act(() => post('/api/settings/vault/password', { current: current.value, next: next.value, repeat: repeat.value }), 'Майстер-пароль змінено. Перезапустіть MCP, якщо він працює окремо.')();
+        } }, h('label', {}, 'Поточний', current), h('label', {}, 'Новий (від 10 символів)', next), h('label', {}, 'Ще раз', repeat), h('button', { type: 'submit' }, 'Змінити')),
+        h('h3', {}, 'Токен MCP для ШІ-клієнтів (npm run serve -- --mcp)'),
+        h('div', { class: 'row between' }, badge(v.mcp_token ? 'створено' : 'немає', v.mcp_token ? 'ok' : 'skipped'),
+          h('button', { class: 'small', onclick: () => mcpToken(v.mcp_token) }, v.mcp_token ? 'Замінити…' : 'Створити')),
+      ],
+    );
+
+    return [alerts, linkedin, backups, efs, vaultCard];
+  },
+
   async posts() {
     const personas = await tool('personas_list');
     const state = VIEWS.posts.state ??= { persona: '', platform: '', type: 'recent', search: '', limit: 30 };
@@ -1112,6 +1244,22 @@ async function deleteSecret(kind, name) {
     toast(error.message, 7000);
   }
   render();
+}
+
+async function mcpToken(exists) {
+  if (exists && !await confirmDialog('Замінити токен MCP?', 'Старий токен одразу перестане працювати; оновіть конфіг ШІ-клієнта.', 'Замінити')) return;
+  try {
+    const result = await api('/api/settings/mcp-token', { method: 'POST', body: { rotate: Boolean(exists) } });
+    const header = h('input', { type: 'text', readonly: true, value: result.header, class: 'mono' });
+    openModal('Токен MCP',
+      h('p', {}, 'Скопіюйте зараз — повторно токен не показується.'),
+      field('Заголовок для клієнта', header),
+      h('p', { class: 'muted' }, `Адреса: ${location.origin}/mcp (сервер має бути запущений з --mcp).`),
+      h('div', { class: 'row end' }, h('button', { class: 'primary', onclick: () => copyText(result.header, 'Скопійовано') }, 'Копіювати')));
+    render();
+  } catch (error) {
+    toast(error.message, 8000);
+  }
 }
 
 // ── Content: drafts ───────────────────────────────────────────────────────────
