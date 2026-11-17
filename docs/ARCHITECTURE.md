@@ -87,7 +87,8 @@ browser ──► src/web/server.js ──► toolRegistry (same tools as MCP) �
 EANyra/
   package.json
   README.md
-  .env                          local credentials and runtime settings, gitignored
+  .env                          optional runtime settings, gitignored
+  .env.example                  every setting with its default
   docs/
     ARCHITECTURE.md
     CONTEXT_GUIDE.md
@@ -97,7 +98,6 @@ EANyra/
     old/                         archived source documents, not authoritative
   skills/eanyra/SKILL.md
   instance_example/           versioned defaults; no personal data
-    .env.example
     accounts.json.example
     context/
       *.example.yaml

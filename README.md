@@ -49,6 +49,28 @@ signals. Twitter, LinkedIn, and Telegram publications are posts.
 
 ## Quick Start
 
+Everything can be set up from the browser:
+
+```bash
+npm install
+npm run serve
+```
+
+1. `npm install` also downloads Playwright's Chromium (used for X).
+2. `npm run serve` creates an empty `instance/` on first start and prints
+   `http://localhost:4450` with a one-time access token.
+3. Open the page, log in with the token and create the encrypted vault
+   (master password) on «Огляд». From then on you log in with that password.
+4. «Акаунти»: add accounts and their logins (X cookies or login window,
+   Telegram QR, tokens). «Контекст»: voice, platforms, projects, personas.
+   «Налаштування»: alerts, LinkedIn import, backups, MCP token.
+
+A root `.env` is optional: every setting has a default. Copy
+[`.env.example`](.env.example) to `.env` only to change one (for example
+`WEB_PORT`, `CRON_SCHEDULE` or `BROWSER_HEADLESS`).
+
+### The same from the terminal
+
 ```bash
 npm install
 npm run instance:init
@@ -90,7 +112,7 @@ npm run export:dry
 # Start the scheduled daemon
 npm start
 
-# Or: local web UI on http://127.0.0.1:3030 (add -- --schedule for cron runs)
+# Or: local web UI on http://localhost:4450 (add -- --schedule for cron runs)
 npm run serve
 ```
 
@@ -407,10 +429,10 @@ password; run `npm run nyra -- vault remember` again on a new PC or user.
 
 ## Web UI
 
-`npm run serve` starts a local web interface on `http://127.0.0.1:3030`
-(`WEB_PORT`, `--port`). Log in with the master password; it also unlocks the
+`npm run serve` starts a local web interface on `http://localhost:4450`
+(also `http://127.0.0.1:4450`; port: `WEB_PORT` or `--port`). Log in with the master password; it also unlocks the
 vault for collection and publishing. Without a vault the terminal prints a
-one-time access token.
+one-time access token; the page then offers to create the vault.
 
 - **Контент:** publishing plan per persona and account (cadence from
   `posting_frequency` vs. real posts), AI and manual drafts with edit, approve,
@@ -629,7 +651,7 @@ from `src/config/app.config.js`.
 ## Configuration
 
 Runtime configuration is centralized in `src/config/app.config.js`.
-`instance_example/.env.example` documents every supported environment variable. The groups are:
+`.env.example` documents every supported environment variable. The groups are:
 
 - general: `NODE_ENV`;
 - instance selection: `INSTANCE_DIR` in root `.env` or the process environment

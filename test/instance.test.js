@@ -21,9 +21,27 @@ async function write(root, name, text) {
   await fs.writeFile(filename, text);
 }
 
+test('web-first init creates an empty instance without .env or example accounts', async t => {
+  const projectRoot = await fixture(t);
+  await fs.cp(path.join(repository, 'instance_example'), path.join(projectRoot, 'instance_example'), { recursive: true });
+  await fs.copyFile(path.join(repository, '.env.example'), path.join(projectRoot, '.env.example'));
+  const instanceDir = path.join(projectRoot, 'instance');
+  const result = await initializeInstance({ projectRoot, withEnv: false, exampleAccounts: false });
+  assert.equal(result.created.includes('.env'), false);
+  await assert.rejects(fs.access(path.join(projectRoot, '.env')));
+  assert.equal(await fs.readFile(path.join(instanceDir, 'accounts.json'), 'utf8'), '[]\n');
+  assert.ok(result.created.includes('context/voice.yaml'));
+  await fs.writeFile(path.join(instanceDir, 'accounts.json'), '[{"username":"me","platform":"github"}]');
+  assert.deepEqual((await initializeInstance({ projectRoot, withEnv: false, exampleAccounts: false })).created, []);
+  assert.match(await fs.readFile(path.join(instanceDir, 'accounts.json'), 'utf8'), /"me"/);
+  // The full init still copies the root .env.example.
+  assert.ok((await initializeInstance({ projectRoot })).created.includes('.env'));
+});
+
 test('instance init creates editable files outside src without overwriting existing content', async t => {
   const projectRoot = await fixture(t);
   await fs.cp(path.join(repository, 'instance_example'), path.join(projectRoot, 'instance_example'), { recursive: true });
+  await fs.copyFile(path.join(repository, '.env.example'), path.join(projectRoot, '.env.example'));
   const instanceDir = path.join(projectRoot, 'instance');
   await write(instanceDir, 'context/voice.yaml', 'tone: personal');
   await write(projectRoot, '.env', 'TELEGRAM_BOT_TOKEN=keep-existing-test-token');

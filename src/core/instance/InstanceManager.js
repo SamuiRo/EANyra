@@ -8,14 +8,19 @@ const PATH_KEYS = new Set([
   'BROWSER_DATA_PATH', 'BROWSER_COOKIES_PATH', 'LINKEDIN_IMPORTS_DIR',
 ]);
 
-export async function initializeInstance({ projectRoot, instanceDir = path.join(projectRoot, 'instance') }) {
+/**
+ * Create missing instance files; never overwrites.
+ * withEnv: also copy <project>/.env.example to .env (optional: every setting has a default).
+ * exampleAccounts: false starts with an empty accounts.json (accounts are added in the web UI).
+ */
+export async function initializeInstance({ projectRoot, instanceDir = path.join(projectRoot, 'instance'), withEnv = true, exampleAccounts = true }) {
   const templateDir = path.join(projectRoot, 'instance_example');
   if (await statOrNull(path.join(instanceDir, '.env'))) {
     throw new Error('Found instance/.env. Run instance:migrate to move it to the repository root before initialization.');
   }
   const copies = [
-    ['.env.example', '.env'],
-    ['accounts.json.example', 'accounts.json'],
+    ...(withEnv ? [['../.env.example', '.env']] : []),
+    ...(exampleAccounts ? [['accounts.json.example', 'accounts.json']] : []),
     ['context/voice.example.yaml', 'context/voice.yaml'],
     ['context/bio.example.yaml', 'context/bio.yaml'],
     ['context/platforms.example.yaml', 'context/platforms.yaml'],
@@ -30,6 +35,14 @@ export async function initializeInstance({ projectRoot, instanceDir = path.join(
       await fs.copyFile(path.join(templateDir, source), target, constants.COPYFILE_EXCL);
       if (destination === '.env') await fs.chmod(target, 0o600);
       created.push(destination);
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+    }
+  }
+  if (!exampleAccounts) {
+    try {
+      await fs.writeFile(path.join(instanceDir, 'accounts.json'), '[]\n', { flag: 'wx' });
+      created.push('accounts.json');
     } catch (error) {
       if (error.code !== 'EEXIST') throw error;
     }

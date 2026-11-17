@@ -28,7 +28,7 @@ import { LinkedinImportRepository } from '../core/teapot/repositories/LinkedinIm
 const fail = (status, message) => Object.assign(new Error(message), { status });
 
 /**
- * @param {{ hasVault: boolean, sequelize?: import('sequelize').Sequelize, jobs: object,
+ * @param {{ hasVault: boolean | (() => boolean), sequelize?: import('sequelize').Sequelize, jobs: object,
  *           backupsDir?: string, efs?: { available: () => boolean, status: Function },
  *           notifyFile?: string, accountsFile?: string, importsDir?: string, fetchImpl?: typeof fetch,
  *           vaultFile?: string, keyStore?: object }} deps  every path is injectable so tests never touch the real instance
@@ -38,9 +38,10 @@ export function buildSettingsRoutes({ hasVault, sequelize, jobs, backupsDir = pa
   fetchImpl = fetch, vaultFile = PATHS.vaultFile,
   keyStore = { available: dpapiAvailable, isRemembered: isVaultKeyRemembered, remember: rememberVaultKey, forget: forgetVaultKey } }) {
   const openVault = () => getVault({ interactive: false, filePath: vaultFile }).catch(() => null);
+  const vaultExists = typeof hasVault === 'function' ? hasVault : () => hasVault;
   const vault = async () => {
     const unlocked = await openVault();
-    if (!unlocked) throw fail(409, hasVault ? 'The vault is locked. Log in again.' : 'Create the vault first: npm run nyra -- vault init.');
+    if (!unlocked) throw fail(409, vaultExists() ? 'The vault is locked. Log in again.' : 'Create the vault first: «Огляд» → «Створити сховище».');
     return unlocked;
   };
   const checkPassword = async password => {
@@ -69,8 +70,8 @@ export function buildSettingsRoutes({ hasVault, sequelize, jobs, backupsDir = pa
           rules: config?.rules ?? { ...DEFAULT_RULES },
         },
         vault: {
-          encrypted: hasVault, unlocked: Boolean(unlocked), dpapi: keyStore.available(),
-          remembered: hasVault ? await keyStore.isRemembered() : false,
+          encrypted: vaultExists(), unlocked: Boolean(unlocked), dpapi: keyStore.available(),
+          remembered: vaultExists() ? await keyStore.isRemembered() : false,
           mcp_token: Boolean(unlocked?.get('mcp-token', 'default')),
         },
         efs: efs.available() ? await efs.status({ instanceDir: INSTANCE_DIR, envFile: PATHS.envFile })

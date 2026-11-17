@@ -65,7 +65,7 @@ export const MCP = {
 /** Local web UI (`npm run serve`). Loopback only. */
 export const WEB = {
   host: process.env.WEB_HOST ?? '127.0.0.1',
-  port: envNumber('WEB_PORT', 3030),
+  port: envNumber('WEB_PORT', 4450),
 };
 
 export const SCHEDULER = {
