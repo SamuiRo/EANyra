@@ -130,6 +130,18 @@ function renderContext(context, requestedSections) {
   if (!requestedSections.includes('context')) return '';
   const parts = [];
 
+  if (context.persona === null) {
+    parts.push(`## 🎯 Voice`);
+    parts.push(``);
+    parts.push(context.personas?.length
+      ? `> Several personas exist (${context.personas.join(', ')}): run the export with \`--persona <slug>\` to include one voice.`
+      : `> No persona yet: create one in the web UI («Контекст») to give the AI your voice and platform rules.`);
+    parts.push(``);
+  } else if (context.persona) {
+    parts.push(`> Persona: **${context.persona.name}** (${context.persona.slug})`);
+    parts.push(``);
+  }
+
   if (context.voice) {
     parts.push(`## 🎯 Your Voice & Style`);
     parts.push(``);

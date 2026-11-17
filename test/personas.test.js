@@ -15,6 +15,7 @@ import {
   parsePersona,
   assertExclusiveMembership,
   mergePersonaContext,
+  legacyIntoPersona,
 } from '../src/config/personaConfig.js';
 
 const serverPath = fileURLToPath(new URL('../src/core/mcp/start.js', import.meta.url));
@@ -31,7 +32,7 @@ test('persona files are validated against accounts.json and their own filename',
   assert.equal(persona.projects, null);
   for (const [data, pattern] of [
     [{ slug: 'other', accounts: ['twitter/anime_fan'] }, /must match the filename/],
-    [{ accounts: [] }, /at least one/],
+    [{ accounts: 'twitter/anime_fan' }, /accounts must be a list/],
     [{ accounts: ['twitter/unknown'] }, /not found in accounts.json/],
     [{ accounts: ['twitter/anime_fan', 'twitter/@Anime_Fan'] }, /listed twice/],
     [{ accounts: ['twitter/anime_fan'], voice: ['casual'] }, /voice must be a mapping/],
@@ -43,9 +44,13 @@ test('persona files are validated against accounts.json and their own filename',
     parsePersona({ accounts: ['twitter/business'] }, 'brand', configured),
     parsePersona({ accounts: ['twitter/business'] }, 'anime', configured),
   ]), /belongs to both "brand" and "anime"/);
+  // A new persona may start without accounts (assigned later in the web UI).
+  const fresh = parsePersona({ accounts: [] }, 'fresh', configured);
+  assert.deepEqual(fresh.accounts, []);
+  assert.match(fresh.warnings[0], /accounts is empty/);
 });
 
-test('persona context overrides global defaults key by key and limits projects', () => {
+test('persona context is self-contained (no shared defaults) and limits projects', () => {
   const global = {
     voice: { tone: 'Technical', taboo: ['No unverified facts'] },
     bio: { twitter: { short: 'Builder', full: null }, linkedin: { short: 'Engineer' } },
@@ -57,10 +62,9 @@ test('persona context overrides global defaults key by key and limits projects',
     platforms: { twitter: { language: 'en' } }, projects: [],
   }, 'anime', configured);
   const merged = mergePersonaContext(global, anime);
-  assert.deepEqual(merged.voice, { tone: 'Casual', taboo: ['No unverified facts'] });
-  assert.deepEqual(merged.bio.twitter, { short: 'Anime fan', full: null });
-  assert.deepEqual(merged.bio.linkedin, { short: 'Engineer' });
-  assert.deepEqual(merged.platforms.twitter, { max_length: 280, language: 'en', style: 'precise' });
+  assert.deepEqual(merged.voice, { tone: 'Casual' });
+  assert.deepEqual(merged.bio, { twitter: { short: 'Anime fan' } });
+  assert.deepEqual(merged.platforms, { twitter: { language: 'en' } });
   assert.deepEqual(merged.projects, []);
   assert.deepEqual(merged.persona.accounts, ['twitter/anime_fan']);
 
@@ -68,6 +72,12 @@ test('persona context overrides global defaults key by key and limits projects',
   assert.deepEqual(mergePersonaContext(global, brand).projects, [{ slug: 'eanyra' }]);
   const all = parsePersona({ accounts: ['twitter/business'] }, 'brand', configured);
   assert.equal(mergePersonaContext(global, all).projects.length, 2);
+
+  // One-time carry-over of the old shared files: persona values win, only its platforms.
+  const carried = legacyIntoPersona(global, anime);
+  assert.deepEqual(carried.voice, { tone: 'Casual', taboo: ['No unverified facts'] });
+  assert.deepEqual(carried.bio, { twitter: { short: 'Anime fan', full: null } });
+  assert.deepEqual(carried.platforms, { twitter: { max_length: 280, language: 'en', style: 'precise' } });
 });
 
 async function fixture(t) {
@@ -160,7 +170,7 @@ test('MCP resolves a persona from the target account and scopes posts to it', { 
 
   const anime = (await call('context_get', { account: '@Anime_Fan', platform: 'twitter' })).body;
   assert.equal(anime.persona.slug, 'anime');
-  assert.deepEqual(anime.voice, { tone: 'Casual', taboo: ['No unverified facts'] });
+  assert.deepEqual(anime.voice, { tone: 'Casual' }, 'the old shared voice.yaml is not used');
   assert.deepEqual(anime.projects, []);
   assert.equal((await call('context_get', { account: 'telegram/brand_channel' })).body.persona.slug, 'brand');
   assert.match((await call('context_get', { persona: 'anime', account: 'twitter/business' })).body.error, /belongs to "brand"/);

@@ -1,8 +1,10 @@
 /**
  * Read, validate and write the author context YAML files for the web UI:
  *
- *   voice.yaml, bio.yaml, platforms.yaml
- *   projects/<slug>.yaml, personas/<slug>.yaml
+ *   personas/<slug>.yaml   voice, bio, platform rules and accounts of one persona
+ *   projects/<slug>.yaml   projects the personas talk about
+ *   voice.yaml, bio.yaml, platforms.yaml   legacy shared files, no longer used;
+ *                          listed only while they exist, until moved into the personas
  *
  * The raw text is kept (comments survive). Saving validates with the same
  * rules as `context sync`, writes atomically and refuses files with errors.
@@ -12,20 +14,23 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, parseDocument } from 'yaml';
 
 import { PATHS, PROJECT_ROOT } from '../../config/app.config.js';
-import { validateAccounts, accountKey } from '../../config/accountConfig.js';
+import { validateAccounts, accountKey, parseAccountRef } from '../../config/accountConfig.js';
 import { validateVoice, validateBio, validatePlatforms, validateProject, ContextValidationError } from '../../config/contextSchema.js';
-import { parsePersona, assertExclusiveMembership } from '../../config/personaConfig.js';
+import { parsePersona, assertExclusiveMembership, legacyIntoPersona } from '../../config/personaConfig.js';
 
 const TOP = { 'voice.yaml': validateVoice, 'bio.yaml': validateBio, 'platforms.yaml': validatePlatforms };
 const ITEM = /^(projects|personas)\/([a-z0-9][a-z0-9-]{0,63})\.yaml$/;
 const DESCRIPTIONS = {
-  'voice.yaml': 'Голос: тон, що подобається і що ні, табу, приклад поста',
-  'bio.yaml': 'Біо для кожної платформи',
-  'platforms.yaml': 'Правила платформ: мова, стиль, довжина, формати, частота',
+  'voice.yaml': 'Застаріле: спільний голос (не використовується)',
+  'bio.yaml': 'Застаріле: спільне біо (не використовується)',
+  'platforms.yaml': 'Застаріле: спільні правила платформ (не використовуються)',
 };
+// Keep the author's line breaks; long text stays a literal block (|).
+const YAML_OUT = { lineWidth: 0, blockQuote: 'literal' };
+const fail = (status, message) => Object.assign(new Error(message), { status });
 
 export class ContextFileService {
   constructor({ contextDir = PATHS.contextDir, accountsConfigPath = PATHS.accountsConfig, templatesDir } = {}) {
@@ -34,9 +39,12 @@ export class ContextFileService {
     this.templatesDir = templatesDir ?? path.join(PROJECT_ROOT, 'instance_example', 'context');
   }
 
-  /** All editable files, existing or not (top-level files can be created). */
+  /** Personas and projects; the legacy shared files only while they exist. */
   async list() {
-    const files = Object.keys(TOP).map(name => ({ path: name, kind: name.replace('.yaml', ''), description: DESCRIPTIONS[name] }));
+    const files = [];
+    for (const name of Object.keys(TOP)) {
+      if (await exists(this.#abs(name))) files.push({ path: name, kind: 'legacy', description: DESCRIPTIONS[name] });
+    }
     for (const folder of ['projects', 'personas']) {
       const names = await fs.readdir(path.join(this.contextDir, folder)).catch(() => []);
       for (const name of names.sort()) {
@@ -47,14 +55,133 @@ export class ContextFileService {
     return Promise.all(files.map(async file => ({ ...file, exists: await exists(this.#abs(file.path)) })));
   }
 
+  /** "platform/username" → persona slug, from the persona files. */
+  async accountPersonas() {
+    const map = {};
+    for (const persona of await this.#personas()) {
+      for (const ref of persona.accounts) map[accountKey(ref)] = persona.slug;
+    }
+    return map;
+  }
+
+  /**
+   * Put an account into a persona (or none): removes it from its current
+   * persona file and appends it to the new one. Comments in the files stay.
+   */
+  async setAccountPersona(account, slug) {
+    const key = accountKey(parseAccountRef(String(account ?? '')));
+    const target = slug ? `personas/${slug}.yaml` : null;
+    if (target && !(ITEM.test(target) && await exists(this.#abs(target)))) throw fail(404, `Persona "${slug}" not found.`);
+    const current = Object.entries(await this.accountPersonas()).find(([k]) => k === key)?.[1] ?? null;
+    if (current === (slug || null)) return { account: key, persona: current, changed: false };
+
+    let restore = null;
+    if (current) {
+      const rel = `personas/${current}.yaml`;
+      const before = (await this.read(rel)).content;
+      const doc = parseDocument(before);
+      const items = doc.get('accounts')?.items ?? [];
+      const index = items.findIndex(item => {
+        try {
+          return accountKey(parseAccountRef(String(item?.value ?? item))) === key;
+        } catch {
+          return false;
+        }
+      });
+      if (index >= 0) doc.deleteIn(['accounts', index]);
+      await this.write(rel, doc.toString(YAML_OUT));
+      restore = () => this.write(rel, before);
+    }
+    if (target) {
+      try {
+        const doc = parseDocument((await this.read(target)).content);
+        if (!doc.get('accounts')?.items) doc.set('accounts', doc.createNode([]));
+        doc.addIn(['accounts'], key);
+        await this.write(target, doc.toString(YAML_OUT));
+      } catch (error) {
+        await restore?.();
+        throw error;
+      }
+    }
+    return { account: key, persona: slug || null, changed: true };
+  }
+
+  /**
+   * Move the legacy shared files into every persona (only what a persona does
+   * not set itself, only for its platforms), then put them in the trash.
+   */
+  async migrateLegacy() {
+    const legacyFiles = [];
+    for (const name of Object.keys(TOP)) if (await exists(this.#abs(name))) legacyFiles.push(name);
+    if (!legacyFiles.length) throw fail(409, 'There are no shared voice/bio/platforms files to move.');
+    const personas = await this.#personas();
+    if (!personas.length) throw fail(409, 'Create a persona first: the shared files are moved into the personas.');
+
+    const legacy = {};
+    for (const name of legacyFiles) {
+      const validation = await this.validate(name, (await this.read(name)).content);
+      if (!validation.ok) throw fail(400, `${name}: ${validation.errors.join('; ')} — fix it first.`);
+      legacy[name.replace('.yaml', '')] = parseYaml((await this.read(name)).content) ?? {};
+    }
+
+    const updated = [];
+    for (const persona of personas) {
+      const rel = `personas/${persona.slug}.yaml`;
+      const doc = parseDocument((await this.read(rel)).content);
+      const want = legacyIntoPersona(legacy, persona);
+      let changed = false;
+      const fill = (pathParts, value) => {
+        if (doc.hasIn(pathParts)) return;
+        doc.setIn(pathParts, doc.createNode(value));
+        changed = true;
+      };
+      for (const [field, value] of Object.entries(want.voice)) fill(['voice', field], value);
+      for (const section of ['bio', 'platforms']) {
+        for (const [platform, rules] of Object.entries(want[section])) {
+          if (!rules || typeof rules !== 'object' || Array.isArray(rules)) {
+            fill([section, platform], rules);
+            continue;
+          }
+          for (const [field, value] of Object.entries(rules)) fill([section, platform, field], value);
+        }
+      }
+      if (changed) {
+        await this.write(rel, doc.toString(YAML_OUT));
+        updated.push(rel);
+      }
+    }
+    const trashed = [];
+    const trash = path.join(this.contextDir, '.trash');
+    await fs.mkdir(trash, { recursive: true });
+    for (const name of legacyFiles) {
+      const target = path.join(trash, `${name.replace('.yaml', '')}.${Date.now()}.yaml`);
+      await fs.rename(this.#abs(name), target);
+      trashed.push(path.relative(this.contextDir, target).replaceAll('\\', '/'));
+    }
+    return { updated, trashed };
+  }
+
+  async #personas() {
+    const personas = [];
+    for (const name of await fs.readdir(path.join(this.contextDir, 'personas')).catch(() => [])) {
+      if (!ITEM.test(`personas/${name}`)) continue;
+      try {
+        personas.push(parsePersona(parseYaml(await fs.readFile(path.join(this.contextDir, 'personas', name), 'utf8')), name.replace(/\.yaml$/, '')));
+      } catch {
+        // Invalid files are reported when edited or synced.
+      }
+    }
+    return personas;
+  }
+
   async read(rel) {
     const file = this.#abs(rel);
     try {
       return { path: rel, exists: true, content: await fs.readFile(file, 'utf8') };
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
-      const template = TOP[rel] ? await fs.readFile(path.join(this.templatesDir, rel.replace('.yaml', '.example.yaml')), 'utf8').catch(() => '') : '';
-      return { path: rel, exists: false, content: template };
+      if (TOP[rel]) throw fail(404, `${rel} is not used any more: every persona has its own voice, bio and platform rules.`);
+      return { path: rel, exists: false, content: '' };
     }
   }
 
@@ -115,11 +242,19 @@ export class ContextFileService {
     if (!ITEM.test(rel)) throw Object.assign(new Error('The name must be lowercase kebab-case, e.g. my-project.'), { status: 400 });
     const file = this.#abs(rel);
     if (await exists(file)) throw Object.assign(new Error(`${rel} already exists.`), { status: 409 });
-    const local = path.join(this.contextDir, `${kind}s`, '_template.yaml');
-    const template = await fs.readFile(local, 'utf8')
-      .catch(() => fs.readFile(path.join(this.templatesDir, `${kind}s`, '_template.yaml'), 'utf8'))
+    // The shipped template first: older instances keep an outdated copy.
+    const template = await fs.readFile(path.join(this.templatesDir, `${kind}s`, '_template.yaml'), 'utf8')
+      .catch(() => fs.readFile(path.join(this.contextDir, `${kind}s`, '_template.yaml'), 'utf8'))
       .catch(() => '');
-    const content = template.replace(/^slug:.*$/m, `slug: "${slug}"`) || `slug: "${slug}"\n`;
+    let content = template.replace(/^slug:.*$/m, `slug: "${slug}"`) || `slug: "${slug}"\n`;
+    // Accounts are assigned in «Акаунти»; example entries would not validate.
+    if (kind === 'persona') {
+      const doc = parseDocument(content);
+      if (doc.has('accounts')) {
+        doc.set('accounts', doc.createNode([]));
+        content = doc.toString(YAML_OUT);
+      }
+    }
     return { path: rel, exists: false, content };
   }
 

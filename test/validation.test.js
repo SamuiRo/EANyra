@@ -75,7 +75,7 @@ test('persona overrides follow the same rules', () => {
   ]);
 });
 
-test('a file with errors is not synced and its previous version stays', async t => {
+test('a file with errors is not synced; old shared files are reported and not used', async t => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'eanyra-ctx-'));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   await fs.mkdir(path.join(dir, 'projects'));
@@ -87,22 +87,20 @@ test('a file with errors is not synced and its previous version stays', async t 
   await new SchemaMigrator(sequelize).migrate();
   const repo = new UserContextRepository(models, dir, accounts);
 
-  await fs.writeFile(path.join(dir, 'platforms.yaml'), 'twitter:\n  max_length: 280\n  frequency: daily\n');
+  // Rows from the old shared files are removed; the files only produce a warning.
+  await models.UserContext.create({ key: 'voice', value: { tone: 'old' } });
   await fs.writeFile(path.join(dir, 'voice.yaml'), 'tone: calm\n');
+  await fs.writeFile(path.join(dir, 'projects', 'tool.yaml'), 'slug: tool\nstatus: active\n');
   let result = await repo.sync();
   assert.deepEqual(result.errors, []);
-  assert.match(result.warnings[0], /platforms\.yaml: twitter\.frequency .*posting_frequency/);
+  assert.match(result.warnings.join(), /voice\.yaml: not used any more/);
+  assert.equal(await repo.getKey('voice'), null);
+  assert.equal(await models.Project.count(), 1);
 
-  await fs.writeFile(path.join(dir, 'platforms.yaml'), 'twitter:\n  max_length: lots\n');
   await fs.writeFile(path.join(dir, 'projects', 'tool.yaml'), 'slug: tool\nstatus: shipped\n');
   result = await repo.sync();
-  assert.deepEqual(result.errors, [
-    'platforms.yaml: twitter.max_length must be a positive whole number',
-    'projects/tool.yaml: status must be one of active, paused, archived',
-  ]);
-  assert.equal((await repo.getKey('platforms')).twitter.max_length, 280);
-  assert.equal(await models.Project.count(), 0);
-  assert.ok(result.updated.includes('voice'));
+  assert.deepEqual(result.errors, ['projects/tool.yaml: status must be one of active, paused, archived']);
+  assert.equal((await models.Project.findOne()).status, 'active', 'the previous version stays');
 });
 
 test('malformed records are dropped with a reason and the rest are kept', () => {

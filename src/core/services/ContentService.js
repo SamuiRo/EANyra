@@ -313,7 +313,8 @@ export class ContentService {
     const now = this.now().getTime();
     const result = [];
     for (const { persona, accounts: entries } of groups.values()) {
-      const context = persona ? mergePersonaContext(global, persona) : global;
+      // Accounts without a persona have no platform rules (no cadence target).
+      const context = persona ? mergePersonaContext(global, persona) : { platforms: {} };
       const items = [];
       for (const entry of entries) {
         const row = accountRow.get(`${entry.platform}/${entry.username}`);

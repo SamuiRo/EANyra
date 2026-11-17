@@ -11,9 +11,7 @@ instance/                       entirely gitignored
   secrets.vault                 encrypted logins and tokens (master password)
   secrets.vault.dpapi           optional: vault key remembered on this PC (Windows DPAPI)
   context/
-    voice.yaml
-    bio.yaml
-    platforms.yaml
+    personas/                   one file per persona: voice, bio, platforms, accounts
     projects/
       _template.yaml
       your-project.yaml

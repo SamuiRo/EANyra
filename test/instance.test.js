@@ -30,7 +30,8 @@ test('web-first init creates an empty instance without .env or example accounts'
   assert.equal(result.created.includes('.env'), false);
   await assert.rejects(fs.access(path.join(projectRoot, '.env')));
   assert.equal(await fs.readFile(path.join(instanceDir, 'accounts.json'), 'utf8'), '[]\n');
-  assert.ok(result.created.includes('context/voice.yaml'));
+  assert.ok(result.created.includes('context/personas/_template.yaml'));
+  assert.equal(result.created.includes('context/voice.yaml'), false, 'no shared voice file: personas are self-contained');
   await fs.writeFile(path.join(instanceDir, 'accounts.json'), '[{"username":"me","platform":"github"}]');
   assert.deepEqual((await initializeInstance({ projectRoot, withEnv: false, exampleAccounts: false })).created, []);
   assert.match(await fs.readFile(path.join(instanceDir, 'accounts.json'), 'utf8'), /"me"/);

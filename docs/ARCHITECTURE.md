@@ -553,11 +553,14 @@ JSON-backed `tech_stack`, `links`, `content_angles`, `posting_rules`, and
 `UserContextRepository.sync()` reads:
 
 ```text
-instance/context/voice.yaml
-instance/context/bio.yaml
-instance/context/platforms.yaml
 instance/context/projects/*.yaml
+instance/context/personas/*.yaml
 ```
+
+Personas are self-contained (voice, bio, platforms, accounts); the old shared
+`voice.yaml` / `bio.yaml` / `platforms.yaml` are only reported as unused and
+their old rows removed. `ContextFileService.migrateLegacy()` copies them into
+the personas once (only missing keys, only the persona's platforms).
 
 Top-level files are upserted into `user_context`. Each project is upserted into
 `projects` and duplicated as `user_context` key `project.<slug>` for direct

@@ -9,12 +9,6 @@
 import { Op } from 'sequelize';
 import { EXPORT } from '../../../config/app.config.js';
 
-// Top-level context keys that live in user_context table.
-// project.* keys are stored there too (for quick lookup) but we load
-// projects via the Project model to get structured data — so we exclude
-// them here to avoid double-loading.
-const TOP_LEVEL_CONTEXT_KEYS = ['voice', 'bio', 'platforms'];
-
 function selectPlatformEntries(value, platforms) {
   if (!value || !platforms?.length) return value;
 
@@ -46,21 +40,30 @@ export class ExportRepository {
   // ── User context ──────────────────────────────────────────────────────────
 
   /**
-   * Returns { voice, bio, platforms, projects[] } from the DB.
+   * Returns { persona, voice, bio, platforms, projects[] }.
    *
-   * Only reads top-level keys from user_context (voice, bio, platforms).
-   * project.* keys are intentionally excluded here — projects come from
-   * the Project model so we get proper structured objects with all fields.
+   * Voice, bio and platform rules come from one persona (each persona is
+   * self-contained). Without `persona` the only persona is used when there is
+   * exactly one; otherwise the export has no voice section and says why.
+   * Projects come from the Project model (structured objects with all fields),
+   * limited to the persona's projects when it lists them.
    */
-  async getContext({ platforms } = {}) {
-    const rows = await this.UserContext.findAll({
-      where: { key: { [Op.in]: TOP_LEVEL_CONTEXT_KEYS } },
-    });
-
-    const ctx = {};
-    for (const row of rows) {
-      ctx[row.key] = row.value;
+  async getContext({ platforms, persona: slug } = {}) {
+    const rows = await this.UserContext.findAll({ where: { key: { [Op.like]: 'persona.%' } } });
+    const personas = rows.map(row => (typeof row.value === 'string' ? JSON.parse(row.value) : row.value));
+    let persona = null;
+    if (slug) {
+      persona = personas.find(entry => entry.slug === slug);
+      if (!persona) {
+        throw new Error(`Unknown persona "${slug}". Known: ${personas.map(entry => entry.slug).join(', ') || 'none'}.`);
+      }
+    } else if (personas.length === 1) {
+      [persona] = personas;
     }
+
+    const ctx = persona
+      ? { persona: { slug: persona.slug, name: persona.name }, voice: persona.voice, bio: persona.bio, platforms: persona.platforms }
+      : { persona: null, personas: personas.map(entry => entry.slug) };
 
     ctx.bio = selectPlatformEntries(ctx.bio, platforms);
     ctx.platforms = selectPlatformEntries(ctx.platforms, platforms);
@@ -71,7 +74,8 @@ export class ExportRepository {
       order: [['slug', 'ASC']],
     });
 
-    ctx.projects = projects.map(p => ({
+    const allowed = persona?.projects ?? null;
+    ctx.projects = projects.filter(p => !allowed || allowed.includes(p.slug)).map(p => ({
       slug:           p.slug,
       name:           p.name,
       description:    p.description,

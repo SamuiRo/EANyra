@@ -7,6 +7,38 @@ change (fixes, docs, internals); **minor** = new capability, existing setups
 keep working; **major** = an existing setup, configuration or integration may
 need action. History before 2.0.0 lives only in commit messages (`v1.x.y …`).
 
+## 4.0.0 — 2026-11-17
+
+Every persona is self-contained; accounts are assigned to personas from the
+account editor.
+
+### Upgrade notes (action needed)
+
+- **The shared `voice.yaml`, `bio.yaml` and `platforms.yaml` are no longer
+  used.** A persona's voice, bio and platform rules come only from its own
+  file. Open «Контекст» and press «Перенести в персони»: every persona gets
+  what it did not set itself (only for the platforms of its accounts), the
+  comments in the persona files stay, and the old files move to
+  `context/.trash/`. Until then `context sync` warns.
+- Accounts without a persona have no voice or posting target: `context_get`
+  tells the AI to ask, and the content plan shows them without a target.
+- `context_get` without arguments returns the personas and projects (no
+  voice); the keys `voice`, `bio`, `platforms` are gone.
+- `npm run export` takes `--persona <slug>` (the only persona is used when
+  there is one).
+
+### Added
+
+- «Акаунти» → «Редагувати» → «Персона»: put an account into a persona or take
+  it out; the persona files are edited with their comments kept.
+- A persona may start without accounts (warning instead of an error).
+
+### Changed
+
+- Wider pages and a taller YAML editor that wraps long lines.
+- New personas start from the shipped template with all sections.
+- Fixed a stray «null» text on «Огляд».
+
 ## 3.0.0 — 2026-11-17
 
 Set up everything from the browser: `npm install`, then `npm run serve`.

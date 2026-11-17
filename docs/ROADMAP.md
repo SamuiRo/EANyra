@@ -129,6 +129,9 @@ the current repository state, not on the older README.
 - [x] **Web-first setup.** `npm install` + `npm run serve`: empty instance
   created on start, vault created in the browser, Chromium installed with
   npm, root `.env.example`, default port 4450 (3.0.0).
+- [x] **Self-contained personas.** Own voice, bio and platform rules per
+  persona, one-click move of the old shared files, persona choice in the
+  account editor (4.0.0).
 
 - [x] **Telegram text publishing.** Explicitly enabled channels, Bot API identity
   lookup and admin checks, durable prepare/publish/get workflow and duplicate

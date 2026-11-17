@@ -15,22 +15,63 @@ async function setup(t) {
     await fs.mkdir(path.join(contextDir, folder), { recursive: true });
     await fs.mkdir(path.join(templatesDir, folder), { recursive: true });
   }
-  await fs.writeFile(path.join(templatesDir, 'voice.example.yaml'), '# template\ntone: ""\n');
   await fs.writeFile(path.join(templatesDir, 'personas', '_template.yaml'), 'slug: "my-persona"\nname: "Persona"\naccounts:\n  - "twitter/brand_x"\n');
   const accountsConfigPath = path.join(dir, 'accounts.json');
   await fs.writeFile(accountsConfigPath, JSON.stringify([{ username: 'brand_x', platform: 'twitter' }, { username: 'anime', platform: 'twitter' }]));
   return { contextDir, service: new ContextFileService({ contextDir, accountsConfigPath, templatesDir }) };
 }
 
-test('files are listed and a missing top-level file starts from its template', async t => {
+test('files are listed; the old shared files only while they exist', async t => {
   const { contextDir, service } = await setup(t);
   await fs.writeFile(path.join(contextDir, 'projects', 'eanyra.yaml'), 'name: EANyra\n');
   await fs.writeFile(path.join(contextDir, 'projects', '_template.yaml'), 'x: 1\n');
-  const files = await service.list();
-  assert.deepEqual(files.map(f => [f.path, f.exists]), [
-    ['voice.yaml', false], ['bio.yaml', false], ['platforms.yaml', false], ['projects/eanyra.yaml', true],
-  ]);
-  assert.deepEqual(await service.read('voice.yaml'), { path: 'voice.yaml', exists: false, content: '# template\ntone: ""\n' });
+  assert.deepEqual((await service.list()).map(f => f.path), ['projects/eanyra.yaml']);
+  await assert.rejects(service.read('voice.yaml'), error => error.status === 404 && /not used any more/.test(error.message));
+  await fs.writeFile(path.join(contextDir, 'voice.yaml'), 'tone: calm\n');
+  assert.deepEqual((await service.list()).map(f => [f.path, f.kind]), [['voice.yaml', 'legacy'], ['projects/eanyra.yaml', 'project']]);
+});
+
+test('an account is moved between personas and comments in the files stay', async t => {
+  const { contextDir, service } = await setup(t);
+  await fs.writeFile(path.join(contextDir, 'personas', 'brand.yaml'), 'slug: brand\n# my accounts\naccounts:\n  - "twitter/brand_x" # main\n  - "twitter/anime"\n');
+  await fs.writeFile(path.join(contextDir, 'personas', 'fun.yaml'), 'slug: fun\naccounts: []\n');
+  assert.deepEqual(await service.accountPersonas(), { 'twitter/brand_x': 'brand', 'twitter/anime': 'brand' });
+
+  assert.deepEqual(await service.setAccountPersona('twitter/anime', 'fun'), { account: 'twitter/anime', persona: 'fun', changed: true });
+  assert.deepEqual(await service.accountPersonas(), { 'twitter/brand_x': 'brand', 'twitter/anime': 'fun' });
+  const brand = await fs.readFile(path.join(contextDir, 'personas', 'brand.yaml'), 'utf8');
+  assert.match(brand, /# my accounts/);
+  assert.match(brand, /"twitter\/brand_x" # main/);
+  assert.doesNotMatch(brand, /anime/);
+
+  // The last account may leave a persona; "none" removes it from every persona.
+  await service.setAccountPersona('twitter/brand_x', null);
+  assert.deepEqual(await service.accountPersonas(), { 'twitter/anime': 'fun' });
+  assert.equal((await service.setAccountPersona('twitter/anime', 'fun')).changed, false);
+  await assert.rejects(service.setAccountPersona('twitter/anime', 'ghost'), error => error.status === 404);
+  await assert.rejects(service.setAccountPersona('twitter/nobody', 'fun'), /not found in accounts\.json/);
+  assert.deepEqual(await service.accountPersonas(), { 'twitter/anime': 'fun' }, 'a failed move changes nothing');
+});
+
+test('the old shared files move into each persona without overriding it', async t => {
+  const { contextDir, service } = await setup(t);
+  await assert.rejects(service.migrateLegacy(), error => error.status === 409);
+  await fs.writeFile(path.join(contextDir, 'voice.yaml'), 'tone: calm\ntaboo: ["No fake facts"]\n');
+  await fs.writeFile(path.join(contextDir, 'platforms.yaml'), 'twitter:\n  max_length: 280\n  language: uk\nlinkedin:\n  max_length: 3000\n');
+  await assert.rejects(service.migrateLegacy(), /Create a persona first/);
+  await fs.writeFile(path.join(contextDir, 'personas', 'brand.yaml'), 'slug: brand # keep\naccounts: ["twitter/brand_x"]\nvoice:\n  tone: bold\nplatforms:\n  twitter:\n    language: en\n');
+
+  const result = await service.migrateLegacy();
+  assert.deepEqual(result.updated, ['personas/brand.yaml']);
+  assert.equal(result.trashed.length, 2);
+  await assert.rejects(fs.access(path.join(contextDir, 'voice.yaml')));
+  const text = await fs.readFile(path.join(contextDir, 'personas', 'brand.yaml'), 'utf8');
+  assert.match(text, /slug: brand # keep/);
+  const { parse } = await import('yaml');
+  const persona = parse(text);
+  assert.deepEqual(persona.voice, { tone: 'bold', taboo: ['No fake facts'] });
+  assert.deepEqual(persona.platforms, { twitter: { language: 'en', max_length: 280 } }, 'only the platforms of its accounts');
+  assert.equal((await service.validate('personas/brand.yaml', text)).ok, true);
 });
 
 test('validation reports YAML syntax by line and schema problems by field', async t => {

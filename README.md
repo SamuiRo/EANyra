@@ -575,11 +575,13 @@ Context files are the editable source of truth:
 
 ```text
 instance/context/
-  voice.yaml
-  bio.yaml
-  platforms.yaml
-  projects/*.yaml
+  personas/*.yaml     each persona: own voice, bio, platform rules, accounts
+  projects/*.yaml     projects the personas talk about
 ```
+
+Edit them in the web UI («Контекст»); assign an account to a persona in
+«Акаунти» → «Редагувати» → «Персона». Older shared `voice.yaml`, `bio.yaml`,
+`platforms.yaml` are no longer used — «Перенести в персони» moves them.
 
 All real instance files are gitignored. Versioned examples and the project
 template live in `instance_example/`; `npm run instance:init` copies missing
