@@ -1,0 +1,19 @@
+# docker compose up -d   → http://localhost:4450 (see docs/DEPLOYMENT.md)
+services:
+  eanyra:
+    build: .
+    image: eanyra:local
+    restart: unless-stopped
+    ports:
+      # Host loopback only. Never "4450:4450": that opens the UI to the network.
+      - "127.0.0.1:4450:4450"
+    volumes:
+      - eanyra-instance:/app/instance
+    # Optional settings (no secrets: they belong in the vault):
+    # env_file: .env
+    # Add --mcp to serve MCP for AI clients at /mcp (token from «Налаштування»):
+    # command: ["node", "src/core/cli/index.js", "serve", "--schedule", "--mcp"]
+    shm_size: "1gb"   # Chromium needs more than Docker's 64 MB /dev/shm
+
+volumes:
+  eanyra-instance:

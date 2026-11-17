@@ -218,6 +218,7 @@ export async function startWebServer({ host = WEB.host, port = WEB.port, schedul
     : null;
   const server = createWebServer({
     host, port, auth, mode: () => (hasVault ? 'vault' : 'token'), tools, routes,
+    container: process.env.EANYRA_CONTAINER === '1',
     info: { version: PKG.version, scheduler: schedule, mcp },
     ...(mcpSessions ? {
       mcp: {
@@ -253,7 +254,7 @@ export async function startWebServer({ host = WEB.host, port = WEB.port, schedul
     server.listen(port, host, resolve);
   });
   const url = `http://${host.includes(':') ? `[${host}]` : host}:${server.address().port}/`;
-  const friendly = host === '127.0.0.1' || host === 'localhost' ? `http://localhost:${server.address().port}/` : url;
+  const friendly = host === '127.0.0.1' || host === 'localhost' || host === '0.0.0.0' ? `http://localhost:${server.address().port}/` : url;
   print(`EANyra web UI → ${friendly}${friendly !== url ? ` (or ${url})` : ''}`, 'success');
   if (token) {
     print(`First run (no vault yet): log in with this one-time access token, then create the vault in the page: ${token}`, 'warning');
