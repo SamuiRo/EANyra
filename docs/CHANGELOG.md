@@ -7,6 +7,14 @@ change (fixes, docs, internals); **minor** = new capability, existing setups
 keep working; **major** = an existing setup, configuration or integration may
 need action. History before 2.0.0 lives only in commit messages (`v1.x.y …`).
 
+## 4.0.2 — 2026-11-17
+
+### Changed
+
+- Accounts and secrets guide: when an X login has to be renewed (cookies are
+  refreshed on every run, the `auth_token` lifetime is fixed), the PowerShell
+  form of `vault migrate --purge`, and EFS versus BitLocker.
+
 ## 4.0.1 — 2026-11-17
 
 ### Changed
