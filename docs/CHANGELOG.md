@@ -7,6 +7,23 @@ change (fixes, docs, internals); **minor** = new capability, existing setups
 keep working; **major** = an existing setup, configuration or integration may
 need action. History before 2.0.0 lives only in commit messages (`v1.x.y …`).
 
+## 2.2.0 — 2026-11-17
+
+### Added
+
+- Web tab «Налаштування»: problem alerts (Telegram chat lookup for your bot,
+  Discord webhook saved to the vault, rules, test message), LinkedIn
+  `Shares.csv` upload with an immediate import and the import history,
+  backups (create, list), Windows EFS status, vault remember/forget on this
+  PC, master password change, MCP token create/rotate (shown once).
+
+### Changed
+
+- Web request bodies may be up to 5 MiB (was 1 MiB) so a LinkedIn export
+  fits.
+
+No action needed when upgrading from 2.1.0.
+
 ## 2.1.0 — 2026-11-17
 
 ### Added

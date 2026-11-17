@@ -434,6 +434,11 @@ one-time access token.
 - **Telegram:** drafts prepared by the AI (MCP) or in the form; publish only
   after an explicit confirmation.
 - **Задачі:** collection jobs from MCP, the browser and the scheduler.
+- **Налаштування:** problem alerts (find the Telegram chat of your bot,
+  Discord webhook stored in the vault, rules, test message), LinkedIn
+  `Shares.csv` upload that starts the import, one-click backup and the list
+  of backups, Windows EFS status, remember the vault on this PC, change the
+  master password, create or rotate the MCP token (shown once).
 
 The browser calls the same tools as the AI agent (`core/mcp/toolRegistry.js`),
 with the same validation. `npm run serve -- --schedule` also runs cron

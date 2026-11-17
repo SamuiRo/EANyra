@@ -123,8 +123,9 @@ the current repository state, not on the older README.
   session deletion with password confirmation.
 - [x] **Web management: context.** YAML editor with live validation, sync on
   save, templates and trash (2.1.0).
-- [ ] **Web management: settings and operations.** Alert channels and rules,
-  LinkedIn export upload, backups, EFS status, vault remember/password.
+- [x] **Web management: settings and operations.** Alert channels and rules,
+  LinkedIn export upload, backups, EFS status, vault remember/password,
+  MCP token (2.2.0).
 
 - [x] **Telegram text publishing.** Explicitly enabled channels, Bot API identity
   lookup and admin checks, durable prepare/publish/get workflow and duplicate
