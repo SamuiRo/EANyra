@@ -116,7 +116,18 @@ npm start
 npm run serve
 ```
 
-The same commands work in Windows PowerShell. When upgrading an existing
+**Windows PowerShell:** `npm` there runs `npm.ps1`, and PowerShell drops the
+`--` separator, so flags after it reach npm instead of EANyra (for example
+`npm run nyra -- vault migrate --purge` silently runs without `--purge`).
+Use `npm.cmd` for any command with flags after `--`, or call the CLI directly:
+
+```powershell
+npm.cmd run nyra -- vault migrate --purge
+node src/core/cli/index.js vault migrate --purge
+```
+
+Commands without flags after `--` (`npm run serve`, `npm run scrape`) work
+either way. When upgrading an existing
 checkout with settings under `src/` and root `.env`/`data/`, stop the daemon
 and run migration **before** initializing a new instance:
 

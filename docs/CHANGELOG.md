@@ -7,6 +7,17 @@ change (fixes, docs, internals); **minor** = new capability, existing setups
 keep working; **major** = an existing setup, configuration or integration may
 need action. History before 2.0.0 lives only in commit messages (`v1.x.y …`).
 
+## 4.0.1 — 2026-11-17
+
+### Changed
+
+- README: Windows PowerShell drops the `--` separator for `npm` (`npm.ps1`);
+  use `npm.cmd` or `node src/core/cli/index.js` for commands with flags.
+- Web hints use `npm.cmd` where flags follow `--`; the EFS card explains that
+  it is optional (the vault is already encrypted) and why to save the
+  certificate.
+- MCP guide: connecting Claude Code (stdio without a token, or HTTP).
+
 ## 4.0.0 — 2026-11-17
 
 Every persona is self-contained; accounts are assigned to personas from the
