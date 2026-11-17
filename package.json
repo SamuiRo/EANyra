@@ -1,6 +1,6 @@
 {
   "name": "eanyra",
-  "version": "4.0.1",
+  "version": "4.0.2",
   "description": "Local AI-assisted social media workspace: collects your own accounts (X, Telegram, LinkedIn, GitHub) into SQLite, plans and drafts posts with personas, and serves it all through MCP and a local web UI.",
   "main": "src/core/cli/index.js",
   "bin": {

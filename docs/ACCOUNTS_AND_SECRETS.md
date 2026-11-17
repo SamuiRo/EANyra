@@ -71,6 +71,21 @@ How collection uses sessions:
 Several accounts may still share one session (e.g. reading other profiles from
 one login); then the long pause applies between them.
 
+### When an X login has to be renewed
+
+Every run saves the refreshed cookies back, so a login in regular use stays
+current on its own. The `auth_token` itself has a fixed lifetime (about a
+year; «Акаунти» → «Сесії та логіни» shows how many days are left) and X can
+end it earlier: logging out of all devices, a password change, or a security
+check. Renew it with «Cookies…» or «Увійти у вікні…» for that session when:
+
+- an alert says the login expires within `auth_expiring_days` (default 3);
+- an alert or «Огляд» shows a failed login (the run ends as `partial`);
+- `npm run nyra -- sessions` shows `EXPIRED`, `logged out` or `MISSING`.
+
+A rejected login is never overwritten with a logged-out state, so the last
+working cookies stay in the vault until you replace them.
+
 Publishing to X and LinkedIn is deliberately not automated. The AI prepares
 the text; you publish it yourself.
 
@@ -137,6 +152,11 @@ that `npm run scrape` works:
 npm run nyra -- vault migrate --purge
 ```
 
+In Windows PowerShell use `npm.cmd run nyra -- vault migrate --purge` (or
+`node src/core/cli/index.js vault migrate --purge`): plain `npm` there drops
+`--` and the command runs without `--purge`. The real purge lists what it
+removes and asks `Continue?`.
+
 This blanks those `.env` values and deletes the cookie files and the old X
 browser profile. Without a vault, EANyra keeps working in legacy mode, but only
 the `default` session from `.env` exists.
@@ -153,8 +173,14 @@ the `default` session from `.env` exists.
 
 ### Encrypting the instance folder (Windows EFS)
 
+Optional. Logins and tokens are already encrypted in the vault; EFS adds a
+per-user Windows key for everything else (database, accounts, context). It is
+not BitLocker: BitLocker encrypts the whole disk against a stolen device,
+EFS encrypts files against other Windows users and against reading the disk
+without your account. On a single-user PC with BitLocker on, EFS adds little.
+
 ```bash
-npm run instance:protect -- --status   # what is still plaintext
+npm.cmd run instance:protect -- --status   # what is still plaintext (PowerShell: npm.cmd)
 npm run instance:protect               # encrypt instance/ and .env
 ```
 
