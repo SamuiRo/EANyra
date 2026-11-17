@@ -14,8 +14,9 @@ function prefixed(section, validate) {
 /**
  * Personas group the accounts that represent one identity or theme across
  * platforms (e.g. a business brand on Twitter + LinkedIn + Telegram, or an
- * anime account). Each persona carries its own voice, bio, platform rules and
- * projects; anything it leaves out falls back to the global context files.
+ * anime account). Each persona is self-contained: its own voice, bio and
+ * platform rules. The old shared voice.yaml / bio.yaml / platforms.yaml are no
+ * longer used (see legacyIntoPersona to carry their values over once).
  *
  * Source: instance/context/personas/<slug>.yaml
  */
@@ -36,10 +37,11 @@ export function parsePersona(data, fileSlug, configured) {
   const slug = data.slug ?? fileSlug;
   if (slug !== fileSlug) throw new Error(`slug "${slug}" must match the filename "${fileSlug}.yaml".`);
   if (!SLUG.test(slug)) throw new Error(`slug "${slug}" must be lowercase kebab-case.`);
-  if (!Array.isArray(data.accounts) || !data.accounts.length) {
-    throw new Error('accounts must list at least one "platform/username".');
+  // A new persona may have no accounts yet; they are assigned in «Акаунти».
+  if (data.accounts != null && !Array.isArray(data.accounts)) {
+    throw new Error('accounts must be a list of "platform/username".');
   }
-  const accounts = data.accounts.map(ref => parseAccountRef(ref));
+  const accounts = (data.accounts ?? []).map(ref => parseAccountRef(ref));
   const keys = accounts.map(accountKey);
   const duplicate = keys.find((key, index) => keys.indexOf(key) !== index);
   if (duplicate) throw new Error(`account ${duplicate} is listed twice.`);
@@ -52,6 +54,7 @@ export function parsePersona(data, fileSlug, configured) {
   }
   // Overrides follow the same field rules as voice.yaml, bio.yaml, platforms.yaml.
   const warnings = [
+    ...(accounts.length ? [] : ['accounts is empty: assign accounts to this persona («Акаунти» → edit → Персона)']),
     ...prefixed('voice', () => validateVoice(data.voice)),
     ...prefixed('bio', () => validateBio(data.bio)),
     ...prefixed('platforms', () => validatePlatforms(data.platforms)),
@@ -90,20 +93,40 @@ export function assertExclusiveMembership(personas) {
   }
 }
 
+function mergeByPlatform(base = {}, override = {}) {
+  const merged = { ...base };
+  for (const [platform, value] of Object.entries(override)) {
+    merged[platform] = value && typeof value === 'object' && !Array.isArray(value)
+      ? { ...(base[platform] ?? {}), ...value }
+      : value;
+  }
+  return merged;
+}
+
 /**
- * Persona values override the global context; missing keys fall back to it.
- * voice merges per key; bio and platforms merge per platform and per key.
+ * One-time carry-over of the old shared files into a persona: what the persona
+ * effectively used before (its values over the shared ones), limited to the
+ * platforms of its accounts and the platforms it already configures.
+ * @returns {{ voice: object, bio: object, platforms: object }}
+ */
+export function legacyIntoPersona(legacy, persona) {
+  const platforms = new Set([
+    ...persona.accounts.map(ref => ref.platform),
+    ...Object.keys(persona.bio ?? {}), ...Object.keys(persona.platforms ?? {}),
+  ]);
+  const only = value => Object.fromEntries(Object.entries(value).filter(([platform]) => platforms.has(platform)));
+  return {
+    voice: { ...(legacy.voice ?? {}), ...(persona.voice ?? {}) },
+    bio: only(mergeByPlatform(legacy.bio, persona.bio)),
+    platforms: only(mergeByPlatform(legacy.platforms, persona.platforms)),
+  };
+}
+
+/**
+ * The context to write as a persona: its own voice, bio and platform rules
+ * (nothing shared) plus the projects it talks about.
  */
 export function mergePersonaContext(global, persona) {
-  const mergeByPlatform = (base = {}, override = {}) => {
-    const merged = { ...base };
-    for (const [platform, value] of Object.entries(override)) {
-      merged[platform] = value && typeof value === 'object' && !Array.isArray(value)
-        ? { ...(base[platform] ?? {}), ...value }
-        : value;
-    }
-    return merged;
-  };
   const projects = persona.projects === null
     ? global.projects ?? []
     : (global.projects ?? []).filter(project => persona.projects.includes(project.slug));
@@ -115,9 +138,9 @@ export function mergePersonaContext(global, persona) {
       topics: persona.topics,
       accounts: persona.accounts.map(accountKey),
     },
-    voice: { ...(global.voice ?? {}), ...persona.voice },
-    bio: mergeByPlatform(global.bio, persona.bio),
-    platforms: mergeByPlatform(global.platforms, persona.platforms),
+    voice: persona.voice ?? {},
+    bio: persona.bio ?? {},
+    platforms: persona.platforms ?? {},
     projects,
   };
 }

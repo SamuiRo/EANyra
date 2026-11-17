@@ -9,14 +9,10 @@ import {
   assertExclusiveMembership,
   accountKey,
 } from '../../../config/personaConfig.js';
-import {
-  validateVoice,
-  validateBio,
-  validatePlatforms,
-  validateProject,
-} from '../../../config/contextSchema.js';
+import { validateProject } from '../../../config/contextSchema.js';
 
-const TOP_LEVEL_VALIDATORS = { voice: validateVoice, bio: validateBio, platforms: validatePlatforms };
+/** Old shared files: no longer used, every persona carries its own. */
+export const LEGACY_CONTEXT_FILES = { 'voice.yaml': 'voice', 'bio.yaml': 'bio', 'platforms.yaml': 'platforms' };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -29,9 +25,6 @@ const TOP_LEVEL_VALIDATORS = { voice: validateVoice, bio: validateBio, platforms
  *  - Reading context back for MCP tools and CLI display
  *
  * Keys written to DB:
- *   "voice"               ← voice.yaml (whole file as object)
- *   "bio"                 ← bio.yaml
- *   "platforms"           ← platforms.yaml
  *   "project.<slug>"      ← projects/<slug>.yaml  (one row per project)
  *   "persona.<slug>"      ← personas/<slug>.yaml  (one row per persona)
  */
@@ -55,10 +48,13 @@ export class UserContextRepository {
     const results = { updated: [], skipped: [], errors: [], warnings: [] };
     const now     = new Date();
 
-    // ── voice.yaml ──
-    await this.#syncFile('voice.yaml',     'voice',     results, now);
-    await this.#syncFile('bio.yaml',       'bio',       results, now);
-    await this.#syncFile('platforms.yaml', 'platforms', results, now);
+    // ── legacy shared files: not used any more ──
+    const legacy = Object.keys(LEGACY_CONTEXT_FILES).filter(name => fs.existsSync(path.join(this.contextDir, name)));
+    if (legacy.length) {
+      results.warnings.push(`${legacy.join(', ')}: not used any more — every persona has its own voice, bio and ` +
+        'platform rules. Move them into the personas: web «Контекст» → «Перенести в персони».');
+    }
+    await this.UserContext.destroy({ where: { key: { [Op.in]: Object.values(LEGACY_CONTEXT_FILES) } } });
 
     // ── projects/*.yaml ──
     await this.#syncProjects(results, now);
@@ -71,7 +67,7 @@ export class UserContextRepository {
 
   // ── Read ──────────────────────────────────────────────────────────────────
 
-  /** Returns the full context object for MCP: { voice, bio, platforms, projects } */
+  /** Returns the stored context rows (persona.*, project.*) plus active projects. */
   async getAll() {
     const rows = await this.UserContext.findAll();
     const ctx  = {};
@@ -105,26 +101,6 @@ export class UserContextRepository {
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
-
-  async #syncFile(filename, key, results, now) {
-    const filePath = path.join(this.contextDir, filename);
-
-    if (!fs.existsSync(filePath)) {
-      results.skipped.push(`${filename} (not found)`);
-      return;
-    }
-
-    try {
-      const raw = fs.readFileSync(filePath, 'utf8');
-      const { value, warnings } = TOP_LEVEL_VALIDATORS[key](parseYaml(raw));
-      results.warnings.push(...warnings.map(warning => `${filename}: ${warning}`));
-
-      await this.UserContext.upsert({ key, value, synced_at: now });
-      results.updated.push(key);
-    } catch (err) {
-      results.errors.push(`${filename}: ${err.message}`);
-    }
-  }
 
   async #syncProjects(results, now) {
     const projectsDir = path.join(this.contextDir, 'projects');

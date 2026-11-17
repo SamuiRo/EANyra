@@ -55,7 +55,7 @@ Add this to your OpenClaw MCP configuration (`~/.openclaw/config.json`):
 **Never generate content before calling `context_get`.**
 
 ```
-Step 1 → context_get()          read voice, bio, platform rules, active projects
+Step 1 → context_get(account|persona)   voice, bio, platform rules, projects of that persona
 Step 2 → signals_get()          see what signals are pending (unused)
 Step 3 → posts_get()            (optional) calibrate tone from real post examples
 Step 4 → write content
@@ -63,7 +63,8 @@ Step 5 → signals_mark_used()    only after the author confirms the post goes l
 ```
 
 If the author starts with "write me a post about X", you still run Step 1 first.
-One `context_get` call makes every piece of content significantly more accurate.
+Every persona has its own voice — nothing is shared. Without a target account,
+call `context_get()` to list the personas and ask which one to write as.
 
 ---
 
@@ -71,18 +72,21 @@ One `context_get` call makes every piece of content significantly more accurate.
 
 ### `context_get` — author identity and rules
 
-Returns everything needed to write in the author's voice:
+Returns everything needed to write as one persona:
 - `voice` — tone, style, what they like, what they dislike, taboo topics
 - `bio` — bio per platform
 - `platforms` — per-platform rules: language, max length, style, posting frequency
-- `projects` — active projects with content angles and posting rules
+- `projects` — the active projects this persona talks about
 
 ```
-context_get()                          → full context (use this by default)
-context_get(key: "voice")              → tone and style only
-context_get(key: "platforms")          → platform rules only
+context_get(account: "twitter/name")   → the persona of that account (use this by default)
+context_get(persona: "brand")          → one persona by slug
+context_get()                          → personas list + active projects (no voice)
 context_get(key: "project.eanyra")     → specific project by slug
 ```
+
+An account without a persona has no voice: ask the author to assign it
+(web UI «Акаунти» → «Редагувати» → «Персона») instead of guessing.
 
 Call this **first in every session**, no exceptions.
 

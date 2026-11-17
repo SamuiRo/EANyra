@@ -111,6 +111,7 @@ export function registerExportCommands(program, models) {
       'Filter content by a comma-separated platform list (twitter,telegram)',
       parsePlatformList,
     )
+    .option('--persona <slug>', 'Voice, bio and platform rules of this persona (default: the only persona)')
     .option('--unused-only', 'Only include posts/signals that have not been exported before', false)
     .option('--no-mark',     'Do not record exported_at timestamps (dry-run mode)', false)
     .option(
@@ -149,7 +150,7 @@ async function runExport(models, opts) {
 
   const [context, posts, signals] = await Promise.all([
     (sections.includes('context') || sections.includes('projects'))
-      ? repo.getContext({ platforms: selectedPlatforms })
+      ? repo.getContext({ platforms: selectedPlatforms, persona: opts.persona })
       : Promise.resolve({}),
 
     sections.includes('posts')

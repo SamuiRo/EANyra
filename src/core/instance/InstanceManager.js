@@ -21,9 +21,6 @@ export async function initializeInstance({ projectRoot, instanceDir = path.join(
   const copies = [
     ...(withEnv ? [['../.env.example', '.env']] : []),
     ...(exampleAccounts ? [['accounts.json.example', 'accounts.json']] : []),
-    ['context/voice.example.yaml', 'context/voice.yaml'],
-    ['context/bio.example.yaml', 'context/bio.yaml'],
-    ['context/platforms.example.yaml', 'context/platforms.yaml'],
     ['context/projects/_template.yaml', 'context/projects/_template.yaml'],
     ['context/personas/_template.yaml', 'context/personas/_template.yaml'],
   ];

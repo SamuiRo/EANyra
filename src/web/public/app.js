@@ -160,7 +160,7 @@ async function render() {
   const target = $('#view');
   try {
     const content = await VIEWS[view]();
-    if (view === currentView) target.replaceChildren(...[content].flat());
+    if (view === currentView) target.replaceChildren(...[content].flat(Infinity).filter(item => item !== null && item !== undefined && item !== false));
   } catch (error) {
     if (error.status === 401) return;
     target.replaceChildren(card(h('h2', {}, 'Помилка'), h('p', { class: 'error' }, error.message)));
@@ -365,12 +365,13 @@ const VIEWS = {
   },
 
   async accounts() {
-    const [list, personas, sessions, config, apiKeys] = await Promise.all([
+    const [list, personas, sessions, config, apiKeys, accountPersona] = await Promise.all([
       tool('accounts_list', { active_only: false }),
       tool('personas_list'),
       api('/api/sessions'),
       api('/api/accounts/config'),
       api('/api/secrets/api').catch(() => ({ telegram_api: false })),
+      api('/api/context/account-personas').catch(() => ({})),
     ]);
     const stats = new Map(list.accounts.map(a => [`${a.platform}/${a.username}`, a]));
     const sessionByAccount = new Map();
@@ -381,6 +382,8 @@ const VIEWS = {
     }
     ACCOUNT_CONTEXT.platforms = config.platforms;
     ACCOUNT_CONTEXT.sessions = sessions.sessions;
+    ACCOUNT_CONTEXT.personas = personas.personas;
+    ACCOUNT_CONTEXT.accountPersona = accountPersona;
 
     const rows = config.accounts.map(entry => {
       const key = `${entry.platform}/${entry.username}`;
@@ -390,7 +393,7 @@ const VIEWS = {
       const active = !archived && entry.active !== false;
       return h('tr', {},
         h('td', {}, h('div', {}, entry.display_name ?? entry.username), h('div', { class: 'muted mono' }, key)),
-        h('td', {}, a?.persona ?? '—'),
+        h('td', {}, accountPersona[key] ?? h('span', { class: 'muted' }, 'без персони')),
         h('td', {}, s ? h('span', {}, s.name, ' ', badge(sessionState(s.state), sessionKind(s))) : '—'),
         h('td', {}, archived ? badge('архів', 'skipped') : active ? when(a?.last_scraped_at) : badge('вимкнено', 'skipped')),
         h('td', {}, fmt(a?.posts_in_db ?? 0), ' / ', fmt(a?.signals_in_db ?? 0)),
@@ -435,7 +438,7 @@ const VIEWS = {
       card(
         h('div', { class: 'row between' }, h('h2', {}, `Персони (${personas.count})`),
           h('button', { class: 'small', onclick: syncContext }, 'Синхронізувати контекст')),
-        h('p', { class: 'muted' }, 'Голос, біо, персони й проєкти редагуються на вкладці «Контекст» (збереження синхронізує їх одразу). Після ручних змін у файлах натисніть «Синхронізувати контекст».'),
+        h('p', { class: 'muted' }, 'Кожна персона має власний голос, біо й правила платформ — редагуються на вкладці «Контекст». Акаунт додається до персони в його редакторі («Редагувати» → «Персона»). Після ручних змін у файлах натисніть «Синхронізувати контекст».'),
         personas.personas.length ? h('div', { class: 'grid' }, personas.personas.map(p => h('div', { class: 'card stack' },
           h('h3', {}, p.name), p.description && h('p', { class: 'muted preserve' }, p.description),
           h('div', { class: 'mono' }, p.accounts.join(', ')),
@@ -446,8 +449,10 @@ const VIEWS = {
 
   async context() {
     const files = await api('/api/context/files');
-    const state = VIEWS.context.state ??= { path: 'voice.yaml', original: null, content: null, dirty: false };
-    if (!files.some(file => file.path === state.path)) state.path = files[0]?.path;
+    const state = VIEWS.context.state ??= { path: null, original: null, content: null, dirty: false };
+    if (!files.some(file => file.path === state.path)) {
+      state.path = (files.find(file => file.path.startsWith('personas/')) ?? files[0])?.path ?? null;
+    }
 
     const editor = h('textarea', { class: 'yaml-editor', spellcheck: 'false', 'aria-label': 'YAML' });
     const messages = h('div', { class: 'messages' });
@@ -532,7 +537,7 @@ const VIEWS = {
       try {
         await api('/api/context/delete', { method: 'POST', body: { path: state.path } });
         state.dirty = false;
-        state.path = 'voice.yaml';
+        state.path = null;
         toast('Переміщено в context/.trash/.');
         render();
       } catch (error) {
@@ -559,14 +564,32 @@ const VIEWS = {
         file.path.replace(/^(projects|personas)\//, '').replace(/\.yaml$/, ''), file.exists ? '' : ' (немає)')),
       newLabel && h('button', { class: 'muted', onclick: () => create(kind) }, `+ ${newLabel}`),
     ];
+    const legacy = files.filter(f => !f.path.includes('/'));
+    const migrate = async () => {
+      if (!await confirmDialog('Перенести загальні файли в персони?',
+        'Кожна персона отримає з voice/bio/platforms лише те, чого в ній ще немає, і лише для платформ її акаунтів. Загальні файли перемістяться в context/.trash/.', 'Перенести')) return;
+      try {
+        const result = await api('/api/context/migrate-legacy', { method: 'POST' });
+        state.dirty = false;
+        state.path = null;
+        toast(`Перенесено. Оновлено персон: ${result.updated.length}. Загальні файли в context/.trash/.`, 8000);
+        render();
+      } catch (error) {
+        toast(error.message, 9000);
+      }
+    };
     const list = h('nav', { class: 'file-list', 'aria-label': 'Файли контексту' },
-      group('Загальні', 'top', files.filter(f => !f.path.includes('/')), null),
-      group('Проєкти', 'project', files.filter(f => f.path.startsWith('projects/')), 'проєкт'),
       group('Персони', 'persona', files.filter(f => f.path.startsWith('personas/')), 'персона'),
+      group('Проєкти', 'project', files.filter(f => f.path.startsWith('projects/')), 'проєкт'),
+      legacy.length ? [
+        ...group('Застарілі (не використовуються)', 'top', legacy, null),
+        h('button', { class: 'small primary', onclick: migrate }, 'Перенести в персони'),
+      ] : null,
     );
 
     const view = [card(
-      h('p', { class: 'muted' }, 'Голос, біо, правила платформ, проєкти й персони, з якими пише ШІ. Перевірка як у CLI: помилки блокують збереження, попередження — підказки. Коментарі у файлах зберігаються.'),
+      h('p', { class: 'muted' }, 'Кожна персона самодостатня: власний голос (voice), біо (bio), правила платформ (platforms) і список акаунтів. Проєкти спільні — персона вибирає, про які з них говорить. Помилки блокують збереження, попередження — підказки. Коментарі у файлах зберігаються.'),
+      legacy.length ? h('p', { class: 'warn' }, '⚠ Загальні voice.yaml / bio.yaml / platforms.yaml більше не використовуються. Натисніть «Перенести в персони», щоб скопіювати їх значення в кожну персону.') : null,
       h('div', { class: 'context-layout' },
         list,
         h('div', { class: 'stack' },
@@ -575,7 +598,14 @@ const VIEWS = {
           h('div', { class: 'row end' }, remove, revert, save)),
       ),
     )];
-    queueMicrotask(() => open(state.path, { force: true }));
+    if (state.path) queueMicrotask(() => open(state.path, { force: true }));
+    else {
+      title.textContent = 'Створіть першу персону';
+      editor.disabled = true;
+      save.disabled = true;
+      revert.disabled = true;
+      remove.hidden = true;
+    }
     return view;
   },
 
@@ -929,7 +959,7 @@ function ideaForm(personas) {
 
 // ── Accounts and sessions management ─────────────────────────────────────────
 
-const ACCOUNT_CONTEXT = { platforms: [], sessions: [] };
+const ACCOUNT_CONTEXT = { platforms: [], sessions: [], personas: [], accountPersona: {} };
 const SESSION_KINDS = {
   twitter: 'X (логін)', telegram: 'Telegram (логін)', github: 'GitHub (токен)',
   'telegram-bot': 'Telegram-бот (токен)', 'discord-bot': 'Discord-бот (токен)',
@@ -982,6 +1012,9 @@ function editAccount(entry) {
   const importFile = h('input', { type: 'text', value: entry?.import_file ?? '', placeholder: 'Shares.csv' });
   const discordFilter = h('select', {}, [['', 'лише питання'], ['all', 'усі повідомлення']]
     .map(([v, t]) => h('option', { value: v, selected: (entry?.discord_filter ?? '') === v }, t)));
+  const originalPersona = entry ? ACCOUNT_CONTEXT.accountPersona?.[`${entry.platform}/${entry.username}`] ?? '' : '';
+  const persona = h('select', {}, [['', '— без персони —'], ...(ACCOUNT_CONTEXT.personas ?? []).map(p => [p.slug, p.name])]
+    .map(([v, t]) => h('option', { value: v, selected: v === originalPersona }, t)));
   const hint = h('span', { class: 'muted' });
   const extra = h('div', { class: 'stack' });
   const error = h('p', { class: 'error' });
@@ -1017,16 +1050,27 @@ function editAccount(entry) {
     };
     try {
       await api('/api/accounts/save', { method: 'POST', body: { account, original_key: entry ? `${entry.platform}/${entry.username}` : '' } });
-      modal.close();
-      toast(editing ? 'Акаунт оновлено.' : 'Акаунт додано. Він збиратиметься з наступним прогоном.');
-      render();
     } catch (e) {
       error.textContent = e.message;
+      return;
     }
+    let personaNote = '';
+    if (persona.value !== originalPersona) {
+      try {
+        await api('/api/context/account-persona', { method: 'POST', body: { account: `${p}/${account.username}`, persona: persona.value || null } });
+        personaNote = persona.value ? ` Персона: ${persona.selectedOptions[0].textContent}.` : ' Прибрано з персони.';
+      } catch (e) {
+        personaNote = ` Персону не змінено: ${e.message}`;
+      }
+    }
+    modal.close();
+    toast(`${editing ? 'Акаунт оновлено.' : 'Акаунт додано. Він збиратиметься з наступним прогоном.'}${personaNote}`, personaNote.includes('не змінено') ? 9000 : 4000);
+    render();
   } },
     field('Платформа', platform),
     field('Акаунт', username, hint),
     field('Назва для себе', display),
+    field('Персона', persona, 'Чиїм голосом ШІ пише для цього акаунта. Нову персону створіть на вкладці «Контекст».'),
     h('label', { class: 'row' }, active, 'Активний (збирати)'),
     extra, lists,
     h('div', { class: 'row end' }, h('button', { type: 'submit', class: 'primary' }, editing ? 'Зберегти' : 'Додати')),

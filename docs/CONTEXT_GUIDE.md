@@ -7,35 +7,46 @@ implementation details and known sync limitations, see
 
 ## How Context Is Used
 
-The YAML files are the editable source of truth for the author's identity and
-content rules. They are not read directly by the MCP server or Markdown
-exporter.
+Every **persona** is self-contained: its own voice, bio and platform rules,
+plus the accounts it writes for. Nothing is shared between personas. Projects
+are shared files; each persona chooses which of them it talks about.
 
 ```text
-instance/context/*.yaml
+instance/context/personas/<slug>.yaml   voice, bio, platforms, accounts
+instance/context/projects/<slug>.yaml   projects
         |
-        | npm run context:sync
+        | sync (on save in the web UI, or npm run context:sync)
         v
-user_context (voice, bio, platforms, personas) + projects tables in SQLite
+user_context (persona.<slug>, project.<slug>) + projects table in SQLite
         |
-        +--> context_get MCP tool
-        +--> Markdown export
+        +--> context_get / personas_list MCP tools, content plan
+        +--> Markdown export (npm run export -- --persona <slug>)
 ```
 
-Run an explicit sync after every YAML change:
+The easiest way to edit is the web UI: `npm run serve` → «Контекст». Saving
+validates and syncs at once. After editing the files by hand, sync explicitly:
 
 ```bash
 npm run context:sync
 npm run nyra -- context show
 ```
 
-`eanyra start` and scrape commands do not currently sync context
-automatically. Deleting a project YAML file archives its existing database
-record during the next explicit sync; it does not delete project history.
+Deleting a project YAML file archives its existing database record during the
+next sync; it does not delete project history.
+
+### Moving from the old shared files (before 4.0.0)
+
+Older instances have `voice.yaml`, `bio.yaml` and `platforms.yaml` next to the
+personas. They are **no longer used**. In «Контекст» they are listed as
+«Застарілі»; «Перенести в персони» copies into every persona what it does not
+set itself (only for the platforms of its accounts), keeps the comments in the
+persona files and moves the old files to `context/.trash/`. Until then
+`context sync` warns about them.
 
 ## Initial Setup
 
-Create the real, gitignored files from the committed examples:
+`npm run serve` creates an empty instance on first start; create personas and
+projects in «Контекст». From the terminal:
 
 ```powershell
 npm run instance:init
@@ -44,9 +55,9 @@ Copy-Item instance/context/projects/_template.yaml instance/context/projects/my-
 
 Replace every placeholder before syncing. Real context files may contain
 personal information and are intentionally gitignored. All of `instance/` is
-ignored. Versioned examples and `_template.yaml` live in `instance_example/`;
-initialization copies them into the selected instance. Project sync ignores templates beginning with `_` and any
-`.example.yaml` files.
+ignored. Versioned templates (`_template.yaml`) live in `instance_example/`;
+new personas and projects in the web UI start from them. Sync ignores files
+beginning with `_` and any `.example.yaml` files.
 
 ## AI-Assisted Project Setup
 
@@ -62,77 +73,6 @@ Follow docs/PROJECT_CONTEXT_PROMPT.md to create or update the project context.
 Inspect the target project, do not invent missing facts, and complete the
 validation workflow before reporting the result.
 ```
-
-## `voice.yaml`
-
-Defines global writing behavior. The entire YAML object is stored under the
-`voice` context key.
-
-| Field | Type | Guidance |
-|---|---|---|
-| `tone` | string | Describe the overall voice and what distinguishes it. |
-| `likes` | string[] | Concrete patterns the agent should actively use. |
-| `dislikes` | string[] | Phrases and patterns the agent should avoid. |
-| `example_post` | multiline string | A representative post in the real publishing language. |
-| `taboo` | string[] | Hard rules that must never be broken. |
-
-Prefer specific instructions such as "use exact numbers when available" over
-generic instructions such as "be engaging".
-
-`context_get` returns `example_post`, but the generated Markdown export
-currently omits it. This limitation is tracked in the roadmap.
-
-## `bio.yaml`
-
-Defines platform-specific biographies. Each top-level key is a platform slug.
-
-```yaml
-twitter:
-  short: "Short platform bio"
-  full: null
-
-linkedin:
-  short: "Short headline"
-  full: |
-    Longer biography.
-```
-
-| Field | Type | Guidance |
-|---|---|---|
-| `short` | string | Short bio or headline appropriate for the platform. |
-| `full` | string or `null` | Longer biography when the platform supports one. |
-
-Only include platforms that are useful to your content workflow.
-
-## `platforms.yaml`
-
-Defines how the same idea should be adapted per publishing platform. Platform
-slugs in context are not restricted to the currently collected platforms, so
-rules may also describe planned channels such as Discord.
-
-```yaml
-twitter:
-  max_length: 280
-  language: "uk"
-  style: "Concise technical observations with concrete details."
-  formats:
-    - "insight"
-    - "before / after"
-  avoid:
-    - "engagement bait"
-  posting_frequency: "2 posts per week"
-```
-
-| Field | Type | Guidance |
-|---|---|---|
-| `max_length` | integer | Target hard character limit. |
-| `language` | string | Publishing language, normally an ISO 639-1 code. |
-| `style` | string | Platform-specific tone, density, and structure. |
-| `formats` | string[] | Useful post patterns the agent may choose from. |
-| `avoid` | string[] | Platform-specific anti-patterns. |
-| `posting_frequency` | string | Target cadence used by `content_plan_get` and the web content plan. Understood forms: `daily`, `weekly`, `monthly`, `every 2 days`, `3 posts per week`, `3/week`, `2 posts per month`, `щодня`, `щотижня`, `3 рази на тиждень`. Other text is shown but not checked. Personas can override it per platform. |
-
-The MCP context and the Markdown export include all fields.
 
 ## `projects/<slug>.yaml`
 
@@ -187,15 +127,10 @@ are not preserved by the structured project model and Markdown export.
 
 ## `personas/<slug>.yaml`
 
-A persona groups the accounts that represent one identity or theme across
-platforms, for example a business brand on Twitter, LinkedIn and Telegram, and
-a separate anime account. Without personas, every account shares the global
-`voice.yaml`, `bio.yaml`, `platforms.yaml` and all active projects, so an AI
-agent cannot tell what each account is for.
-
-```powershell
-Copy-Item instance/context/personas/_template.yaml instance/context/personas/anime.yaml
-```
+A persona is one identity or theme across platforms, for example a business
+brand on Twitter, LinkedIn and Telegram, and a separate anime account. An
+account without a persona has no voice: the AI is told to ask which persona it
+belongs to.
 
 ```yaml
 slug: "anime"
@@ -206,35 +141,87 @@ topics: ["seasonal anime", "Genshin Impact"]
 accounts:
   - "twitter/example-anime-fan"
   - "telegram/my-anime-channel"
+
 voice:
   tone: "Casual, enthusiastic, emoji are fine"
+  likes: ["Concrete impressions of one episode or scene"]
+  dislikes: ["Spoilers without a warning"]
+  example_post: |
+    Episode 7 finally gave Frieren a quiet moment...
   taboo: ["Never mention work projects"]
+
+bio:
+  twitter:
+    short: "Anime, games and the occasional fan art"
+
 platforms:
   twitter:
+    max_length: 280
     language: "en"
+    style: "Short, conversational posts. One thought per post."
+    formats: ["impression", "question to other fans"]
+    avoid: ["spoilers"]
+    posting_frequency: "3 posts per week"
+
 projects: []
 ```
 
-Rules:
+### Assigning accounts
 
-- `accounts` lists `"platform/username"` entries that must exist in
-  `accounts.json`. Each account may belong to only one persona, so its voice is
-  never ambiguous. New platforms (for example Discord) use the same form once
-  they are supported.
-- `voice` overrides `voice.yaml` key by key. `bio` and `platforms` override per
-  platform and per key. Missing values fall back to the global files, so the
-  global files act as defaults for every persona. Lists are replaced, not
-  appended: repeat a global `taboo` if it must also apply here.
-- `projects` limits the projects the persona talks about. Omit it to use all
-  active projects; `[]` means none.
-- Accounts outside every persona keep using the global context.
+The easiest way: «Акаунти» → «Редагувати» → «Персона». It moves the account
+between persona files (comments stay) and syncs. In the file, `accounts`
+lists `"platform/username"` entries that must exist in `accounts.json`. Each
+account belongs to one persona only, so its voice is never ambiguous. A new
+persona may start with `accounts: []`.
 
-MCP use: on connect, the server's `instructions` tell the agent to pick the
-target persona before drafting. `personas_list` returns the personas, their
-accounts and projects, plus configured accounts that belong to none (read from
-`accounts.json`). `context_get` without arguments also lists the personas.
-`context_get {"account": "twitter/example-anime-fan"}` or `{"persona": "anime"}`
-returns the merged context for that persona. `posts_get`, `posts_search`,
+### `voice`
+
+| Field | Type | Guidance |
+|---|---|---|
+| `tone` | string | Describe the overall voice and what distinguishes it. |
+| `likes` | string[] | Concrete patterns the agent should actively use. |
+| `dislikes` | string[] | Phrases and patterns the agent should avoid. |
+| `example_post` | multiline string | A representative post in the real publishing language. |
+| `taboo` | string[] | Hard rules that must never be broken. |
+
+Prefer specific instructions such as "use exact numbers when available" over
+generic instructions such as "be engaging".
+
+### `bio`
+
+One key per platform:
+
+| Field | Type | Guidance |
+|---|---|---|
+| `short` | string | Short bio or headline appropriate for the platform. |
+| `full` | string or `null` | Longer biography when the platform supports one. |
+
+### `platforms`
+
+How this persona adapts an idea per platform. Platform slugs are not limited
+to the collected platforms, so rules may also describe planned channels.
+
+| Field | Type | Guidance |
+|---|---|---|
+| `max_length` | integer | Target hard character limit. |
+| `language` | string | Publishing language, normally an ISO 639-1 code. |
+| `style` | string | Platform-specific tone, density, and structure. |
+| `formats` | string[] | Useful post patterns the agent may choose from. |
+| `avoid` | string[] | Platform-specific anti-patterns. |
+| `posting_frequency` | string | Target cadence used by `content_plan_get` and the web content plan. Understood forms: `daily`, `weekly`, `monthly`, `every 2 days`, `3 posts per week`, `3/week`, `2 posts per month`, `щодня`, `щотижня`, `3 рази на тиждень`. Other text is shown but not checked. |
+
+### `projects`
+
+Limits the projects the persona talks about. Omit it to use all active
+projects; `[]` means none.
+
+### MCP use
+
+On connect, the server's `instructions` tell the agent to pick the target
+persona before drafting. `personas_list` returns the personas, their accounts
+and projects, plus configured accounts that belong to none. `context_get
+{"account": "twitter/example-anime-fan"}` or `{"persona": "anime"}` returns that
+persona's voice, bio, platform rules and projects. `posts_get`, `posts_search`,
 `posts_stats`, `accounts_list` and `signals_get` accept `persona` to limit
 results to its accounts, for example to calibrate style only on anime posts.
 
@@ -244,33 +231,31 @@ results to its accounts, for example to calibrate style only on anime posts.
 while you type (field-level errors block saving, warnings are hints), keeps
 your comments, and «Зберегти й синхронізувати» writes the file and runs the
 context sync, so the AI sees the change at once. New projects and personas
-start from the `_template.yaml` files; deleting one moves it to
+start from the shipped `_template.yaml` files; deleting one moves it to
 `context/.trash/` (the project is archived, the persona's accounts ungrouped
 on sync).
 
 ## Sync Semantics And Validation
 
-`npm run context:sync`:
+`npm run context:sync` (also run by every save in the web UI):
 
-1. Parses `voice.yaml`, `bio.yaml`, and `platforms.yaml` when present.
-2. Reads project YAML files from `instance/context/projects/`.
-3. Upserts top-level objects into `user_context`.
-4. Upserts projects into `projects` and duplicates each raw project object as
-   `user_context` key `project.<slug>`.
-5. Archives projects whose YAML files were removed.
-6. Validates all persona files (slug, accounts present in `accounts.json`,
+1. Reports the old `voice.yaml`, `bio.yaml`, `platforms.yaml` as unused and
+   removes their old database rows.
+2. Reads project YAML files from `instance/context/projects/`, upserts them
+   into `projects` and as `user_context` key `project.<slug>`.
+3. Archives projects whose YAML files were removed.
+4. Validates all persona files (slug, accounts present in `accounts.json`,
    exclusive membership, field types) and stores them as `persona.<slug>`. If
    any persona file is invalid, no persona is changed. Removing a persona file
    removes that grouping.
-7. Prints updated, skipped, and failed entries.
+5. Prints updated, skipped, and failed entries.
 
-Every file is validated against the field tables above (also persona
-overrides). Errors name the exact field, for example
-`platforms.yaml: twitter.max_length must be a positive whole number`; a file
-with errors is not synced and its previously synced version stays in use.
-Warnings never block: unknown keys (with a hint such as `did you mean
-"posting_frequency"?`) and a `posting_frequency` the content plan cannot read.
-The web UI shows the same errors and warnings after «Синхронізувати контекст».
+Errors name the exact field, for example
+`personas/brand.yaml: platforms.twitter.max_length must be a positive whole
+number`; a file with errors is not synced and its previously synced version
+stays in use. Warnings never block: unknown keys (with a hint such as `did you
+mean "posting_frequency"?`), a `posting_frequency` the content plan cannot
+read, a persona without accounts.
 
 Useful inspection commands:
 
@@ -285,9 +270,11 @@ npm run nyra -- context show --key project.my-project
 ## Writing Checklist
 
 - Use real values and remove all template placeholders.
+- Give every persona its own `voice`, `bio` and `platforms`; nothing is inherited.
 - Keep `voice` rules concrete enough to evaluate a draft against them.
-- Add at least one representative `example_post`.
+- Add at least one representative `example_post` per persona.
 - Describe meaningful differences between platform styles.
+- Assign every publishing account to a persona.
 - Write content angles as actual hooks, not broad topics.
 - Keep project filenames and `slug` values identical.
 - Verify project facts from current documentation and implementation; ask the

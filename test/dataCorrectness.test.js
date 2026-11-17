@@ -77,27 +77,33 @@ test('exports filter posts and platform context by multiple platforms', async t 
   ]);
   await models.UserContext.bulkCreate([
     {
-      key: 'bio',
+      key: 'persona.brand',
       value: {
-        twitter: { short: 'Twitter bio' },
-        telegram: { short: 'Telegram bio' },
-        linkedin: { short: 'LinkedIn bio' },
+        slug: 'brand', name: 'Brand', accounts: [], projects: null, voice: { tone: 'Calm' },
+        bio: {
+          twitter: { short: 'Twitter bio' },
+          telegram: { short: 'Telegram bio' },
+          linkedin: { short: 'LinkedIn bio' },
+        },
+        platforms: {
+          twitter: { max_length: 280 },
+          telegram: { max_length: 4096 },
+          linkedin: { max_length: 3000 },
+        },
       },
     },
-    {
-      key: 'platforms',
-      value: {
-        twitter: { max_length: 280 },
-        telegram: { max_length: 4096 },
-        linkedin: { max_length: 3000 },
-      },
-    },
+    // Old shared rows are ignored.
+    { key: 'voice', value: { tone: 'Shared' } },
   ]);
 
   const repository = new ExportRepository(models);
   const platforms = ['twitter', 'telegram'];
   const posts = await repository.getPosts({ platforms });
+  // The only persona is used without --persona.
   const context = await repository.getContext({ platforms });
+  assert.equal(context.persona.slug, 'brand');
+  assert.deepEqual(context.voice, { tone: 'Calm' });
+  await assert.rejects(repository.getContext({ persona: 'ghost' }), /Unknown persona "ghost"\. Known: brand/);
 
   assert.deepEqual(posts.map(post => post.platform).sort(), ['telegram', 'twitter']);
   assert.deepEqual(Object.keys(context.bio), platforms);

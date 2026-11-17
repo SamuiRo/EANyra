@@ -50,7 +50,7 @@ const contextTools = [
         accounts_without_persona: accounts.map(accountKey).filter(key => !grouped.has(key)),
         next_step: personas.length
           ? 'Call context_get with persona (or the target account) before writing, and pass the same persona to posts_get for style examples.'
-          : 'No personas configured: context_get returns the shared global context for every account.',
+          : 'No personas yet: the author has no voice configured. Ask them to create a persona (web «Контекст») before writing.',
       };
     },
   },
@@ -61,10 +61,10 @@ const contextTools = [
       'content rules per platform, and active projects with content angles and posting rules. ' +
       'Always call this before generating or suggesting any post content. ' +
       'The author may run several personas (e.g. a business brand and an anime account), each grouping ' +
-      'accounts across platforms with its own voice and topics. When writing for a specific account, pass ' +
-      'account (e.g. "twitter/name") or persona: the result is that persona\'s context merged over the ' +
-      'global defaults. Never mix the voice or projects of different personas. Without arguments the ' +
-      'result lists the available personas.',
+      'accounts across platforms with its own voice, bio and platform rules (nothing is shared between ' +
+      'personas). When writing for a specific account, pass account (e.g. "twitter/name") or persona. ' +
+      'Never mix the voice or projects of different personas. Without arguments the result lists the ' +
+      'personas and the active projects.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -72,7 +72,7 @@ const contextTools = [
           type:        'string',
           description:
             'Return only a specific key: ' +
-            '"voice", "bio", "platforms", "project.<slug>" or "persona.<slug>". ' +
+            '"project.<slug>" or "persona.<slug>". ' +
             'Omit to get the full context.',
         },
         persona: {
@@ -102,12 +102,10 @@ const contextTools = [
           return {
             ...global,
             persona: null,
-            note: `Account ${account} is not part of any persona; this is the shared global context.` +
-              (personas.length
-                ? ' Other accounts have personas with different voices, so ask the user which persona or voice ' +
-                  'this account should use before writing for it.'
-                : '') +
-              ' Add it to instance/context/personas/<slug>.yaml to give it its own voice.',
+            voice: {}, bio: {}, platforms: {},
+            note: `Account ${account} belongs to no persona, so it has no voice or platform rules. ` +
+              (personas.length ? `Ask the user which persona it belongs to (${personas.map(p => p.slug).join(', ')}) ` : 'Ask the user to create a persona ') +
+              'and to assign the account in the web UI («Акаунти» → edit → Персона) before writing for it.',
           };
         }
         return mergePersonaContext(global, selected);
@@ -135,10 +133,10 @@ const contextTools = [
         topics:      entry.topics,
         accounts:    entry.accounts.map(accountKey),
       }));
-      if (personas.length) {
-        ctx.note = 'This is the global context. Before writing for a specific account, call context_get ' +
-          'with that account or persona to get its own voice, rules and projects.';
-      }
+      ctx.note = personas.length
+        ? 'Voice, bio and platform rules belong to each persona. Before writing for a specific account, call ' +
+          'context_get with that account or persona.'
+        : 'No personas yet: the author has no voice configured. Ask them to create a persona (web «Контекст»).';
       return ctx;
     },
   },
@@ -159,8 +157,9 @@ export async function loadGlobalContext() {
   const rows = await query('SELECT key, value FROM user_context ORDER BY key');
   const ctx  = {};
   for (const row of rows) {
-    // Projects come from the projects table below; personas are listed separately.
-    if (row.key.startsWith('project.') || row.key.startsWith('persona.')) continue;
+    // Projects come from the projects table below; personas are listed separately;
+    // voice/bio/platforms rows are from the old shared files and no longer used.
+    if (row.key.startsWith('project.') || row.key.startsWith('persona.') || ['voice', 'bio', 'platforms'].includes(row.key)) continue;
     ctx[row.key] = tryParse(row.value, row.value);
   }
 

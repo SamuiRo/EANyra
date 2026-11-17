@@ -26,11 +26,12 @@ async function fixture(t) {
   ]);
   const personas = [
     { slug: 'brand', name: 'Brand', accounts: [{ platform: 'twitter', username: 'brand_x' }, { platform: 'telegram', username: 'brand_tg' }],
-      voice: {}, bio: {}, platforms: { twitter: { posting_frequency: '3 posts per week' } }, projects: null },
+      voice: {}, bio: {}, platforms: { twitter: { posting_frequency: '3 posts per week' }, telegram: { posting_frequency: 'weekly' } }, projects: null },
     { slug: 'anime', name: 'Anime', accounts: [{ platform: 'twitter', username: 'anime_x' }],
       voice: {}, bio: {}, platforms: { twitter: { posting_frequency: 'daily' } }, projects: null },
   ];
-  const global = { platforms: { telegram: { posting_frequency: 'weekly' } }, projects: [] };
+  // Old shared rules are ignored: personas are self-contained.
+  const global = { platforms: { linkedin: { posting_frequency: 'daily' } }, projects: [] };
   const content = new ContentService(sequelizeExecutor(sequelize), {
     loadAccounts: async () => accounts, loadPersonas: async () => personas, loadGlobalContext: async () => global, now: () => NOW,
   });
@@ -124,7 +125,7 @@ test('content plan compares real posting with each persona\'s cadence', async t 
   await post('brand_x', 1);            // 3/week → every 2.33 days: on track
   await post('anime_x', 2);            // daily: 2 days → overdue (≥ 1.5 days)
   await post('anime_x', 0.5, { is_repost: true }); // reposts do not count
-  await post('brand_tg', 11);          // weekly (global rule) → overdue from 10.5 days
+  await post('brand_tg', 11);          // weekly (persona rule) → overdue from 10.5 days
   await models.Account.update({ last_scraped_at: new Date(NOW - 5 * DAY) }, { where: { id: row.solo_li.id } });
   await content.createDraft({ platform: 'twitter', account: 'anime_x', text: 'waiting' });
 

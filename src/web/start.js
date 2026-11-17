@@ -161,6 +161,11 @@ export async function startWebServer({ host = WEB.host, port = WEB.port, schedul
     },
     'POST /api/context/create': async ({ body }) => contextFiles.create(body.kind, String(body.slug ?? '')),
     'POST /api/context/delete': async ({ body }) => ({ ...await contextFiles.remove(body.path), sync: await syncContext() }),
+    'GET /api/context/account-personas': async () => contextFiles.accountPersonas(),
+    'POST /api/context/account-persona': async ({ body }) => ({
+      ...await contextFiles.setAccountPersona(body.account, body.persona || null), sync: await syncContext(),
+    }),
+    'POST /api/context/migrate-legacy': async () => ({ ...await contextFiles.migrateLegacy(), sync: await syncContext() }),
     'POST /api/context/sync': async () => {
       if (!models) throw Object.assign(new Error('Context sync is not available in this process.'), { status: 501 });
       const { updated, skipped, errors, warnings } = await new UserContextRepository(models).sync();
