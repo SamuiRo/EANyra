@@ -42,14 +42,32 @@ API ID та hash отримують через [Telegram API development tools](
 Для Twitter кожен акаунт може мати власну сесію (`"session"` в accounts.json);
 стан усіх сесій показує `npm run nyra -- sessions`.
 
+### Claude Code (CLI, десктопний застосунок)
+
+Найпростіше — stdio, токен не потрібен (сховище відкривається ключем,
+запам'ятованим на цьому ПК):
+
+```bash
+claude mcp add eanyra --scope user -- node S:/Daedalus/Aureum/EANyra/src/core/mcp/start.js
+```
+
+Через HTTP до запущеного `serve --mcp` (токен з «Налаштування» → «Токен MCP»;
+він зберігається у відкритому вигляді в `~/.claude.json`):
+
+```bash
+claude mcp add --transport http eanyra --scope user http://localhost:4450/mcp --header "Authorization: Bearer <токен>"
+```
+
+Перевірка: `claude mcp list`. Нові інструменти з'являються в новій сесії.
+
 ### Через `npm run serve` (HTTP, один процес із вебінтерфейсом)
 
 Якщо вебінтерфейс уже запущено, ШІ-клієнт може підключитися до того самого
 процесу: спільні задачі збору, а сховище відкрите після вашого входу в браузер.
 
 ```bash
-npm run nyra -- mcp token          # один раз: створює токен і показує його
-npm run serve -- --mcp
+npm run nyra -- mcp token          # або «Налаштування» → «Токен MCP»
+npm.cmd run serve -- --mcp         # у PowerShell — npm.cmd (див. README)
 ```
 
 Для клієнта, що підтримує Streamable HTTP:

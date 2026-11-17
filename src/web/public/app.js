@@ -702,7 +702,7 @@ const VIEWS = {
         h('div', { class: 'row' }, h('label', { class: 'row' }, includeEnv, 'з .env'),
           h('button', { class: 'primary small', onclick: act(() => post('/api/settings/backup', { include_env: includeEnv.checked }),
             r => `Бекап готовий: ${r.dir} (${r.files} файлів, ${(r.bytes / 1048576).toFixed(1)} МБ).`) }, 'Створити бекап'))),
-      h('p', { class: 'muted' }, 'Знімок бази без зупинки збору + сховище, акаунти, сповіщення, контекст. Скопіюйте папку на інший диск. Відновлення: зупиніть сервер і виконайте npm run instance:restore -- <папка> --yes.'),
+      h('p', { class: 'muted' }, 'Знімок бази без зупинки збору + сховище, акаунти, сповіщення, контекст. Скопіюйте папку на інший диск. Відновлення: зупиніть сервер і виконайте npm.cmd run instance:restore -- <папка> --yes (у PowerShell саме npm.cmd, інакше прапорці не дійдуть).'),
       s.backups.length ? h('div', { class: 'table-wrap' }, h('table', {},
         h('thead', {}, h('tr', {}, h('th', {}, 'Папка'), h('th', {}, 'Створено'), h('th', {}, 'Версія'), h('th', {}, 'Розмір'))),
         h('tbody', {}, s.backups.map(b => h('tr', {}, h('td', { class: 'mono' }, b.name), h('td', {}, when(b.created_at)), h('td', {}, b.version ?? '—'), h('td', {}, `${(b.bytes / 1048576).toFixed(1)} МБ`)))))) : empty('Бекапів ще немає.'),
@@ -713,7 +713,7 @@ const VIEWS = {
         : s.efs.error ? h('p', { class: 'error' }, s.efs.error)
           : [h('div', { class: 'row' }, badge(`${s.efs.encrypted} з ${s.efs.total} зашифровано`, s.efs.encrypted === s.efs.total ? 'ok' : 'stale')),
             s.efs.plaintext.length ? h('div', { class: 'muted mono' }, s.efs.plaintext.join(', ')) : null,
-            h('p', { class: 'muted' }, 'Щоб зашифрувати: зупиніть npm run serve, npm start і MCP, виконайте npm run instance:protect, потім один раз збережіть сертифікат: cipher /x.')],
+            h('p', { class: 'muted' }, 'Не вмикається автоматично. Сховище з логінами вже зашифроване майстер-паролем; EFS додатково шифрує базу, акаунти й контекст ключем вашого користувача Windows. Щоб увімкнути: зупиніть npm run serve, npm start і MCP, виконайте npm run instance:protect, потім один раз збережіть сертифікат EFS: cipher /x (без нього після перевстановлення Windows файли не відкриються).')],
     );
 
     // ── Vault and MCP ──
@@ -732,7 +732,7 @@ const VIEWS = {
           event.preventDefault();
           act(() => post('/api/settings/vault/password', { current: current.value, next: next.value, repeat: repeat.value }), 'Майстер-пароль змінено. Перезапустіть MCP, якщо він працює окремо.')();
         } }, h('label', {}, 'Поточний', current), h('label', {}, 'Новий (від 10 символів)', next), h('label', {}, 'Ще раз', repeat), h('button', { type: 'submit' }, 'Змінити')),
-        h('h3', {}, 'Токен MCP для ШІ-клієнтів (npm run serve -- --mcp)'),
+        h('h3', {}, 'Токен MCP для ШІ-клієнтів (npm.cmd run serve -- --mcp)'),
         h('div', { class: 'row between' }, badge(v.mcp_token ? 'створено' : 'немає', v.mcp_token ? 'ok' : 'skipped'),
           h('button', { class: 'small', onclick: () => mcpToken(v.mcp_token) }, v.mcp_token ? 'Замінити…' : 'Створити')),
       ],
