@@ -89,6 +89,10 @@ the text; you publish it yourself.
 
 ## The vault
 
+In the browser: on first start `npm run serve` prints a one-time token; log in
+with it and create the vault on «Огляд» (it imports the same plaintext
+secrets as `vault init`). From the terminal:
+
 ```bash
 npm run nyra -- vault init      # create; imports plaintext secrets it finds
 npm run nyra -- vault status    # secret names, remembered key, plaintext leftovers

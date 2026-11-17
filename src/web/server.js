@@ -53,7 +53,7 @@ export class HttpError extends Error {
  * @param {{
  *   host?: string, port?: number,
  *   auth: import('./auth.js').WebAuth,
- *   mode: 'vault'|'token',
+ *   mode: 'vault'|'token'|(() => 'vault'|'token'),
  *   tools: Array<{ name: string, handler: Function, inputSchema: object }>,
  *   routes?: Record<string, (ctx: { body: object, query: URLSearchParams }) => Promise<unknown>>,
  *   info?: object,
@@ -62,7 +62,7 @@ export class HttpError extends Error {
  * }} options
  *   mcp.token returns the expected Bearer token ('' disables /mcp).
  */
-export function createWebServer({ host = '127.0.0.1', port = 3030, auth, mode, tools, routes = {}, info = {}, onLogin, mcp }) {
+export function createWebServer({ host = '127.0.0.1', port = 4450, auth, mode, tools, routes = {}, info = {}, onLogin, mcp }) {
   if (!LOOPBACK.includes(host)) {
     throw new Error('The web server is local-only. Bind WEB_HOST to 127.0.0.1, localhost or ::1.');
   }
@@ -93,7 +93,7 @@ export function createWebServer({ host = '127.0.0.1', port = 3030, auth, mode, t
       else if (req.method !== 'GET') throw new HttpError(405, 'Method not allowed');
 
       if (url.pathname === '/api/session' && req.method === 'GET') {
-        return sendJson(res, 200, { authenticated: Boolean(auth.check(req)), mode, ...info });
+        return sendJson(res, 200, { authenticated: Boolean(auth.check(req)), mode: typeof mode === 'function' ? mode() : mode, ...info });
       }
       if (url.pathname === '/api/login' && req.method === 'POST') {
         const { password } = await readJson(req);

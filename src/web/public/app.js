@@ -183,7 +183,7 @@ function alertsCard(alerts) {
       alerts.configured ? h('button', { class: 'small', onclick: test }, 'Надіслати тест') : null),
     h('div', { class: 'row' }, channel('Telegram', alerts.telegram), channel('Discord', alerts.discord)),
     alerts.error && h('p', { class: 'error' }, alerts.error),
-    !alerts.configured && h('p', { class: 'muted' }, 'Налаштування з терміналу: npm run nyra -- notify telegram-chat (після /start у вашому боті) або npm run nyra -- notify discord.'),
+    !alerts.configured && h('p', { class: 'muted' }, 'Налаштуйте Telegram-бота або Discord-вебхук на вкладці «Налаштування».'),
     alerts.problems.length
       ? h('div', { class: 'stack' }, h('div', { class: 'muted' }, 'Зараз виявлено (повідомлення надсилаються після кожного збору, без повторів частіше ніж раз на добу):'),
         alerts.problems.map(text => h('div', { class: 'preserve' }, text)))
@@ -284,6 +284,7 @@ const VIEWS = {
       )))));
 
     return [
+      session?.mode === 'token' ? vaultSetupCard() : null,
       card(
         h('div', { class: 'row between' },
           h('div', { class: 'row' }, h('h2', {}, 'Стан збору'), badge(HEALTH[status.health] ?? status.health, status.health)),
@@ -295,7 +296,7 @@ const VIEWS = {
           status.active_job && h('div', {}, h('div', { class: 'muted' }, 'Активна задача'), h('div', {}, badge(status.active_job.status), ' ', status.active_job.source)),
         ),
       ),
-      h('div', { class: 'grid' }, platforms.length ? platforms : card(empty('Немає активних акаунтів. Додайте їх в instance/accounts.json.'))),
+      h('div', { class: 'grid' }, platforms.length ? platforms : card(empty('Немає активних акаунтів. Додайте їх на вкладці «Акаунти».'))),
       plan && card(
         h('div', { class: 'row between' }, h('h2', {}, 'Час публікувати'), h('button', { class: 'small', onclick: () => navigate('content') }, 'До контенту')),
         plan.due_now.length ? h('div', { class: 'plan-due' }, plan.due_now.map(item => h('div', { class: 'row' },
@@ -422,7 +423,7 @@ const VIEWS = {
           h('div', { class: 'row' },
             badge(sessions.encrypted ? (sessions.unlocked ? 'сховище відкрите' : 'сховище закрите') : 'без шифрування', sessions.encrypted ? (sessions.unlocked ? 'ok' : 'stale') : 'error'),
             h('button', { class: 'primary small', onclick: newSession, disabled: !sessions.encrypted }, 'Нова сесія'))),
-        !sessions.encrypted && h('p', { class: 'error' }, 'Логіни зберігаються лише в зашифрованому сховищі: npm run nyra -- vault init, потім перезапустіть npm run serve.'),
+        !sessions.encrypted && h('p', { class: 'error' }, 'Логіни зберігаються лише в зашифрованому сховищі: створіть його на вкладці «Огляд».'),
         h('p', { class: 'muted' }, 'Значення секретів ніколи не показуються — їх можна лише задати або видалити.'),
         sessionRows.length ? h('div', { class: 'table-wrap' }, h('table', {},
           h('thead', {}, h('tr', {}, h('th', {}, 'Сесія'), h('th', {}, 'Стан'), h('th', {}, 'Акаунти'), h('th', {}, ''))),
@@ -434,11 +435,11 @@ const VIEWS = {
       card(
         h('div', { class: 'row between' }, h('h2', {}, `Персони (${personas.count})`),
           h('button', { class: 'small', onclick: syncContext }, 'Синхронізувати контекст')),
-        h('p', { class: 'muted' }, 'Після змін у instance/context/*.yaml (голос, біо, персони, проєкти) натисніть «Синхронізувати контекст».'),
+        h('p', { class: 'muted' }, 'Голос, біо, персони й проєкти редагуються на вкладці «Контекст» (збереження синхронізує їх одразу). Після ручних змін у файлах натисніть «Синхронізувати контекст».'),
         personas.personas.length ? h('div', { class: 'grid' }, personas.personas.map(p => h('div', { class: 'card stack' },
           h('h3', {}, p.name), p.description && h('p', { class: 'muted preserve' }, p.description),
           h('div', { class: 'mono' }, p.accounts.join(', ')),
-        ))) : empty('Персон не знайдено. Створіть instance/context/personas/<slug>.yaml і синхронізуйте контекст.'),
+        ))) : empty('Персон ще немає — створіть їх на вкладці «Контекст».'),
       ),
     ];
   },
@@ -692,7 +693,7 @@ const VIEWS = {
     const v = s.vault;
     const vaultCard = card(
       h('h2', {}, 'Сховище й доступ'),
-      !v.encrypted ? h('p', { class: 'error' }, 'Сховища ще немає: npm run nyra -- vault init, потім перезапустіть npm run serve.') : [
+      !v.encrypted ? h('p', { class: 'error' }, 'Сховища ще немає: створіть його на вкладці «Огляд».') : [
         h('div', { class: 'row between' },
           h('span', {}, 'Запам’ятати на цьому ПК (MCP і розклад без пароля): ', badge(v.remembered ? 'так' : 'ні', v.remembered ? 'ok' : 'skipped')),
           v.dpapi && h('button', { class: 'small', onclick: act(() => post(v.remembered ? '/api/settings/vault/forget' : '/api/settings/vault/remember'), v.remembered ? 'Забуто.' : 'Запам’ятовано (Windows DPAPI).') }, v.remembered ? 'Забути' : 'Запам’ятати')),
@@ -1244,6 +1245,35 @@ async function deleteSecret(kind, name) {
     toast(error.message, 7000);
   }
   render();
+}
+
+/** First run: create the encrypted vault (the session was opened with the terminal token). */
+function vaultSetupCard() {
+  const password = h('input', { type: 'password', autocomplete: 'new-password', required: true, minlength: 10 });
+  const repeat = h('input', { type: 'password', autocomplete: 'new-password', required: true });
+  const remember = h('input', { type: 'checkbox', checked: true });
+  const submit = h('button', { type: 'submit', class: 'primary' }, 'Створити сховище');
+  return h('section', { class: 'card stack' },
+    h('h2', {}, 'Перший запуск: створіть зашифроване сховище'),
+    h('p', {}, 'Усі логіни, cookies і токени зберігаються лише зашифрованими майстер-паролем. Далі ви входите цим паролем замість токена з термінала.'),
+    h('p', { class: 'error' }, 'Майстер-пароль неможливо відновити — збережіть його в менеджері паролів.'),
+    h('form', { class: 'filters', onsubmit: async event => {
+      event.preventDefault();
+      submit.disabled = true;
+      try {
+        const result = await api('/api/setup/vault', { method: 'POST', body: { password: password.value, repeat: repeat.value, remember: remember.checked } });
+        session = { ...session, mode: 'vault' };
+        toast(`Сховище створено${result.imported.length ? `; з .env імпортовано: ${result.imported.join(', ')}` : ''}. Тепер додайте акаунти й логіни у вкладці «Акаунти».`, 10000);
+        render();
+      } catch (error) {
+        toast(error.message, 8000);
+        submit.disabled = false;
+      }
+    } },
+    h('label', {}, 'Майстер-пароль (від 10 символів)', password),
+    h('label', {}, 'Ще раз', repeat),
+    h('label', { class: 'row' }, remember, 'Запам’ятати на цьому ПК (розклад і MCP без пароля, лише Windows)'),
+    submit));
 }
 
 async function mcpToken(exists) {

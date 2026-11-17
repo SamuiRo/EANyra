@@ -75,7 +75,7 @@ test('a Discord webhook is validated before touching the vault', async t => {
     await assert.rejects(routes['POST /api/settings/notify/discord-webhook']({ body: { url } }), error => error.status === 400, url);
   }
   await assert.rejects(routes['POST /api/settings/notify/discord-webhook']({ body: { url: 'https://discord.com/api/webhooks/1/x' } }),
-    error => error.status === 409 && /vault init/.test(error.message));
+    error => error.status === 409 && /Створити сховище/.test(error.message));
 });
 
 test('LinkedIn upload checks the account and the CSV, saves it and starts an import', async t => {

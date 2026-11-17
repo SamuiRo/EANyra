@@ -59,7 +59,7 @@ npm run serve -- --mcp
   "mcpServers": {
     "eanyra": {
       "type": "http",
-      "url": "http://127.0.0.1:3030/mcp",
+      "url": "http://localhost:4450/mcp",
       "headers": { "Authorization": "Bearer <токен>" }
     }
   }

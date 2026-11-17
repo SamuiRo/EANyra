@@ -31,6 +31,7 @@ import { buildChannels, runProblemChecks } from '../core/notify/index.js';
 import { AccountConfigService } from '../core/services/AccountConfigService.js';
 import { ContextFileService } from '../core/services/ContextFileService.js';
 import { buildSettingsRoutes } from './settingsRoutes.js';
+import { buildSetupRoutes } from './setupRoutes.js';
 import { SessionLogins } from '../core/services/SessionLogins.js';
 import { PLATFORM_CATALOG as CATALOG } from '../platforms/catalog.js';
 
@@ -41,12 +42,14 @@ import { PLATFORM_CATALOG as CATALOG } from '../platforms/catalog.js';
  *   mcp mounts the MCP server at /mcp (Bearer token from `eanyra mcp token`).
  */
 export async function startWebServer({ host = WEB.host, port = WEB.port, schedule = false, mcp = false, models } = {}) {
-  const hasVault = await new Vault(PATHS.vaultFile).exists();
-  let token = null;
+  // Changes once at runtime when the vault is created from the browser.
+  let hasVault = await new Vault(PATHS.vaultFile).exists();
+  const token = hasVault ? null : randomBytes(18).toString('base64url');
+  const verifyToken = token ? tokenVerifier(token) : null;
   const auth = new WebAuth({
-    verifyPassword: hasVault
-      ? async password => Boolean(await unlockSharedVault(password))
-      : tokenVerifier(token = randomBytes(18).toString('base64url')),
+    verifyPassword: async password => (hasVault
+      ? Boolean(await unlockSharedVault(password))
+      : verifyToken(password)),
   });
 
   const jobs = new ScrapeJobs({ source: 'web' });
@@ -67,7 +70,7 @@ export async function startWebServer({ host = WEB.host, port = WEB.port, schedul
     if (!vault) {
       throw Object.assign(new Error(hasVault
         ? 'The vault is locked. Log in again.'
-        : 'Create the encrypted vault first: npm run nyra -- vault init (then restart npm run serve).'), { status: 409 });
+        : 'Create the encrypted vault first: «Огляд» → «Створити сховище».'), { status: 409 });
     }
     return new Credentials({ vault });
   };
@@ -84,7 +87,8 @@ export async function startWebServer({ host = WEB.host, port = WEB.port, schedul
   const SETTABLE = { 'github': 'token', 'telegram-bot': 'token', 'discord-bot': 'token' };
 
   const routes = {
-    ...buildSettingsRoutes({ hasVault, sequelize: models?.UserContext?.sequelize, jobs }),
+    ...buildSetupRoutes({ onCreated: () => { hasVault = true; print('Vault created from the browser; log in with the master password from now on.', 'success'); } }),
+    ...buildSettingsRoutes({ hasVault: () => hasVault, sequelize: models?.UserContext?.sequelize, jobs }),
     // ── Accounts (accounts.json) ──────────────────────────────────────────
     'GET /api/accounts/config': async () => ({
       accounts: await accountsFile.list(),
@@ -208,7 +212,7 @@ export async function startWebServer({ host = WEB.host, port = WEB.port, schedul
     ? new McpHttpSessions({ createServer: () => createMcpServer({ tools, log: message => print(`[mcp] ${message}`, 'system') }) })
     : null;
   const server = createWebServer({
-    host, port, auth, mode: hasVault ? 'vault' : 'token', tools, routes,
+    host, port, auth, mode: () => (hasVault ? 'vault' : 'token'), tools, routes,
     info: { version: PKG.version, scheduler: schedule, mcp },
     ...(mcpSessions ? {
       mcp: {
@@ -244,9 +248,10 @@ export async function startWebServer({ host = WEB.host, port = WEB.port, schedul
     server.listen(port, host, resolve);
   });
   const url = `http://${host.includes(':') ? `[${host}]` : host}:${server.address().port}/`;
-  print(`EANyra web UI → ${url}`, 'success');
+  const friendly = host === '127.0.0.1' || host === 'localhost' ? `http://localhost:${server.address().port}/` : url;
+  print(`EANyra web UI → ${friendly}${friendly !== url ? ` (or ${url})` : ''}`, 'success');
   if (token) {
-    print(`No vault: log in with this one-time access token: ${token}`, 'warning');
+    print(`First run (no vault yet): log in with this one-time access token, then create the vault in the page: ${token}`, 'warning');
   } else {
     print('Log in with your master password.', 'info');
   }

@@ -126,6 +126,9 @@ the current repository state, not on the older README.
 - [x] **Web management: settings and operations.** Alert channels and rules,
   LinkedIn export upload, backups, EFS status, vault remember/password,
   MCP token (2.2.0).
+- [x] **Web-first setup.** `npm install` + `npm run serve`: empty instance
+  created on start, vault created in the browser, Chromium installed with
+  npm, root `.env.example`, default port 4450 (3.0.0).
 
 - [x] **Telegram text publishing.** Explicitly enabled channels, Bot API identity
   lookup and admin checks, durable prepare/publish/get workflow and duplicate
@@ -203,7 +206,7 @@ the current repository state, not on the older README.
 - [x] YAML author context and project synchronization.
 - [x] Markdown export for AI-assisted content sessions.
 - [x] Intended unified MCP tool design with stdio and HTTP transport code.
-- [x] Centralized runtime configuration and complete `instance_example/.env.example`.
+- [x] Centralized runtime configuration and complete `.env.example`.
 - [x] Working MCP startup imports and cross-platform configured export paths.
 - [x] Repaired npm scripts: working export, context sync, platform scrape, and
   cookie import commands; removed the nonexistent migration entry point.

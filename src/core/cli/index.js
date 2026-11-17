@@ -31,7 +31,8 @@ import { registerModels }             from '../teapot/models/index.js';
 import { SchemaMigrator }             from '../teapot/SchemaMigrator.js';
 import { ScraperOrchestrator }        from '../orchestrator/ScraperOrchestrator.js';
 import { Scheduler }                  from '../scheduler/Scheduler.js';
-import { PKG, NODE_ENV, SUPPORTED_PLATFORMS, PATHS, DB, INSTANCE_DIR } from '../../config/app.config.js';
+import { PKG, NODE_ENV, SUPPORTED_PLATFORMS, PATHS, DB, INSTANCE_DIR, PROJECT_ROOT } from '../../config/app.config.js';
+import { initializeInstance } from '../instance/InstanceManager.js';
 import { createBackup, timestamp } from '../instance/Backup.js';
 import { onShutdown }             from '../../shared/shutdown.js';
 import path                       from 'node:path';
@@ -59,6 +60,12 @@ class Nyra {
       `Mode: ${process.argv[2] ?? 'daemon'} · NODE_ENV=${NODE_ENV ?? 'unset'}`,
       'system',
     );
+
+    if (process.argv[2] === 'serve') {
+      // Web-first setup: a missing instance is created empty; the rest is done in the browser.
+      const { created } = await initializeInstance({ projectRoot: PROJECT_ROOT, instanceDir: INSTANCE_DIR, withEnv: false, exampleAccounts: false });
+      if (created.length) print(`New instance ${INSTANCE_DIR}: created ${created.join(', ')}`, 'success');
+    }
 
     print('Connecting to database…', 'system');
     await database.connect();
@@ -189,8 +196,8 @@ function buildCLI(nyra) {
 
   program
     .command('serve')
-    .description('Start the local web UI (127.0.0.1) for accounts, collection, posts and drafts')
-    .option('--port <port>', 'Port (default WEB_PORT or 3030)')
+    .description('Start the local web UI (http://localhost:4450) to manage everything from the browser')
+    .option('--port <port>', 'Port (default WEB_PORT or 4450)')
     .option('--schedule', 'Also run scheduled collection (CRON_SCHEDULE) in this process')
     .option('--mcp', 'Also serve MCP for AI clients at /mcp (token: npm run nyra -- mcp token)')
     .action(async options => {

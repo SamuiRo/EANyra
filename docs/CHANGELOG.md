@@ -7,6 +7,36 @@ change (fixes, docs, internals); **minor** = new capability, existing setups
 keep working; **major** = an existing setup, configuration or integration may
 need action. History before 2.0.0 lives only in commit messages (`v1.x.y …`).
 
+## 3.0.0 — 2026-11-17
+
+Set up everything from the browser: `npm install`, then `npm run serve`.
+
+### Upgrade notes (action needed)
+
+- **The web UI moved from port 3030 to 4450**: open `http://localhost:4450`.
+  An AI client configured for `http://127.0.0.1:3030/mcp` (`serve --mcp`)
+  must be changed to `http://localhost:4450/mcp`. To keep the old port set
+  `WEB_PORT=3030` in the root `.env`.
+- `.env.example` moved from `instance_example/` to the project root.
+
+### Added
+
+- First run in the browser: without a vault, log in with the one-time token
+  from the terminal and create the encrypted vault on «Огляд» (master
+  password, optional «remember on this PC»). Plaintext secrets from the root
+  `.env` are imported as with `vault init`; the login switches to the master
+  password without a restart.
+- `npm run serve` creates a missing instance (empty `accounts.json`, context
+  templates); no `instance:init` and no `.env` needed.
+- `npm install` downloads Playwright's Chromium (`postinstall`).
+- The startup message shows `http://localhost:4450` (both `localhost` and
+  `127.0.0.1` work, as before).
+
+### Changed
+
+- Hints in the web UI point to the web tabs instead of terminal commands and
+  file paths.
+
 ## 2.2.0 — 2026-11-17
 
 ### Added
