@@ -144,6 +144,31 @@ export function parseLinkedinDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+/**
+ * LinkedIn's Shares.csv wraps every line of a multi-line post in its own
+ * quotes, so after CSV unescaping the text reads `first"\n"second"\n""\n"last`.
+ * Strip that wrapper only when every line boundary carries it; a single-line
+ * post or ordinary text with quotes is returned unchanged.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+export function normalizeShareCommentary(text) {
+  const value = String(text ?? '');
+  const lines = value.split('\n');
+  if (lines.length < 2) return value.trim();
+
+  const last = lines.length - 1;
+  const wrapped = lines.every((line, i) =>
+    (i === 0 || line.startsWith('"')) && (i === last || line.endsWith('"')));
+  if (!wrapped) return value.trim();
+
+  return lines
+    .map((line, i) => line.slice(i === 0 ? 0 : 1, i === last ? line.length : -1))
+    .join('\n')
+    .trim();
+}
+
 export function parseSharesFile(filePath) {
   const raw  = fs.readFileSync(filePath, 'utf-8');
   const rows = parseCsvString(raw);
@@ -151,7 +176,7 @@ export function parseSharesFile(filePath) {
   return rows.map(r => ({
     date:        parseLinkedinDate(r['Date']),
     shareLink:   r['ShareLink']?.trim()   || null,
-    text:        r['ShareCommentary']?.trim() || '',
+    text:        normalizeShareCommentary(r['ShareCommentary']),
     sharedUrl:   r['SharedUrl']?.trim()   || null,
     mediaUrl:    r['MediaUrl']?.trim()    || null,
     visibility:  r['Visibility']?.trim()  || null,

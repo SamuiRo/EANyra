@@ -7,6 +7,18 @@ change (fixes, docs, internals); **minor** = new capability, existing setups
 keep working; **major** = an existing setup, configuration or integration may
 need action. History before 2.0.0 lives only in commit messages (`v1.x.y …`).
 
+## 4.1.1 — 2026-11-20
+
+### Fixed
+
+- LinkedIn import: the `Shares.csv` export wraps every line of a multi-line
+  post in its own quotes, so imported texts read `line"\n"line`. The parser
+  now strips that wrapper; single-line posts and ordinary quotes are left
+  as they are.
+
+Posts imported earlier keep the old text until a new export is imported
+(an unchanged file is skipped).
+
 ## 4.1.0 — 2026-11-17
 
 ### Added
