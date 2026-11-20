@@ -16,7 +16,7 @@ const { SchemaMigrator } = await import('../src/core/teapot/SchemaMigrator.js');
 const { ScraperOrchestrator } = await import('../src/core/orchestrator/ScraperOrchestrator.js');
 const { Credentials } = await import('../src/core/secrets/Credentials.js');
 const { LinkedinImportRepository } = await import('../src/core/teapot/repositories/LinkedinImportRepository.js');
-const { parseLinkedinDate } = await import('../src/platforms/linkedin/csvParser.js');
+const { parseLinkedinDate, normalizeShareCommentary, parseCsvString } = await import('../src/platforms/linkedin/csvParser.js');
 
 const HEADER = 'Date,ShareLink,ShareCommentary,SharedUrl,MediaUrl,Visibility\r\n';
 const row = (id, date, text) => `${date},https://www.linkedin.com/feed/update/urn%3Ali%3Ashare%3A${id},${text},,,MEMBER_NETWORK\r\n`;
@@ -45,6 +45,18 @@ test('LinkedIn export dates are UTC, not local time', () => {
   assert.equal(parseLinkedinDate('2026-11-01 10:00').toISOString(), '2026-11-01T10:00:00.000Z');
   assert.equal(parseLinkedinDate(''), null);
   assert.equal(parseLinkedinDate('not a date'), null);
+});
+
+test('LinkedIn per-line quote wrapping is removed from multi-line posts', () => {
+  // Raw export shape: every line of ShareCommentary is wrapped in doubled quotes.
+  const raw = HEADER + '2026-05-05 09:28:21,https://x,"First line.""\r\n""""\r\n""Say ""hi"" here.""\r\n""""\r\n""#ai","","",MEMBER_NETWORK\r\n';
+  const [row0] = parseCsvString(raw);
+  assert.equal(normalizeShareCommentary(row0.ShareCommentary), 'First line.\n\nSay "hi" here.\n\n#ai');
+  // A trailing wrapped empty line disappears.
+  assert.equal(normalizeShareCommentary('One"\n"Two"\n"'), 'One\nTwo');
+  // Text without the wrapper is left alone.
+  assert.equal(normalizeShareCommentary('Plain "quoted" text'), 'Plain "quoted" text');
+  assert.equal(normalizeShareCommentary('Line one\n"Quoted line"'), 'Line one\n"Quoted line"');
 });
 
 test('imports are recorded, unchanged files are skipped and new exports imported', async t => {
