@@ -6,7 +6,7 @@ description: >
   and exposes everything through unified MCP tools for AI-assisted content creation.
   Use this skill to understand the author's voice, browse pending signals,
   query posts across all platforms, and suggest what to publish next.
-version: 2.0.0
+version: 2.1.0
 metadata:
   openclaw:
     requires:
@@ -265,6 +265,7 @@ From `context_get` → `platforms.<platform>`:
 - `language` — write **only** in this language for this platform. No exceptions.
 - `max_length` — never exceed this. Count characters if needed.
 - `style` — follow the style description literally.
+- `avoid` — platform-specific anti-patterns; they apply on top of `voice.dislikes`.
 
 If `platforms.twitter.language` is `uk`, write in Ukrainian.
 If `platforms.linkedin.language` is `en`, write in English.
@@ -274,7 +275,7 @@ Never mix languages between platforms.
 
 From `context_get` → `projects`:
 - `content_angles` — pre-approved angles for posting about this project. Use them.
-- `posting_rules` — specific constraints (e.g. "on release — 3-4 posts, not all at once")
+- `posting_rules` — hard constraints for this project: what may be shown (code, links, screenshots), what must never be named, required endings or notes, cadence (e.g. "on release — 3-4 posts, not all at once"). They override content angles.
 - `tech_stack` — accurate technical details for technical posts
 
 ### Signals → posts: conversion guide
@@ -317,10 +318,14 @@ If `body` is empty or just a SHA — skip or ask the author what changed.
 - [ ] Length does not exceed `platforms.<platform>.max_length`
 - [ ] No phrases from `voice.dislikes`
 - [ ] No topics from `voice.taboo`
+- [ ] Nothing from `platforms.<platform>.avoid` (check each item against the draft)
 - [ ] Contains specific details (numbers, names, concrete facts) — not generic statements
-- [ ] Tone matches `voice.tone`
+- [ ] Tone matches `voice.tone` and `platforms.<platform>.style`
+- [ ] If about a project — every `posting_rules` item is respected (privacy, names that must not appear, required endings)
 - [ ] If about a project — at least one `content_angles` item is reflected
 - [ ] Signal `used` field is `false` (not already used)
+
+Go through the list item by item against the finished text, then fix and re-check. A draft that breaks a `posting_rules` item is not delivered.
 
 ---
 

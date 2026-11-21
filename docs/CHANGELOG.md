@@ -7,6 +7,19 @@ change (fixes, docs, internals); **minor** = new capability, existing setups
 keep working; **major** = an existing setup, configuration or integration may
 need action. History before 2.0.0 lives only in commit messages (`v1.x.y …`).
 
+## 4.1.2 — 2026-11-21
+
+### Changed
+
+- Agent skill (`skills/eanyra/SKILL.md`, skill version 2.1.0): the quality
+  checklist now also checks `platforms.<platform>.avoid` and every project
+  `posting_rules` item (privacy, names that must not appear, required
+  endings), and `style` per platform. A draft that breaks a posting rule is
+  not delivered.
+
+No action needed when upgrading from 4.1.x; re-copy the skill if you installed
+it elsewhere.
+
 ## 4.1.1 — 2026-11-20
 
 ### Fixed
