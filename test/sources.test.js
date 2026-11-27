@@ -134,6 +134,27 @@ test('the Reddit reader skips NSFW, stickied and low-score posts and prefers the
   await assert.rejects(READERS.reddit(source, { fetchImpl: blocked, now: new Date() }), /HTTP 429 \(rate limited/);
 });
 
+test('with a reddit-app secret the Reddit API is read with one app-only OAuth token per run', async () => {
+  const calls = [];
+  const fetchImpl = fakeFetch([
+    [/reddit\.com\/api\/v1\/access_token/, 200, { access_token: 'example-access', expires_in: 3600 }],
+    [/oauth\.reddit\.com\/r\/example\/new/, 200, { data: { children: [{ data: { title: 'T', permalink: '/r/example/comments/x/t/', is_self: true, score: 1 } }] } }],
+  ], calls);
+  const [source] = parseSources([{ type: 'reddit', subreddit: 'example', sort: 'new' }]).sources;
+  const ctx = { fetchImpl, now: new Date(), userAgent: 'eanyra-test', reddit: { clientId: 'example-id', clientSecret: 'example-secret' } };
+  assert.equal((await READERS.reddit(source, ctx)).length, 1);
+  await READERS.reddit(source, ctx);
+  assert.equal(calls.filter(call => /access_token/.test(call.url)).length, 1, 'the token is reused');
+  assert.equal(calls[0].init.headers.Authorization, `Basic ${Buffer.from('example-id:example-secret').toString('base64')}`);
+  assert.equal(calls[0].init.body, 'grant_type=client_credentials');
+  assert.equal(calls[1].init.headers.Authorization, 'Bearer example-access');
+  assert.equal(new URL(calls[1].url).searchParams.get('t'), null, 'period is sent for top only');
+
+  const rejected = fakeFetch([[/access_token/, 401, '']]);
+  await assert.rejects(READERS.reddit(source, { ...ctx, fetchImpl: rejected, reddit: { clientId: 'a', clientSecret: 'b' } }),
+    /Reddit OAuth answered HTTP 401; check the reddit-app secret/);
+});
+
 test('links are canonicalized for deduplication', () => {
   assert.equal(canonicalUrl('https://WWW.Example.com/Path/?utm_source=x&b=2&a=1#top'), 'https://example.com/Path?a=1&b=2');
   assert.equal(canonicalUrl('https://example.com/'), 'https://example.com');

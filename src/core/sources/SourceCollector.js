@@ -32,13 +32,16 @@ const INVISIBLE = new RegExp(`[${[[0x00, 0x08], [0x0B, 0x0C], [0x0E, 0x1F], [0x7
 export class SourceCollector {
   /**
    * @param {{ all: Function, get: Function, run: Function }} db shared SQL executor
-   * @param {{ fetchImpl?: typeof fetch, githubToken?: string, now?: () => Date,
+   * @param {{ fetchImpl?: typeof fetch, githubToken?: string, reddit?: { clientId: string, clientSecret: string }|null,
+   *           now?: () => Date,
    *           readers?: typeof READERS, pause?: (ms: number) => Promise<void> }} [deps]
    */
   constructor(db, deps = {}) {
     this.db = db;
     this.fetchImpl = deps.fetchImpl ?? fetch;
     this.githubToken = deps.githubToken ?? '';
+    // Mutable: the reader caches the OAuth token on it for the run.
+    this.reddit = deps.reddit ? { ...deps.reddit } : null;
     this.now = deps.now ?? (() => new Date());
     this.readers = deps.readers ?? READERS;
     this.pause = deps.pause ?? (ms => new Promise(resolve => setTimeout(resolve, ms)));
@@ -79,7 +82,7 @@ export class SourceCollector {
     try {
       await this.#politePause(source, lastHit);
       const items = await this.readers[source.type](source, {
-        fetchImpl: this.fetchImpl, now: at, githubToken: this.githubToken,
+        fetchImpl: this.fetchImpl, now: at, githubToken: this.githubToken, reddit: this.reddit,
         userAgent: `${PKG.name}/${PKG.version} (source reader)`,
       });
       result.found = items.length;
@@ -131,6 +134,15 @@ export class SourceCollector {
     if (wait > 0) await this.pause(wait);
     lastHit.set(host, Date.now());
   }
+}
+
+/** Optional logins for persona sources; without them the anonymous endpoints are used. */
+export function sourceCredentials(credentials) {
+  const read = fn => { try { return fn(); } catch { return null; } };
+  return {
+    githubToken: read(() => credentials?.githubToken()) ?? '',
+    reddit: read(() => credentials?.redditApp?.()) ?? null,
+  };
 }
 
 /**

@@ -39,7 +39,7 @@ import { ScraperRunRepository } from '../teapot/repositories/ScraperRunRepositor
 import { SourceStateRepository } from '../teapot/repositories/SourceStateRepository.js';
 import { LinkedinImportRepository } from '../teapot/repositories/LinkedinImportRepository.js';
 import { ChannelStatsRepository } from '../teapot/repositories/ChannelStatsRepository.js';
-import { SourceCollector } from '../sources/SourceCollector.js';
+import { SourceCollector, sourceCredentials } from '../sources/SourceCollector.js';
 import { linkPublishedDrafts } from '../services/draftLinks.js';
 import { sequelizeExecutor } from '../services/sql.js';
 import { validatePosts, validateSignals, describeRejected } from '../teapot/recordValidation.js';
@@ -145,9 +145,7 @@ export class ScraperOrchestrator {
       const rows = await this.db.all("SELECT value FROM user_context WHERE key LIKE 'persona.%' ORDER BY key");
       const personas = rows.map(row => JSON.parse(row.value)).filter(persona => persona.sources?.length);
       if (!personas.length) return;
-      let githubToken = '';
-      try { githubToken = this.#credentials?.githubToken() ?? ''; } catch { /* anonymous GitHub search still works */ }
-      const collector = this.deps.sourceCollector ?? new SourceCollector(this.db, { githubToken });
+      const collector = this.deps.sourceCollector ?? new SourceCollector(this.db, sourceCredentials(this.#credentials));
       const summary = await collector.collect(personas);
       print(`Sources: ${summary.found} link(s) read, ${summary.saved} new signal(s)` +
         (summary.failed ? `, ${summary.failed} source(s) failed` : '') + '.', 'data');

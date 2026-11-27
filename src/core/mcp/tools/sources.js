@@ -1,8 +1,8 @@
 import * as mcpDb from '../db.js';
-import { GITHUB } from '../../../config/app.config.js';
 import { mcpExecutor } from '../../services/sql.js';
-import { SourceCollector, FINDING_SOURCE } from '../../sources/SourceCollector.js';
+import { SourceCollector, FINDING_SOURCE, sourceCredentials } from '../../sources/SourceCollector.js';
 import { getPersona, visiblePersonas, personaProperty } from '../personas.js';
+import { Credentials } from '../../secrets/Credentials.js';
 
 /**
  * src/core/mcp/tools/sources.js
@@ -15,7 +15,9 @@ import { getPersona, visiblePersonas, personaProperty } from '../personas.js';
  */
 
 export function buildSourceTools({ db = mcpExecutor(mcpDb), deps = {} } = {}) {
-  const collector = () => new SourceCollector(db, { githubToken: GITHUB.token, ...deps });
+  // Stored GitHub / Reddit logins when the vault opens without a prompt; anonymous otherwise.
+  const logins = async () => sourceCredentials(await Credentials.open({ interactive: false }).catch(() => new Credentials()));
+  const collector = async () => new SourceCollector(db, { ...await logins(), ...deps });
   const personasFor = async (persona, scope) => persona ? [await getPersona(persona)] : visiblePersonas(scope);
 
   return [
@@ -35,7 +37,7 @@ export function buildSourceTools({ db = mcpExecutor(mcpDb), deps = {} } = {}) {
           return { found: 0, saved: 0, failed: 0, personas: [],
             message: 'No sources configured. Add `sources:` to the persona yaml (see docs/CONTEXT_GUIDE.md) and run context sync.' };
         }
-        const summary = await collector().collect(personas);
+        const summary = await (await collector()).collect(personas);
         return { ...summary, next: `signals_get with persona and source "${FINDING_SOURCE}" returns the new material.` };
       },
     },
@@ -48,7 +50,7 @@ export function buildSourceTools({ db = mcpExecutor(mcpDb), deps = {} } = {}) {
         const result = [];
         for (const entry of await personasFor(persona, scope)) {
           if (!entry.sources?.length) continue;
-          const state = await collector().status(entry.slug);
+          const state = await new SourceCollector(db).status(entry.slug);
           result.push({
             persona: entry.slug,
             sources: entry.sources.map(source => ({ ...source, last_run: state[source.key] ?? null })),

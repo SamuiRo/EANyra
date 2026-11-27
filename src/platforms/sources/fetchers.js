@@ -2,12 +2,14 @@
  * Readers for persona sources (config/sourceConfig.js). Each returns found
  * items; SourceCollector turns them into signals and removes duplicates.
  *
- *   read(source, { fetchImpl, now, githubToken, userAgent }) →
+ *   read(source, { fetchImpl, now, githubToken, reddit, userAgent }) →
  *     Array<{ title, url, body?, occurred_at?, metadata? }>
  *
- * Only official public endpoints are used: the GitHub REST search API (no
- * HTML scraping of github.com/trending), Reddit's public JSON listings and
- * the feed URL itself. Every item is untrusted third-party content.
+ * Only official endpoints are used: the GitHub REST search API (no HTML
+ * scraping of github.com/trending), the Reddit API (app-only OAuth when a
+ * reddit-app secret is stored, otherwise the public JSON listings, which
+ * Reddit often blocks for anonymous clients) and the feed URL itself.
+ * Every item is untrusted third-party content.
  */
 
 import { parseFeed } from './feedParser.js';
@@ -27,11 +29,13 @@ export const READERS = Object.freeze({
     `topic:${source.topic} created:>=${isoDay(ctx.now, source.window_days)} stars:>=${source.min_stars}`, source, ctx),
 
   async reddit(source, ctx) {
-    const url = new URL(`https://www.reddit.com/r/${encodeURIComponent(source.subreddit)}/${source.sort}.json`);
+    const token = ctx.reddit ? await redditToken(ctx) : null;
+    const path = `/r/${encodeURIComponent(source.subreddit)}/${source.sort}`;
+    const url = new URL(token ? `https://oauth.reddit.com${path}` : `https://www.reddit.com${path}.json`);
     url.searchParams.set('limit', String(Math.min(100, source.limit * 2)));
     url.searchParams.set('raw_json', '1');
     if (source.period) url.searchParams.set('t', source.period);
-    const body = await getJson(url, ctx);
+    const body = await getJson(url, ctx, token ? { Authorization: `Bearer ${token}` } : {});
     const posts = (body?.data?.children ?? []).map(child => child?.data).filter(Boolean);
     return posts
       .filter(post => !post.stickied && (source.include_nsfw || !post.over_18) && Number(post.score ?? 0) >= source.min_score)
@@ -61,6 +65,32 @@ export const READERS = Object.freeze({
       .map(item => ({ title: item.title || item.url, url: item.url, body: item.summary, occurred_at: item.published, metadata: {} }));
   },
 });
+
+/**
+ * Application-only OAuth token (client credentials), cached on ctx.reddit
+ * for the rest of the run. https://github.com/reddit-archive/reddit/wiki/OAuth2
+ */
+async function redditToken(ctx) {
+  const app = ctx.reddit;
+  if (app.token && app.expiresAt > Date.now()) return app.token;
+  const { fetchImpl = fetch, userAgent } = ctx;
+  const response = await fetchImpl('https://www.reddit.com/api/v1/access_token', {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${Buffer.from(`${app.clientId}:${app.clientSecret}`).toString('base64')}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': userAgent,
+    },
+    body: 'grant_type=client_credentials',
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  if (!response.ok) throw new Error(`Reddit OAuth answered HTTP ${response.status}; check the reddit-app secret.`);
+  const body = JSON.parse(await response.text());
+  if (!body.access_token) throw new Error('Reddit OAuth returned no access token; check the reddit-app secret.');
+  app.token = body.access_token;
+  app.expiresAt = Date.now() + Math.max(60, Number(body.expires_in ?? 3600) - 60) * 1000;
+  return app.token;
+}
 
 async function githubSearch(query, source, ctx) {
   const url = new URL('https://api.github.com/search/repositories');

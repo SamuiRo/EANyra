@@ -150,6 +150,16 @@ export class Credentials {
     return process.env.DISCORD_BOT_TOKEN ?? '';
   }
 
+  // ── Reddit (persona sources) ─────────────────────────────────────────────────
+
+  /** App-only OAuth client for reading subreddits, or null (public listings are used then). */
+  redditApp(name = DEFAULT_SESSION) {
+    const stored = this.vault?.get('reddit-app', name);
+    const clientId = stored?.client_id ?? process.env.REDDIT_CLIENT_ID ?? '';
+    const clientSecret = stored?.client_secret ?? process.env.REDDIT_CLIENT_SECRET ?? '';
+    return clientId && clientSecret ? { clientId, clientSecret } : null;
+  }
+
   // ── MCP over HTTP (eanyra serve) ────────────────────────────────────────────
 
   /** Token MCP clients must send to /mcp; '' when none is configured. */

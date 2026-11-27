@@ -8,7 +8,7 @@
 import { print } from '../../shared/utils.js';
 import database from '../teapot/database.js';
 import { sequelizeExecutor } from '../services/sql.js';
-import { SourceCollector } from '../sources/SourceCollector.js';
+import { SourceCollector, sourceCredentials } from '../sources/SourceCollector.js';
 import { Credentials } from '../secrets/Credentials.js';
 
 export function registerSourcesCommands(program) {
@@ -26,9 +26,7 @@ export function registerSourcesCommands(program) {
         return;
       }
       const credentials = await Credentials.open({ interactive: false }).catch(() => null);
-      let githubToken = '';
-      try { githubToken = credentials?.githubToken() ?? ''; } catch { /* anonymous search */ }
-      const summary = await new SourceCollector(db, { githubToken }).collect(personas);
+      const summary = await new SourceCollector(db, sourceCredentials(credentials)).collect(personas);
       for (const group of summary.personas) {
         for (const source of group.sources) {
           print(`${group.persona}  ${source.key}: ${source.error ? `failed — ${source.error}` : `${source.found} read, ${source.saved} new`}`,
