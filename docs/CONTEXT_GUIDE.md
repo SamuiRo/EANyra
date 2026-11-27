@@ -212,8 +212,59 @@ to the collected platforms, so rules may also describe planned channels.
 
 ### `projects`
 
-Limits the projects the persona talks about. Omit it to use all active
-projects; `[]` means none.
+The project slugs the persona talks about. Omitted or `[]` means none: a
+persona never learns about a project unless it is listed (since 5.0.0; before,
+an omitted list meant every active project). `context sync` warns about a
+persona without the field.
+
+Upgrading: a persona file from before 5.0.0 that has neither `projects` nor
+`disclosure` gets the list it effectively used, the active projects at that
+moment, written into the file once by the next `context sync` (comments
+stay; the sync prints a warning naming the file). Narrow the list afterwards.
+
+### `type`, `disclosure`, `linked_to`
+
+```yaml
+type: "brand"                  # person | brand | fan | faceless
+disclosure: "linked"           # public (default) | linked | isolated
+linked_to: ["example-builder"] # only for linked
+```
+
+`type` says how the persona speaks; `context_get` returns it with a one-line
+`speaks_as` instruction:
+
+| `type` | Speaks as |
+|---|---|
+| `person` | one real individual, first person |
+| `brand` | a brand or team ("we") |
+| `fan` | a fan account: no claims of authorship or insider access |
+| `faceless` | no personal identity, face or biography |
+
+`disclosure` says how the persona may be connected to the others. The system
+enforces it, so an agent that forgets to pass a persona cannot mix them:
+
+| `disclosure` | Rules |
+|---|---|
+| `public` | Default. Listed everywhere; no automatic taboo. |
+| `linked` | May mention only the personas in `linked_to`. `context_get` appends a taboo to `voice.taboo`: never mention any other persona or account of the author except the linked ones, and never mention each other visible persona by name and accounts. |
+| `isolated` | Not listed by `personas_list`, `context_get` without a persona, or `accounts_list`; its accounts are not shown as "without persona". Tools called without `persona` (`posts_get`, `posts_search`, `posts_stats`, `signals_get`, `drafts_list`, `content_plan_get`, `content_performance_get`) and the Markdown export without `--persona` return none of its posts, signals or drafts; projects only it lists are left out of the overview. `context_get` for one of its accounts requires its slug. Its own context gets a taboo against mentioning any other persona. Passing its exact slug works as for any persona. |
+
+Validation: `linked_to` must name existing personas, never the persona itself
+and never an isolated persona (linking it would connect it to the others).
+`linked_to` on a public or isolated persona is ignored with a warning.
+
+The author's own web UI («Контекст», «Акаунти», «Контент», «Пости») shows
+isolated personas too: only MCP clients are restricted.
+
+### Drafts and publishing follow the account's persona
+
+- `draft_create` stores the persona of the account. A `persona` that is not
+  the account's persona is refused, also when the account has no persona.
+- `draft_prepare_telegram` refuses a draft whose persona is not the current
+  persona of its channel (or a channel without a persona).
+- `telegram_post_prepare` (raw text without a draft) requires `persona`; it
+  must be the channel's persona, and a text saved as another persona's draft is
+  refused.
 
 ### MCP use
 
@@ -224,6 +275,7 @@ and projects, plus configured accounts that belong to none. `context_get
 persona's voice, bio, platform rules and projects. `posts_get`, `posts_search`,
 `posts_stats`, `accounts_list` and `signals_get` accept `persona` to limit
 results to its accounts, for example to calibrate style only on anime posts.
+Without `persona` they leave out isolated personas (see `disclosure`).
 
 ## Editing in the Web UI
 
@@ -244,8 +296,10 @@ on sync).
 2. Reads project YAML files from `instance/context/projects/`, upserts them
    into `projects` and as `user_context` key `project.<slug>`.
 3. Archives projects whose YAML files were removed.
-4. Validates all persona files (slug, accounts present in `accounts.json`,
-   exclusive membership, field types) and stores them as `persona.<slug>`. If
+4. Writes an explicit `projects` list into persona files from before 5.0.0
+   (see `projects`), then validates all persona files (slug, accounts present
+   in `accounts.json`, exclusive membership, `linked_to`, field types) and
+   stores them as `persona.<slug>`. If
    any persona file is invalid, no persona is changed. Removing a persona file
    removes that grouping.
 5. Prints updated, skipped, and failed entries.

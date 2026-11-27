@@ -47,7 +47,7 @@ export function buildContentTools({ publications, content = createContentService
         'data_warning, collect fresh data with scraper_run before trusting its status.',
       inputSchema: { type: 'object', properties: { persona: { type: 'string', minLength: 1, description: 'Limit to one persona.' } } },
       annotations: { readOnlyHint: true, openWorldHint: false },
-      handler: ({ persona } = {}) => content.contentPlan({ persona }),
+      handler: ({ persona } = {}, scope) => content.contentPlan({ persona }, scope),
     },
     {
       name: 'content_performance_get',
@@ -66,7 +66,7 @@ export function buildContentTools({ publications, content = createContentService
         },
       },
       annotations: { readOnlyHint: true, openWorldHint: false },
-      handler: args => content.performance(args),
+      handler: (args, scope) => content.performance(args, scope),
     },
     {
       name: 'signal_add',
@@ -92,7 +92,8 @@ export function buildContentTools({ publications, content = createContentService
       description:
         'Save a written post as a draft for the author to review in the web UI. Always save finished ' +
         'texts here instead of only answering in chat. Give the platform and, when known, the exact ' +
-        'account ("platform/username" or username); the persona is derived from the account. Pass ' +
+        'account ("platform/username" or username); the persona is always derived from the account, and a ' +
+        'persona that does not match the account is refused. Pass ' +
         'signal_ids of the signals the post is based on: they are marked used once it is published. ' +
         'Creating a draft never publishes anything. X and LinkedIn drafts are always published by the ' +
         'author manually; Telegram drafts can be published with draft_prepare_telegram + telegram_post_publish ' +
@@ -125,7 +126,7 @@ export function buildContentTools({ publications, content = createContentService
         },
       },
       annotations: { readOnlyHint: true, openWorldHint: false },
-      handler: args => content.listDrafts(args),
+      handler: (args, scope) => content.listDrafts(args, scope),
     },
     {
       name: 'draft_get',

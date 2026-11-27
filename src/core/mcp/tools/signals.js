@@ -1,6 +1,6 @@
 import { query, run } from '../db.js';
 import { MCP } from '../../../config/app.config.js';
-import { personaAccountCondition, personaProperty } from '../personas.js';
+import { personaScopeCondition, personaProperty } from '../personas.js';
 
 /**
  * src/core/mcp/tools/signals.js
@@ -107,7 +107,7 @@ export const signalTools = [
       persona,
       limit      = MCP.defaultSignalLimit,
       since_days,
-    } = {}) {
+    } = {}, scope) {
       const cap    = Math.min(Number(limit), MCP.queryMaxRecords);
       const conds  = ['1=1'];
       const params = [];
@@ -129,11 +129,12 @@ export const signalTools = [
         conds.push('LOWER(a.username) = LOWER(?)');
         params.push(account.replace(/^@/, ''));
       }
-      if (persona) {
-        // The persona's accounts, plus manual ideas bound to it (signal_add).
-        const filter = await personaAccountCondition(persona);
-        conds.push(`(${filter.sql} OR (CASE WHEN json_valid(s.metadata) THEN json_extract(s.metadata, '$.persona') END) = ?)`);
-        params.push(...filter.params, persona);
+      // The persona's accounts plus manual ideas bound to it (signal_add);
+      // without a persona, nothing of an isolated one.
+      const filter = await personaScopeCondition({ persona, scope, signalAlias: 's' });
+      if (filter) {
+        conds.push(filter.sql);
+        params.push(...filter.params);
       }
       if (since_days) {
         // Include signals with NULL occurred_at when they are unused

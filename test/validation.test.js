@@ -68,7 +68,7 @@ test('persona overrides follow the same rules', () => {
   const base = { slug: 'brand', accounts: ['twitter/brand_x'] };
   assert.throws(() => parsePersona({ ...base, platforms: { twitter: { max_length: 'long' } } }, 'brand'), /platforms\.twitter\.max_length/);
   assert.throws(() => parsePersona({ ...base, voice: { likes: 'x' } }, 'brand'), /voice\.likes must be a list/);
-  const persona = parsePersona({ ...base, platforms: { twitter: { cadence: 'daily' } }, colour: 'red' }, 'brand');
+  const persona = parsePersona({ ...base, platforms: { twitter: { cadence: 'daily' } }, colour: 'red', projects: [] }, 'brand');
   assert.deepEqual(persona.warnings, [
     'platforms.twitter.cadence is not a known field and is ignored by EANyra (did you mean "posting_frequency"?)',
     'colour is not a known persona field and is ignored',

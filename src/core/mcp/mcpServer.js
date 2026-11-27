@@ -67,7 +67,8 @@ export function createMcpServer({ tools, log = () => {} }) {
       },
       async args => {
         try {
-          const result = await tool.handler(args);
+          // MCP clients are agents: never the author scope.
+          const result = await tool.handler(args, { author: false });
           return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
         } catch (err) {
           log(`Tool "${tool.name}" error: ${err.message}`);

@@ -15,7 +15,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import { PLATFORM_CATALOG } from '../../platforms/catalog.js';
-import { mergePersonaContext } from '../../config/personaConfig.js';
+import { mergePersonaContext, isIsolated } from '../../config/personaConfig.js';
 import { normalizeAccount } from '../../config/accountConfig.js';
 import { parseJson } from './sql.js';
 import { linkPublishedDrafts } from './draftLinks.js';
@@ -78,10 +78,16 @@ export class ContentService {
     return draft;
   }
 
-  async listDrafts({ status, persona, platform, account, limit = 50 } = {}) {
+  /**
+   * `scope` is the second tool-handler argument: `{ author: true }` from
+   * the web UI. Without it (an agent) and without persona, drafts of isolated
+   * personas are left out.
+   */
+  async listDrafts({ status, persona, platform, account, limit = 50 } = {}, scope) {
     await this.reconcileTelegram();
     const conds = [];
     const params = [];
+    if (!persona) this.#excludeHidden(await this.#hidden(scope), conds, params);
     if (status) {
       const statuses = Array.isArray(status) ? status : [status];
       conds.push(`d.status IN (${statuses.map(() => '?').join(', ')})`);
@@ -148,6 +154,11 @@ export class ContentService {
     if (draft.platform !== 'telegram') throw new Error('Only Telegram drafts can be published from EANyra. Publish X and LinkedIn posts yourself, then call draft_mark_published.');
     if (!['draft', 'approved'].includes(draft.status)) throw new Error(`Draft ${draft.id} is ${draft.status}.`);
     if (!draft.account) throw new Error('Set the Telegram channel (account) on the draft first.');
+    const owner = (await this.loadPersonas()).find(p => p.accounts.some(ref => ref.platform === 'telegram' && ref.username === draft.account));
+    if (!owner) throw new Error(`telegram/${draft.account} belongs to no persona. Assign it to a persona («Акаунти») before publishing.`);
+    if (draft.persona !== owner.slug) {
+      throw new Error(`Draft ${draft.id} was written ${draft.persona ? `for persona "${draft.persona}"` : 'without a persona'}, but telegram/${draft.account} belongs to another persona. It cannot be published there.`);
+    }
     const hash = createHash('sha256').update(draft.text).digest('hex').slice(0, 12);
     const requestId = `draft-${draft.id}-${hash}`;
     await this.db.run('UPDATE drafts SET telegram_request_id = ?, updated_at = ? WHERE id = ?', [requestId, this.#ts(), draft.id]);
@@ -179,11 +190,12 @@ export class ContentService {
    * post (score = likes + 2·reposts + replies), plus which source signals
    * and which authorship (AI vs. author) led to above-median posts.
    */
-  async performance({ persona, platform, days = 90 } = {}) {
+  async performance({ persona, platform, days = 90 } = {}, scope) {
     await this.reconcileTelegram();
     const since = new Date(this.now().getTime() - days * DAY).toISOString();
     const conds = ["d.status = 'published'", 'd.published_at >= ?'];
     const params = [since];
+    if (!persona) this.#excludeHidden(await this.#hidden(scope), conds, params);
     if (persona) { conds.push('d.persona = ?'); params.push(persona); }
     if (platform) { conds.push('d.platform = ?'); params.push(platform); }
     const drafts = await this.db.all(`${DRAFT_SELECT} WHERE ${conds.join(' AND ')} ORDER BY d.published_at DESC`, params);
@@ -288,7 +300,7 @@ export class ContentService {
    * Per persona and publishing account: target cadence, real cadence from
    * collected posts, what is due, waiting drafts and unused material.
    */
-  async contentPlan({ persona: only } = {}) {
+  async contentPlan({ persona: only } = {}, scope) {
     const [personas, global, accounts, configured] = await Promise.all([
       this.loadPersonas(), this.loadGlobalContext(),
       this.db.all('SELECT id, platform, username, last_scraped_at FROM accounts WHERE is_active = 1 AND is_archived = 0'),
@@ -305,6 +317,7 @@ export class ContentService {
       if (PLATFORM_CATALOG[entry.platform]?.output !== 'posts') continue;
       const persona = owner.get(`${entry.platform}/${entry.username}`) ?? null;
       if (only && persona?.slug !== only) continue;
+      if (!only && isIsolated(persona) && !scope?.author) continue;
       const key = persona?.slug ?? '';
       if (!groups.has(key)) groups.set(key, { persona, accounts: [] });
       groups.get(key).accounts.push(entry);
@@ -314,7 +327,7 @@ export class ContentService {
     const result = [];
     for (const { persona, accounts: entries } of groups.values()) {
       // Accounts without a persona have no platform rules (no cadence target).
-      const context = persona ? mergePersonaContext(global, persona) : { platforms: {} };
+      const context = persona ? mergePersonaContext(global, persona, personas) : { platforms: {} };
       const items = [];
       for (const entry of entries) {
         const row = accountRow.get(`${entry.platform}/${entry.username}`);
@@ -393,9 +406,56 @@ export class ContentService {
     const owner = username ? personas.find(p => p.accounts.some(ref => ref.platform === platform && ref.username === username)) : null;
     if (persona) {
       await this.#assertPersona(persona, personas);
-      if (owner && owner.slug !== persona) throw new Error(`${platform}/${username} belongs to persona "${owner.slug}", not "${persona}".`);
+      if (owner && owner.slug !== persona) {
+        throw new Error(`${platform}/${username} belongs to ${isIsolated(owner) ? 'another persona' : `persona "${owner.slug}"`}, not "${persona}".`);
+      }
+      if (username && !owner) {
+        throw new Error(`${platform}/${username} belongs to no persona, so it cannot carry a draft of "${persona}". ` +
+          'Assign the account to that persona first («Акаунти»), or omit persona.');
+      }
     }
-    return { platform, account: username, persona: persona ?? owner?.slug ?? null };
+    return { platform, account: username, persona: owner?.slug ?? persona ?? null };
+  }
+
+  /**
+   * Checks a raw Telegram post (telegram_post_prepare) before it is stored:
+   * the channel must belong to `persona`, and the text must not be a draft
+   * written for a different persona.
+   */
+  async assertTelegramPost({ persona, account, text }) {
+    if (typeof persona !== 'string' || !persona) throw new Error('persona is required: the persona this text was written as.');
+    const personas = await this.loadPersonas();
+    await this.#assertPersona(persona, personas);
+    const username = normalizeAccount(String(account ?? '').replace(/^telegram\//, ''), 'telegram');
+    const owner = personas.find(p => p.accounts.some(ref => ref.platform === 'telegram' && ref.username === username));
+    if (!owner) throw new Error(`telegram/${username} belongs to no persona. Assign it to a persona («Акаунти») before publishing.`);
+    if (owner.slug !== persona) throw new Error(`telegram/${username} belongs to another persona, not "${persona}". It cannot carry this text.`);
+    const foreign = await this.db.get(
+      'SELECT id FROM drafts WHERE TRIM(text) = TRIM(?) AND persona IS NOT NULL AND persona != ? ORDER BY id LIMIT 1',
+      [String(text ?? ''), persona],
+    );
+    if (foreign) throw new Error(`This text is draft ${foreign.id}, written for another persona. It cannot be published to telegram/${username}.`);
+    return { persona, account: username };
+  }
+
+  async #hidden(scope) {
+    if (scope?.author) return { slugs: [], accounts: [] };
+    const isolated = (await this.loadPersonas()).filter(isIsolated);
+    return {
+      slugs: isolated.map(p => p.slug),
+      accounts: isolated.flatMap(p => p.accounts.map(ref => `${ref.platform}/${ref.username}`)),
+    };
+  }
+
+  #excludeHidden(hidden, conds, params) {
+    if (hidden.slugs.length) {
+      conds.push(`COALESCE(d.persona, '') NOT IN (${hidden.slugs.map(() => '?').join(', ')})`);
+      params.push(...hidden.slugs);
+    }
+    if (hidden.accounts.length) {
+      conds.push(`COALESCE(d.platform || '/' || d.account, '') NOT IN (${hidden.accounts.map(() => '?').join(', ')})`);
+      params.push(...hidden.accounts);
+    }
   }
 
   async #assertPersona(slug, personas) {

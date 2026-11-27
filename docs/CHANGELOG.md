@@ -7,6 +7,48 @@ change (fixes, docs, internals); **minor** = new capability, existing setups
 keep working; **major** = an existing setup, configuration or integration may
 need action. History before 2.0.0 lives only in commit messages (`v1.x.y …`).
 
+## 5.0.0 — 2026-11-27
+
+Persona isolation is now enforced by EANyra itself instead of relying on the
+agent to pass the right persona.
+
+### Added
+
+- Persona fields `type` (`person | brand | fan | faceless`), `disclosure`
+  (`public | linked | isolated`, default `public`) and `linked_to`. See
+  [CONTEXT_GUIDE.md](CONTEXT_GUIDE.md). `context_get` returns them with a
+  `speaks_as` line; the web UI («Контекст», «Акаунти») shows them.
+- `isolated`: not listed by `personas_list`, `context_get` without a
+  persona or `accounts_list`; `posts_get`, `posts_search`, `posts_stats`,
+  `signals_get`, `drafts_list`, `content_plan_get`,
+  `content_performance_get` and the Markdown export return none of its data
+  unless the persona is named; projects only it lists leave the overview.
+  The author's web UI still shows everything.
+- `linked`: a taboo against every persona outside `linked_to` is appended
+  to `voice.taboo` automatically. An isolated persona is never named in
+  another persona's context and cannot be linked to.
+
+### Changed
+
+- **Breaking:** an omitted `projects` now means no projects (before: every
+  active project). The first `context sync` (also run when the web UI
+  starts) writes the list a pre-5.0 persona file effectively used into that
+  file, once, when it has neither `projects` nor `disclosure`; a warning
+  names each file. Narrow the lists afterwards.
+- **Breaking:** `telegram_post_prepare` requires `persona`, which must be
+  the channel's persona; a text saved as another persona's draft is refused.
+  `draft_prepare_telegram` refuses a draft whose persona is not the
+  channel's. Telegram channels without a persona can no longer be published
+  to: assign them to a persona in «Акаунти».
+- **Breaking:** `draft_create` refuses a `persona` that is not the
+  account's persona, also for an account without a persona.
+- Tool handlers receive the caller scope; only the web UI passes the author
+  scope; MCP clients never get it.
+
+Upgrading from 4.x: start the web UI or run `npm run context:sync` once and
+check the warnings; assign every Telegram channel you publish to a persona;
+agents that call `telegram_post_prepare` must pass `persona`.
+
 ## 4.1.2 — 2026-11-21
 
 ### Changed

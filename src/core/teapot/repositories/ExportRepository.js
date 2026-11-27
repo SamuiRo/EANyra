@@ -8,6 +8,7 @@
 
 import { Op } from 'sequelize';
 import { EXPORT } from '../../../config/app.config.js';
+import { isIsolated, personaVoice, withoutIsolatedProjects } from '../../../config/personaConfig.js';
 
 function selectPlatformEntries(value, platforms) {
   if (!value || !platforms?.length) return value;
@@ -49,21 +50,19 @@ export class ExportRepository {
    * limited to the persona's projects when it lists them.
    */
   async getContext({ platforms, persona: slug } = {}) {
-    const rows = await this.UserContext.findAll({ where: { key: { [Op.like]: 'persona.%' } } });
-    const personas = rows.map(row => (typeof row.value === 'string' ? JSON.parse(row.value) : row.value));
+    const personas = await this.#personas();
+    // The export file is read by agents (export_get): isolated personas only by slug.
+    const visible = personas.filter(entry => !isIsolated(entry));
     let persona = null;
     if (slug) {
-      persona = personas.find(entry => entry.slug === slug);
-      if (!persona) {
-        throw new Error(`Unknown persona "${slug}". Known: ${personas.map(entry => entry.slug).join(', ') || 'none'}.`);
-      }
-    } else if (personas.length === 1) {
-      [persona] = personas;
+      persona = this.#persona(personas, slug);
+    } else if (personas.length === 1 && visible.length === 1) {
+      [persona] = visible;
     }
 
     const ctx = persona
-      ? { persona: { slug: persona.slug, name: persona.name }, voice: persona.voice, bio: persona.bio, platforms: persona.platforms }
-      : { persona: null, personas: personas.map(entry => entry.slug) };
+      ? { persona: { slug: persona.slug, name: persona.name }, voice: personaVoice(persona, personas), bio: persona.bio, platforms: persona.platforms }
+      : { persona: null, personas: visible.map(entry => entry.slug) };
 
     ctx.bio = selectPlatformEntries(ctx.bio, platforms);
     ctx.platforms = selectPlatformEntries(ctx.platforms, platforms);
@@ -74,8 +73,10 @@ export class ExportRepository {
       order: [['slug', 'ASC']],
     });
 
-    const allowed = persona?.projects ?? null;
-    ctx.projects = projects.filter(p => !allowed || allowed.includes(p.slug)).map(p => ({
+    const listed = persona
+      ? projects.filter(p => (persona.projects ?? []).includes(p.slug))
+      : withoutIsolatedProjects(projects, personas);
+    ctx.projects = listed.map(p => ({
       slug:           p.slug,
       name:           p.name,
       description:    p.description,
@@ -104,12 +105,16 @@ export class ExportRepository {
    *   unusedOnly?: boolean,
    *   platform?: string,
    *   platforms?: string[],
+   *   persona?: string,   only this persona's posts; without it, none of isolated personas
    * }} opts
    * @returns {Promise<object[]>}
    */
-  async getPosts({ days = EXPORT.defaultDays, unusedOnly = false, platform, platforms } = {}) {
+  async getPosts({ days = EXPORT.defaultDays, unusedOnly = false, platform, platforms, persona } = {}) {
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1_000);
     const where  = { is_repost: false };
+    const scope  = await this.#accountScope(persona);
+    if (scope.only) where.account_id = { [Op.in]: scope.only };
+    else if (scope.hidden.length) where.account_id = { [Op.notIn]: scope.hidden };
 
     const selectedPlatforms = [...new Set(
       platforms?.length ? platforms : (platform ? [platform] : []),
@@ -176,12 +181,32 @@ export class ExportRepository {
    * Signals where occurred_at is NULL are included when never exported — they
    * should not be silently dropped just because the timestamp is missing.
    *
-   * @param {{ days?: number, unusedOnly?: boolean, source?: string }} opts
+   * @param {{ days?: number, unusedOnly?: boolean, source?: string, persona?: string }} opts
+   *   persona: its accounts' signals and ideas bound to it; without it, none of isolated personas
    * @returns {Promise<object[]>}
    */
-  async getSignals({ days = EXPORT.defaultDays, unusedOnly = false, source } = {}) {
+  async getSignals({ days = EXPORT.defaultDays, unusedOnly = false, source, persona } = {}) {
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1_000);
     const where  = {};
+    const scope  = await this.#accountScope(persona);
+    const sequelize = this.Signal.sequelize;
+    const bound = `(CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.persona') END)`;
+    if (scope.only) {
+      where[Op.and] = [{ [Op.or]: [
+        { account_id: { [Op.in]: scope.only } },
+        sequelize.literal(`${bound} = ${sequelize.escape(persona)}`),
+      ] }];
+    } else {
+      const hidden = [];
+      if (scope.hidden.length) {
+        hidden.push({ [Op.or]: [{ account_id: null }, { account_id: { [Op.notIn]: scope.hidden } }] });
+      }
+      if (scope.hiddenSlugs.length) {
+        hidden.push(sequelize.literal(
+          `COALESCE(${bound}, '') NOT IN (${scope.hiddenSlugs.map(slug => sequelize.escape(slug)).join(', ')})`));
+      }
+      if (hidden.length) where[Op.and] = hidden;
+    }
 
     if (source) where.source = source;
 
@@ -220,6 +245,38 @@ export class ExportRepository {
       used:        !!r.used_for_content,
       exported:    !!r.exported_at,
     }));
+  }
+
+  // ── Persona scope ─────────────────────────────────────────────────────────
+
+  async #personas() {
+    const rows = await this.UserContext.findAll({ where: { key: { [Op.like]: 'persona.%' } } });
+    return rows.map(row => (typeof row.value === 'string' ? JSON.parse(row.value) : row.value));
+  }
+
+  #persona(personas, slug) {
+    const persona = personas.find(entry => entry.slug === slug);
+    if (!persona) {
+      const known = personas.filter(entry => !isIsolated(entry)).map(entry => entry.slug);
+      throw new Error(`Unknown persona "${slug}". Known: ${known.join(', ') || 'none'}.`);
+    }
+    return persona;
+  }
+
+  /**
+   * Account ids for a persona (`only`), or, without one, the account ids and
+   * slugs of isolated personas to leave out.
+   */
+  async #accountScope(slug) {
+    const personas = await this.#personas();
+    const accounts = await this.Account.findAll({ attributes: ['id', 'platform', 'username'] });
+    const idsOf = list => {
+      const keys = new Set(list.flatMap(entry => entry.accounts.map(ref => `${ref.platform}/${ref.username}`)));
+      return accounts.filter(row => keys.has(`${row.platform}/${String(row.username).toLowerCase()}`)).map(row => row.id);
+    };
+    if (slug) return { only: idsOf([this.#persona(personas, slug)]), hidden: [], hiddenSlugs: [] };
+    const isolated = personas.filter(isIsolated);
+    return { only: null, hidden: idsOf(isolated), hiddenSlugs: isolated.map(entry => entry.slug) };
   }
 
   // ── Mark as exported ──────────────────────────────────────────────────────

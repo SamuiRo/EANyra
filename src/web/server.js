@@ -21,7 +21,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { callTool } from '../core/mcp/toolRegistry.js';
+import { callTool, AUTHOR } from '../core/mcp/toolRegistry.js';
 
 const PUBLIC_DIR = fileURLToPath(new URL('./public/', import.meta.url));
 const LOOPBACK = ['127.0.0.1', 'localhost', '::1'];
@@ -117,7 +117,8 @@ export function createWebServer({ host = '127.0.0.1', port = 4450, auth, mode, t
       if (toolMatch && req.method === 'POST') {
         const tool = toolMap.get(toolMatch[1]);
         if (!tool) throw new HttpError(404, `Unknown tool ${toolMatch[1]}`);
-        return sendJson(res, 200, await callTool(tool, await readJson(req)));
+        // A logged-in author sees every persona, isolated ones included.
+        return sendJson(res, 200, await callTool(tool, await readJson(req), AUTHOR));
       }
       if (url.pathname === '/api/tools' && req.method === 'GET') {
         return sendJson(res, 200, tools.map(({ name, description }) => ({ name, description })));
