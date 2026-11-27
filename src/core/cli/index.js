@@ -9,6 +9,7 @@
  *   eanyra scrape github        → GitHub only
  *   eanyra scrape linkedin      → LinkedIn CSV import only
  *   eanyra scrape telegram      → Telegram polling only
+ *   eanyra sources collect      → read persona sources (GitHub, Reddit, RSS) into signals
  *   eanyra context sync         → sync YAML context files into DB
  *   eanyra context show         → print current context from DB
  *   eanyra export               → export data to Markdown for AI content creation
@@ -26,6 +27,7 @@ import { registerExportCommands }     from './exportCommands.js';
 import { registerVaultCommands }      from './vaultCommands.js';
 import { registerNotifyCommands }     from './notifyCommands.js';
 import { registerLinkedinCommands }   from './linkedinCommands.js';
+import { registerSourcesCommands }    from './sourcesCommands.js';
 import { Credentials }                from '../secrets/Credentials.js';
 import { registerModels }             from '../teapot/models/index.js';
 import { SchemaMigrator }             from '../teapot/SchemaMigrator.js';
@@ -243,6 +245,7 @@ function buildCLI(nyra) {
   registerVaultCommands(program);
   registerNotifyCommands(program);
   registerLinkedinCommands(program, () => nyra.models);
+  registerSourcesCommands(program);
 
   // Default: no command → daemon (backwards-compat)
   program.action(async () => {
