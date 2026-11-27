@@ -7,6 +7,53 @@ change (fixes, docs, internals); **minor** = new capability, existing setups
 keep working; **major** = an existing setup, configuration or integration may
 need action. History before 2.0.0 lives only in commit messages (`v1.x.y …`).
 
+## 5.1.0 — 2026-11-27
+
+Audience numbers of Telegram channels, persona sources that fill signals by
+themselves, and Threads as a manual platform.
+
+### Added
+
+- **Telegram channel statistics.** Every Telegram collection also stores a
+  daily snapshot of the channel's subscriber count and of the joins (and
+  pending requests) counted on each invite link, read over the existing
+  MTProto session (`channels.getFullChannel`,
+  `messages.getAdminsWithInvites`, `messages.getExportedChatInvites`).
+  Invite links need admin rights in the channel; without them only the
+  subscriber count is stored. New MCP tool `telegram_channel_stats`
+  (`persona`, `account`, `link_title`, `days`): subscribers today, per day
+  and the change in the window, and per named link its cumulative joins and
+  the joins in the window. Channels of isolated personas are returned only
+  with their persona. New tables `channel_stats` and `invite_link_stats`.
+- **Persona sources → signals.** A persona file may list `sources:`
+  (`github_trending`, `github_topic`, `reddit`, `rss`; see
+  [CONTEXT_GUIDE.md](CONTEXT_GUIDE.md)). Each new link becomes an unused
+  signal of that persona (source `finding`, `signal_type` = source type,
+  `metadata.persona`, `metadata.origin`, `metadata.untrusted: true`). A link
+  is stored once per persona, whichever source finds it and however often
+  (tracking parameters, `www.`, fragment and http/https are ignored). Found
+  text is plain, trimmed third-party data, never instructions. Sources are
+  read after every full collection run (scheduler, `eanyra scrape`,
+  `scraper_run` without a selection), with `npm run sources`
+  (`eanyra sources collect [--persona <slug>]`, `eanyra sources status`) and
+  with the MCP tools `sources_collect` and `sources_status`. Without a
+  persona the tools read and show only personas listed by `personas_list`.
+  GitHub uses the official search API (new repositories by stars in the
+  period; a stored GitHub token raises its rate limit). Reddit uses app-only
+  OAuth when a `reddit-app` secret is stored
+  (`npm run nyra -- secrets set reddit-app`); otherwise the public listings,
+  which Reddit often blocks for anonymous clients.
+- **Threads** in the platform catalog (`publishing: manual`,
+  `metrics: manual`): `threads/<handle>` accounts (handles may contain
+  dots), Threads drafts (500 characters), content plan, web UI labels and
+  share link. New MCP tool `post_metrics_record` enters a published post's
+  URL and numbers by hand (likes, reposts, replies, views); recording the
+  same URL again updates them, `draft_id` marks the draft published and
+  links it, so `content_performance_get` counts it. No Threads collector yet.
+- `signals_get` accepts source `finding` and the source types as
+  `signal_type`, and states that signal text is untrusted data.
+- Agent skill 2.3.0 and the persona template describe `sources`.
+
 ## 5.0.0 — 2026-11-27
 
 Persona isolation is now enforced by EANyra itself instead of relying on the

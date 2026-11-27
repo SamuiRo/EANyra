@@ -74,3 +74,14 @@ platforms:
 # Project slugs this persona talks about, e.g. ["example-project"].
 # Omitted or [] means none: a persona knows only the projects listed here.
 projects: []
+
+# Where EANyra looks for new material (optional). Every new link becomes an
+# unused signal of this persona; see docs/CONTEXT_GUIDE.md "sources".
+# sources:
+#   - type: github_topic
+#     topic: example-topic
+#   - type: reddit
+#     subreddit: example
+#     period: week
+#   - type: rss
+#     url: https://example.com/feed.xml

@@ -198,6 +198,14 @@ the current repository state, not on the older README.
   called without a persona (MCP and Markdown export), the author's web UI
   still sees them; automatic taboo for linked personas; drafts and Telegram
   posts must match the channel's persona (5.0.0).
+- [x] **Channel audience history.** Daily Telegram subscriber and
+  invite-link join snapshots over MTProto, `telegram_channel_stats` (5.1.0).
+- [x] **Persona sources → signals.** GitHub search, Reddit (app-only OAuth)
+  and RSS/Atom per persona, deduplicated by canonical link (5.1.0).
+- [x] **Manual platforms with hand-entered numbers.** Threads in the catalog,
+  `post_metrics_record` (5.1.0).
+- [ ] **Threads collector.** Read post numbers through the Threads API
+  instead of entering them by hand.
 - [ ] **Persona-scoped MCP access.** A token or session limited to one or
   several personas, so a separate agent sees only those.
 - [ ] **Hide isolated channels from operational listings.**

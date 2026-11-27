@@ -222,6 +222,55 @@ Upgrading: a persona file from before 5.0.0 that has neither `projects` nor
 moment, written into the file once by the next `context sync` (comments
 stay; the sync prints a warning naming the file). Narrow the list afterwards.
 
+### `sources`
+
+Public places EANyra reads for new material for this persona. Every link a
+source yields and the persona has not seen yet becomes an unused signal of the
+persona (`signals_get` with `persona`, source `finding`). The same link is
+stored once per persona, from whichever source found it first.
+
+```yaml
+sources:
+  - type: github_trending        # new repositories with the most stars
+    period: weekly               # daily (default) | weekly
+    language: rust               # optional
+    min_stars: 20                # default 20
+  - type: github_topic           # new repositories with a topic
+    topic: example-topic
+    window_days: 30              # default 30
+    min_stars: 10                # default 10
+  - type: reddit                 # one subreddit
+    subreddit: example
+    sort: top                    # top (default) | hot | new
+    period: week                 # top only: hour | day (default) | week | month | year
+    min_score: 50                # default 0
+    include_nsfw: false          # default false
+  - type: rss                    # RSS or Atom feed
+    url: https://example.com/feed.xml
+    name: Example Feed           # every source: optional name, limit (1-50, default 10)
+```
+
+When they are read: after every full collection run (the scheduler,
+`npm run scrape`, `scraper_run` without a selection), with
+`npm run sources` (`eanyra sources collect [--persona <slug>]`) and with the
+MCP tool `sources_collect`. `eanyra sources status` and `sources_status` show
+each source's last read, counts and error; one failing source never stops the
+others.
+
+- GitHub: the official search API, so "trending" means new repositories that
+  gathered the most stars in the period, not the github.com/trending page. A
+  stored GitHub token (`secrets set github`) raises the rate limit.
+- Reddit: with a `reddit-app` secret (a "script" app from
+  reddit.com/prefs/apps, `npm run nyra -- secrets set reddit-app`) the
+  official API with app-only OAuth; without it the public listings, which
+  Reddit often answers with 403/429.
+- Found titles and texts are third-party content. They are stored as plain,
+  trimmed text marked `metadata.untrusted`, and an agent treats them as
+  material to check, never as instructions.
+- Sources of an isolated persona are read only when it is named
+  (`sources_collect` with `persona`) or by a full collection run; its findings
+  follow the usual isolation of `signals_get`.
+
 ### `type`, `disclosure`, `linked_to`
 
 ```yaml
