@@ -12,7 +12,7 @@
  *   onSaved runs after persistence with the number of new records.
  *
  * runtime: { credentials, twitterSession(name), telegramScraper(name) }
- * repos:   { postRepo, signalRepo, stateRepo, linkedinImports }
+ * repos:   { postRepo, signalRepo, stateRepo, linkedinImports, channelStats }
  */
 
 import { LINKEDIN, SCRAPER, TELEGRAM } from '../config/app.config.js';
@@ -175,14 +175,20 @@ export const COLLECTORS = Object.freeze({
       if (result.backfill) await repos.stateRepo?.setMany('telegram_backfill', [[account.username, JSON.stringify(result.backfill)]]);
       else if (stored) await repos.stateRepo?.delete('telegram_backfill', account.username);
       const records = result.posts;
+      const warnings = [];
+      if (result.backfill) {
+        warnings.push(`Incomplete: older messages before #${result.backfill.before_id} (since ${result.backfill.since}) ` +
+          'exceed TELEGRAM_MAX_PAGES_PER_ACCOUNT and will be read on the next runs.');
+      }
+      // Audience numbers are a daily snapshot; failing to read them never
+      // costs the collected posts.
+      const statsWarning = await collectChannelStats({ account, scraper, repos });
+      if (statsWarning) warnings.push(statsWarning);
       // last_scraped_at is the polling watermark for Telegram.
       return {
         records,
         scrapedAt: telegramBaselineTimestamp(records, startedAt, since),
-        ...(result.backfill ? {
-          warning: `Incomplete: older messages before #${result.backfill.before_id} (since ${result.backfill.since}) ` +
-            'exceed TELEGRAM_MAX_PAGES_PER_ACCOUNT and will be read on the next runs.',
-        } : {}),
+        ...(warnings.length ? { warning: warnings.join(' | ') } : {}),
       };
     },
   },
@@ -191,6 +197,29 @@ export const COLLECTORS = Object.freeze({
 /** Throws at import time if the catalog and the adapters drift apart. */
 for (const id of PLATFORM_IDS) {
   if (!COLLECTORS[id]) throw new Error(`Platform "${id}" is in the catalog but has no collector.`);
+}
+
+/**
+ * Store today's subscriber count and invite-link joins of a channel.
+ * @returns {Promise<string|null>} a warning when the numbers are incomplete
+ */
+export async function collectChannelStats({ account, scraper, repos }) {
+  if (!repos.channelStats || typeof scraper.channelStats !== 'function') return null;
+  try {
+    const stats = await scraper.channelStats(account.username);
+    await repos.channelStats.saveSnapshot(account.id, stats);
+    const links = stats.invites ? `, ${stats.invites.length} invite link(s)` : '';
+    print(`  -> audience: ${stats.subscribers ?? '?'} subscriber(s)${links}`, 'data');
+    if (!stats.invites_error) return null;
+    // Channels the session only reads have no invite links to show: not a problem.
+    if (stats.invites_admin_required) {
+      print(`  -> invite links skipped: ${stats.invites_error}`, 'system');
+      return null;
+    }
+    return `Invite link stats not read: ${stats.invites_error}`;
+  } catch (error) {
+    return `Channel stats not read: ${error.errorMessage ?? error.message}`;
+  }
 }
 
 export function telegramBaselineTimestamp(rawPosts, fallback, previousBoundary = null) {

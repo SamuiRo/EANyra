@@ -143,7 +143,7 @@ test('schema migrations repair the legacy database without repeated ALTER sync',
   await sequelize.query('CREATE TABLE accounts_backup AS SELECT * FROM accounts');
 
   const migrator = new SchemaMigrator(sequelize);
-  assert.equal((await migrator.migrate()).length, 9);
+  assert.equal((await migrator.migrate()).length, 10);
   assert.deepEqual(await migrator.migrate(), []);
 
   const tables = await sequelize.getQueryInterface().showAllTables();
@@ -171,7 +171,7 @@ test('schema migrations fully bootstrap a clean database for every model', async
   const models = registerModels(sequelize);
   const migrator = new SchemaMigrator(sequelize);
 
-  assert.equal((await migrator.migrate()).length, 9);
+  assert.equal((await migrator.migrate()).length, 10);
   assert.deepEqual(await migrator.migrate(), []);
 
   const tables = await sequelize.getQueryInterface().showAllTables();
@@ -179,6 +179,7 @@ test('schema migrations fully bootstrap a clean database for every model', async
   assert.ok(tables.includes('posts'));
   assert.ok(tables.includes('signals'));
   assert.ok(tables.includes('schema_migrations'));
+  assert.ok(tables.includes('channel_stats') && tables.includes('invite_link_stats'));
 
   const account = await models.Account.create({ username: 'clean', platform: 'twitter' });
   await models.Post.create({

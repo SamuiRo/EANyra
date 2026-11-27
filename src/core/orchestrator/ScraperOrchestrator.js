@@ -38,6 +38,7 @@ import { SignalRepository }     from '../teapot/repositories/SignalRepository.js
 import { ScraperRunRepository } from '../teapot/repositories/ScraperRunRepository.js';
 import { SourceStateRepository } from '../teapot/repositories/SourceStateRepository.js';
 import { LinkedinImportRepository } from '../teapot/repositories/LinkedinImportRepository.js';
+import { ChannelStatsRepository } from '../teapot/repositories/ChannelStatsRepository.js';
 import { linkPublishedDrafts } from '../services/draftLinks.js';
 import { sequelizeExecutor } from '../services/sql.js';
 import { validatePosts, validateSignals, describeRejected } from '../teapot/recordValidation.js';
@@ -88,6 +89,7 @@ export class ScraperOrchestrator {
     this.stateRepo      = sequelize ? new SourceStateRepository(sequelize) : null;
     this.linkedinImports = sequelize ? new LinkedinImportRepository(sequelize) : null;
     this.db             = sequelize ? sequelizeExecutor(sequelize) : null;
+    this.channelStats   = this.db ? new ChannelStatsRepository(this.db) : null;
   }
 
   // ── Public API ────────────────────────────────────────────────────────────
@@ -282,7 +284,10 @@ export class ScraperOrchestrator {
       entry: this.#config.get(accountKey(account)),
       session,
       runtime: this.#runtime,
-      repos: { postRepo: this.postRepo, signalRepo: this.signalRepo, stateRepo: this.stateRepo, linkedinImports: this.linkedinImports },
+      repos: {
+        postRepo: this.postRepo, signalRepo: this.signalRepo, stateRepo: this.stateRepo,
+        linkedinImports: this.linkedinImports, channelStats: this.channelStats,
+      },
     });
     // Drop malformed records instead of failing the whole account's batch.
     const { valid, rejected } = info.output === 'signals'

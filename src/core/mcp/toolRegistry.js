@@ -15,6 +15,7 @@ import { buildContextTools } from './context.js';
 import { buildCollectionTools } from './tools/collection.js';
 import { buildTelegramPublishingTools } from './tools/telegramPublishing.js';
 import { buildContentTools, createContentService } from './tools/content.js';
+import { buildAudienceTools } from './tools/audience.js';
 import { jsonSchemaToZod } from './schema.js';
 
 /** What an AI client may see: never the author scope. */
@@ -33,6 +34,7 @@ export function buildTools({ jobs, publications }) {
     ...buildContextTools(),
     ...statusTools,
     ...buildCollectionTools(jobs),
+    ...buildAudienceTools(),
     ...buildTelegramPublishingTools(publications, { content }),
     ...buildContentTools({ publications, content }),
   ];
