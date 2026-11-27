@@ -192,6 +192,19 @@ the current repository state, not on the older README.
   `compose.yaml` (port on host loopback only), SSH-tunnel access from the LAN,
   [DEPLOYMENT.md](DEPLOYMENT.md) (4.1.0). The first image build on a machine
   with Docker is still to be done.
+- [x] **Persona isolation enforced by the system.** Persona `type`,
+  `disclosure` (`public | linked | isolated`) and `linked_to`; `projects`
+  default to none; isolated personas hidden from listings and from every tool
+  called without a persona (MCP and Markdown export), the author's web UI
+  still sees them; automatic taboo for linked personas; drafts and Telegram
+  posts must match the channel's persona (5.0.0).
+- [ ] **Persona-scoped MCP access.** A token or session limited to one or
+  several personas, so a separate agent sees only those.
+- [ ] **Hide isolated channels from operational listings.**
+  `telegram_publish_targets`, `scraper_run` without a persona and
+  `scraper_status` still list every configured account.
+- [ ] **Project visibility.** A structured visibility/risk field on projects
+  instead of free text in the description.
 
 ## Completed Foundations
 

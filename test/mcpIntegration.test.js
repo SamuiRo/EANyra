@@ -41,6 +41,11 @@ async function fixture() {
       likes: i, posted_at: new Date(Date.now() - (8 - i) * 60000),
     });
   }
+  // A raw Telegram post must name the persona that owns the channel.
+  await models.UserContext.create({ key: 'persona.example-brand', value: {
+    slug: 'example-brand', name: 'Example', accounts: [{ platform: 'telegram', username: 'channel_one' }],
+    projects: [], disclosure: 'public', linked_to: [], voice: {}, bio: {}, platforms: {}, topics: [],
+  } });
   await sequelize.close();
   return { env: { ...process.env, INSTANCE_DIR: dir, DB_PATH: storage, DATA_DIR: dir, ACCOUNTS_CONFIG_PATH: config, MCP_TRANSPORT: 'stdio',
     TELEGRAM_PUBLISH_TRANSPORT: 'bot', TELEGRAM_BOT_TOKEN: '', TELEGRAM_API_ID: '0', TELEGRAM_API_HASH: '', TELEGRAM_SESSION: '' },
@@ -127,7 +132,7 @@ test('MCP prepares durable Telegram posts and identifies missing bot setup witho
   const info = await call('telegram_publisher_info');
   assert.equal(info.configured, false);
   assert.deepEqual(await call('telegram_publish_targets'), []);
-  const args = { request_id: 'integration_001', account: 'channel_one', text: 'Local draft only.' };
+  const args = { request_id: 'integration_001', account: 'channel_one', persona: 'example-brand', text: 'Local draft only.' };
   const denied = await client.callTool({ name: 'telegram_post_prepare', arguments: args });
   assert.equal(denied.isError, true);
   await fs.writeFile(env.ACCOUNTS_CONFIG_PATH, JSON.stringify([{ username: 'channel_one', platform: 'telegram', publish_enabled: true }]));

@@ -2,9 +2,20 @@ import fs   from 'node:fs/promises';
 import path  from 'node:path';
 import { query, queryOne } from './db.js';
 import { MCP, PATHS } from '../../config/app.config.js';
-import { accountKey, mergePersonaContext } from '../../config/personaConfig.js';
+import { accountKey, mergePersonaContext, isIsolated, withoutIsolatedProjects } from '../../config/personaConfig.js';
 import { validateAccounts } from '../../config/accountConfig.js';
 import { loadPersonas, getPersona, personaForAccount } from './personas.js';
+
+const summary = entry => ({
+  slug:        entry.slug,
+  name:        entry.name,
+  description: entry.description,
+  type:        entry.type ?? null,
+  disclosure:  entry.disclosure ?? 'public',
+  linked_to:   entry.linked_to ?? [],
+  topics:      entry.topics,
+  accounts:    entry.accounts.map(accountKey),
+});
 
 /**
  * src/core/mcp/context.js
@@ -33,20 +44,15 @@ const contextTools = [
       'Also lists configured accounts that belong to no persona.',
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, openWorldHint: false },
-    async handler() {
-      const personas = await loadPersonas();
-      const grouped = new Set(personas.flatMap(entry => entry.accounts.map(accountKey)));
+    async handler(args, scope) {
+      const all = await loadPersonas();
+      // Isolated personas (and their accounts) are not listed to an agent.
+      const personas = scope?.author ? all : all.filter(entry => !isIsolated(entry));
+      const grouped = new Set(all.flatMap(entry => entry.accounts.map(accountKey)));
       const accounts = await configuredAccounts();
       return {
         count: personas.length,
-        personas: personas.map(entry => ({
-          slug:        entry.slug,
-          name:        entry.name,
-          description: entry.description,
-          topics:      entry.topics,
-          accounts:    entry.accounts.map(accountKey),
-          talks_about_projects: entry.projects === null ? 'all active projects' : entry.projects,
-        })),
+        personas: personas.map(entry => ({ ...summary(entry), talks_about_projects: entry.projects ?? [] })),
         accounts_without_persona: accounts.map(accountKey).filter(key => !grouped.has(key)),
         next_step: personas.length
           ? 'Call context_get with persona (or the target account) before writing, and pass the same persona to posts_get for style examples.'
@@ -89,16 +95,20 @@ const contextTools = [
         },
       },
     },
-    async handler({ key, persona, account, platform } = {}) {
+    async handler({ key, persona, account, platform } = {}, scope) {
       if (persona || account) {
         const global = await loadGlobalContext();
         const byAccount = account ? await personaForAccount(account, platform) : null;
+        const restricted = isIsolated(byAccount) && !scope?.author;
         if (persona && account && byAccount?.slug !== persona) {
-          throw new Error(`Account ${account} does not belong to persona "${persona}"${byAccount ? ` (it belongs to "${byAccount.slug}")` : ''}.`);
+          throw new Error(`Account ${account} does not belong to persona "${persona}"${byAccount && !restricted ? ` (it belongs to "${byAccount.slug}")` : ''}.`);
+        }
+        if (restricted && !persona) {
+          throw new Error(`Account ${account} is restricted: pass its persona slug explicitly to write for it.`);
         }
         const selected = persona ? await getPersona(persona) : byAccount;
         if (!selected) {
-          const personas = await loadPersonas();
+          const personas = (await loadPersonas()).filter(entry => scope?.author || !isIsolated(entry));
           return {
             ...global,
             persona: null,
@@ -108,7 +118,7 @@ const contextTools = [
               'and to assign the account in the web UI («Акаунти» → edit → Персона) before writing for it.',
           };
         }
-        return mergePersonaContext(global, selected);
+        return mergePersonaContext(global, selected, await loadPersonas());
       }
 
       if (key) {
@@ -125,14 +135,10 @@ const contextTools = [
       }
 
       const ctx = await loadGlobalContext();
-      const personas = await loadPersonas();
-      ctx.personas = personas.map(entry => ({
-        slug:        entry.slug,
-        name:        entry.name,
-        description: entry.description,
-        topics:      entry.topics,
-        accounts:    entry.accounts.map(accountKey),
-      }));
+      const all = await loadPersonas();
+      const personas = scope?.author ? all : all.filter(entry => !isIsolated(entry));
+      ctx.personas = personas.map(summary);
+      ctx.projects = withoutIsolatedProjects(ctx.projects, all, scope);
       ctx.note = personas.length
         ? 'Voice, bio and platform rules belong to each persona. Before writing for a specific account, call ' +
           'context_get with that account or persona.'

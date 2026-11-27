@@ -440,7 +440,7 @@ const VIEWS = {
           h('button', { class: 'small', onclick: syncContext }, 'Синхронізувати контекст')),
         h('p', { class: 'muted' }, 'Кожна персона має власний голос, біо й правила платформ — редагуються на вкладці «Контекст». Акаунт додається до персони в його редакторі («Редагувати» → «Персона»). Після ручних змін у файлах натисніть «Синхронізувати контекст».'),
         personas.personas.length ? h('div', { class: 'grid' }, personas.personas.map(p => h('div', { class: 'card stack' },
-          h('h3', {}, p.name), p.description && h('p', { class: 'muted preserve' }, p.description),
+          h('h3', {}, p.name), personaFacts(p), p.description && h('p', { class: 'muted preserve' }, p.description),
           h('div', { class: 'mono' }, p.accounts.join(', ')),
         ))) : empty('Персон ще немає — створіть їх на вкладці «Контекст».'),
       ),
@@ -448,7 +448,10 @@ const VIEWS = {
   },
 
   async context() {
-    const files = await api('/api/context/files');
+    const [files, synced] = await Promise.all([
+      api('/api/context/files'), tool('personas_list').catch(() => ({ personas: [] })),
+    ]);
+    const personaOf = rel => synced.personas.find(p => `personas/${p.slug}.yaml` === rel);
     const state = VIEWS.context.state ??= { path: null, original: null, content: null, dirty: false };
     if (!files.some(file => file.path === state.path)) {
       state.path = (files.find(file => file.path.startsWith('personas/')) ?? files[0])?.path ?? null;
@@ -458,6 +461,7 @@ const VIEWS = {
     const messages = h('div', { class: 'messages' });
     const title = h('h2', {});
     const status = h('span', { class: 'muted' });
+    const facts = h('div', {});
     const save = h('button', { class: 'primary' }, 'Зберегти й синхронізувати');
     const revert = h('button', { class: 'ghost' }, 'Відкотити');
     const remove = h('button', { class: 'ghost' }, 'Видалити…');
@@ -505,6 +509,8 @@ const VIEWS = {
       editor.value = file.content;
       state.dirty = Boolean(preset);
       title.textContent = rel;
+      const persona = personaOf(rel);
+      facts.replaceChildren(...(persona ? [personaFacts(persona, { detailed: true })] : []));
       status.textContent = file.exists ? '' : 'файлу ще немає — буде створено при збереженні';
       remove.hidden = !/^(projects|personas)\//.test(rel) || !file.exists;
       revert.disabled = !state.dirty;
@@ -561,7 +567,9 @@ const VIEWS = {
     const group = (label, kind, items, newLabel) => [
       h('h3', { dataset: { group: kind } }, label),
       ...items.map(file => h('button', { dataset: { path: file.path }, onclick: () => open(file.path), title: file.description ?? '' },
-        file.path.replace(/^(projects|personas)\//, '').replace(/\.yaml$/, ''), file.exists ? '' : ' (немає)')),
+        file.path.replace(/^(projects|personas)\//, '').replace(/\.yaml$/, ''), file.exists ? '' : ' (немає)',
+        personaOf(file.path)?.disclosure && personaOf(file.path).disclosure !== 'public'
+          ? h('span', { class: 'muted' }, ` · ${DISCLOSURE_LABELS[personaOf(file.path).disclosure]}`) : null)),
       newLabel && h('button', { class: 'muted', onclick: () => create(kind) }, `+ ${newLabel}`),
     ];
     const legacy = files.filter(f => !f.path.includes('/'));
@@ -594,7 +602,7 @@ const VIEWS = {
         list,
         h('div', { class: 'stack' },
           h('div', { class: 'row between' }, title, status),
-          editor, messages,
+          facts, editor, messages,
           h('div', { class: 'row end' }, remove, revert, save)),
       ),
     )];
@@ -870,8 +878,12 @@ function composeForm(targets) {
     event.preventDefault();
     error.textContent = '';
     try {
+      // The author writes as the channel's persona; the server still checks it.
+      const owners = await api('/api/context/account-personas');
+      const persona = owners[`telegram/${channel.value}`];
+      if (!persona) throw new Error(`Канал @${channel.value} не належить жодній персоні. Призначте його персоні в «Акаунти» → «Редагувати».`);
       const draft = await tool('telegram_post_prepare', {
-        request_id: `web-${crypto.randomUUID()}`, account: channel.value, text: textarea.value, disable_preview: preview.checked,
+        request_id: `web-${crypto.randomUUID()}`, account: channel.value, persona, text: textarea.value, disable_preview: preview.checked,
       });
       textarea.value = '';
       counter.textContent = '0 / 4096';
@@ -1352,6 +1364,28 @@ async function copyText(text, message = 'Скопійовано') {
   } catch {
     toast('Не вдалося скопіювати: браузер заборонив доступ до буфера.', 6000);
   }
+}
+
+const TYPE_LABELS = { person: 'людина', brand: 'бренд', fan: 'фан-акаунт', faceless: 'безлика' };
+const DISCLOSURE_LABELS = { public: 'публічна', linked: 'пов\'язана', isolated: 'ізольована' };
+const DISCLOSURE_HINTS = {
+  public: 'видна агенту й може згадуватися будь-де',
+  linked: 'згадує лише персони зі списку linked_to; заборона на решту додається автоматично',
+  isolated: 'агент бачить її лише за явним slug; інструменти без персони її даних не повертають',
+};
+
+/** Type, disclosure, links and projects of a synced persona. */
+function personaFacts(persona, { detailed = false } = {}) {
+  const disclosure = persona.disclosure ?? 'public';
+  const parts = [
+    `Тип: ${persona.type ? TYPE_LABELS[persona.type] ?? persona.type : 'не задано'}`,
+    `Розкриття: ${DISCLOSURE_LABELS[disclosure] ?? disclosure}`,
+    ...(disclosure === 'linked' ? [`Пов'язана з: ${persona.linked_to?.length ? persona.linked_to.join(', ') : 'ніким'}`] : []),
+    ...(detailed ? [`Проєкти: ${persona.talks_about_projects?.length ? persona.talks_about_projects.join(', ') : 'жодного'}`] : []),
+  ];
+  return h('div', { class: 'stack' },
+    h('div', { class: disclosure === 'isolated' ? 'warn' : 'muted' }, parts.join(' · ')),
+    detailed ? h('div', { class: 'muted' }, `Після останньої синхронізації. ${DISCLOSURE_HINTS[disclosure] ?? ''}`) : null);
 }
 
 function aiRequest(persona, item) {

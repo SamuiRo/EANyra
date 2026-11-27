@@ -33,6 +33,7 @@ async function fixture(t) {
 }
 
 const input = { request_id: 'launch_001', account: '@channel_one', text: 'Привіт! Exact **plain** text 😀' };
+const prepareInput = { ...input, persona: 'example-brand' };
 
 test('Telegram drafts are durable, exact, and idempotent by publication request_id', async t => {
   const { publisher, sends, outbox, sequelize } = await fixture(t);
@@ -165,8 +166,9 @@ test('publish gateway restricts destinations to channels with posting rights and
 test('MCP publication schemas limit text and require an exact draft hash', () => {
   const tools = buildTelegramPublishingTools({});
   const prepare = z.object(jsonSchemaToZod(tools.find(t => t.name === 'telegram_post_prepare').inputSchema));
-  assert.equal(prepare.safeParse(input).success, true);
-  assert.equal(prepare.safeParse({ ...input, text: 'x'.repeat(4097) }).success, false);
+  assert.equal(prepare.safeParse(prepareInput).success, true);
+  assert.equal(prepare.safeParse(input).success, false, 'persona is required');
+  assert.equal(prepare.safeParse({ ...prepareInput, text: 'x'.repeat(4097) }).success, false);
   const publish = z.object(jsonSchemaToZod(tools.find(t => t.name === 'telegram_post_publish').inputSchema));
   assert.equal(publish.safeParse({ request_id: 'x' }).success, false);
   assert.equal(publish.safeParse({ request_id: 'x', content_hash: 'x' }).success, false);

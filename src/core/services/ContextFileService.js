@@ -19,7 +19,7 @@ import { parse as parseYaml, parseDocument } from 'yaml';
 import { PATHS, PROJECT_ROOT } from '../../config/app.config.js';
 import { validateAccounts, accountKey, parseAccountRef } from '../../config/accountConfig.js';
 import { validateVoice, validateBio, validatePlatforms, validateProject, ContextValidationError } from '../../config/contextSchema.js';
-import { parsePersona, assertExclusiveMembership, legacyIntoPersona } from '../../config/personaConfig.js';
+import { parsePersona, assertExclusiveMembership, assertPersonaLinks, legacyIntoPersona } from '../../config/personaConfig.js';
 
 const TOP = { 'voice.yaml': validateVoice, 'bio.yaml': validateBio, 'platforms.yaml': validatePlatforms };
 const ITEM = /^(projects|personas)\/([a-z0-9][a-z0-9-]{0,63})\.yaml$/;
@@ -214,6 +214,7 @@ export class ContextFileService {
         }
       }
       assertExclusiveMembership([...others, persona]);
+      assertPersonaLinks([...others, persona]);
       return { ok: true, errors: [], warnings: persona.warnings };
     } catch (error) {
       return { ok: false, errors: error instanceof ContextValidationError ? error.errors : [error.message], warnings: [] };

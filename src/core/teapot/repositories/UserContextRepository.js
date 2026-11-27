@@ -1,12 +1,14 @@
 import fs   from 'node:fs';
 import path  from 'node:path';
 import { Op } from 'sequelize';
-import { parse as parseYaml } from 'yaml';
+import { randomUUID } from 'node:crypto';
+import { parse as parseYaml, parseDocument } from 'yaml';
 import { PATHS }              from '../../../config/app.config.js';
 import { validateAccounts }   from '../../../config/accountConfig.js';
 import {
   parsePersona,
   assertExclusiveMembership,
+  assertPersonaLinks,
   accountKey,
 } from '../../../config/personaConfig.js';
 import { validateProject } from '../../../config/contextSchema.js';
@@ -207,9 +209,11 @@ export class UserContextRepository {
     // so a single invalid file leaves all stored personas unchanged.
     const personas = [];
     const initialErrorCount = results.errors.length;
+    const activeProjects = (await this.Project.findAll({ where: { status: 'active' }, order: [['slug', 'ASC']] }))
+      .map(project => project.slug);
     for (const file of files) {
       try {
-        const data = parseYaml(fs.readFileSync(path.join(personasDir, file), 'utf8'));
+        const data = this.#migrateProjects(path.join(personasDir, file), activeProjects, results);
         const persona = parsePersona(data, path.basename(file, '.yaml'), configured);
         results.warnings.push(...persona.warnings.map(warning => `personas/${file}: ${warning}`));
         delete persona.warnings;
@@ -221,6 +225,7 @@ export class UserContextRepository {
     if (results.errors.length === initialErrorCount) {
       try {
         assertExclusiveMembership(personas);
+        assertPersonaLinks(personas);
       } catch (err) {
         results.errors.push(`personas: ${err.message}`);
       }
@@ -245,5 +250,33 @@ export class UserContextRepository {
       },
     });
     if (removed) results.updated.push(`${removed} removed persona(s)`);
+  }
+
+  /**
+   * Since v5.0 an omitted `projects` means none (it used to mean every active
+   * project). A persona file from before that (no projects, no disclosure)
+   * gets the list it effectively had written out once, so it loses nothing
+   * and the author sees what it can talk about. Comments in the file stay.
+   * @returns {unknown} the parsed file, after the rewrite if one happened
+   */
+  #migrateProjects(file, activeProjects, results) {
+    const raw = fs.readFileSync(file, 'utf8');
+    const data = parseYaml(raw);
+    if (!data || typeof data !== 'object' || Array.isArray(data) || 'projects' in data || 'disclosure' in data) return data;
+    const doc = parseDocument(raw);
+    const pair = doc.createPair('projects', activeProjects);
+    pair.key.commentBefore = ' Written by context sync (v5.0): the active projects this persona used when' +
+      '\n projects was omitted. An omitted list now means none; edit this one to narrow it.';
+    doc.contents.items.push(pair);
+    const temporary = `${file}.${randomUUID()}.tmp`;
+    try {
+      fs.writeFileSync(temporary, doc.toString({ lineWidth: 0, blockQuote: 'literal' }), { flag: 'wx' });
+      fs.renameSync(temporary, file);
+    } finally {
+      fs.rmSync(temporary, { force: true });
+    }
+    results.warnings.push(`personas/${path.basename(file)}: projects was not set; wrote the ${activeProjects.length} active ` +
+      'project(s) it used explicitly (an omitted list now means none). Edit the list to narrow it.');
+    return parseYaml(fs.readFileSync(file, 'utf8'));
   }
 }

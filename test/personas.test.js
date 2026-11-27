@@ -29,7 +29,8 @@ test('persona files are validated against accounts.json and their own filename',
 
   const persona = parsePersona({ name: 'Anime', accounts: ['twitter/Anime_Fan'] }, 'anime', configured);
   assert.equal(persona.slug, 'anime');
-  assert.equal(persona.projects, null);
+  assert.deepEqual(persona.projects, [], 'an omitted projects list means none');
+  assert.match(persona.warnings.join(), /projects is not set/);
   for (const [data, pattern] of [
     [{ slug: 'other', accounts: ['twitter/anime_fan'] }, /must match the filename/],
     [{ accounts: 'twitter/anime_fan' }, /accounts must be a list/],
@@ -70,8 +71,10 @@ test('persona context is self-contained (no shared defaults) and limits projects
 
   const brand = parsePersona({ accounts: ['twitter/business'], projects: ['eanyra'] }, 'brand', configured);
   assert.deepEqual(mergePersonaContext(global, brand).projects, [{ slug: 'eanyra' }]);
-  const all = parsePersona({ accounts: ['twitter/business'] }, 'brand', configured);
-  assert.equal(mergePersonaContext(global, all).projects.length, 2);
+  const omitted = parsePersona({ accounts: ['twitter/business'] }, 'brand', configured);
+  assert.deepEqual(mergePersonaContext(global, omitted).projects, []);
+  // A row synced before v4.2 (projects: null) gets no projects either.
+  assert.deepEqual(mergePersonaContext(global, { ...omitted, projects: null }).projects, []);
 
   // One-time carry-over of the old shared files: persona values win, only its platforms.
   const carried = legacyIntoPersona(global, anime);
@@ -160,7 +163,7 @@ test('MCP resolves a persona from the target account and scopes posts to it', { 
   const list = (await call('personas_list', {})).body;
   assert.deepEqual(list.personas.map(persona => persona.slug), ['anime', 'brand']);
   assert.deepEqual(list.personas[0].talks_about_projects, []);
-  assert.equal(list.personas[1].talks_about_projects, 'all active projects');
+  assert.deepEqual(list.personas[1].talks_about_projects, []);
   assert.deepEqual(list.accounts_without_persona, []);
 
   const overview = (await call('context_get', {})).body;

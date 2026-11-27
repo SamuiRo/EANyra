@@ -6,7 +6,7 @@ description: >
   and exposes everything through unified MCP tools for AI-assisted content creation.
   Use this skill to understand the author's voice, browse pending signals,
   query posts across all platforms, and suggest what to publish next.
-version: 2.1.0
+version: 2.2.0
 metadata:
   openclaw:
     requires:
@@ -73,10 +73,12 @@ call `context_get()` to list the personas and ask which one to write as.
 ### `context_get` — author identity and rules
 
 Returns everything needed to write as one persona:
+- `persona` — slug, `type` with a `speaks_as` instruction, `disclosure`, `linked_to`
 - `voice` — tone, style, what they like, what they dislike, taboo topics
+  (`taboo` also carries the rules from `disclosure`: whom this persona must never mention)
 - `bio` — bio per platform
 - `platforms` — per-platform rules: language, max length, style, posting frequency
-- `projects` — the active projects this persona talks about
+- `projects` — the active projects this persona talks about (only the listed ones)
 
 ```
 context_get(account: "twitter/name")   → the persona of that account (use this by default)
@@ -87,6 +89,11 @@ context_get(key: "project.eanyra")     → specific project by slug
 
 An account without a persona has no voice: ask the author to assign it
 (web UI «Акаунти» → «Редагувати» → «Персона») instead of guessing.
+
+Some personas are not listed and their data is not returned unless the call
+names their slug. Never guess or search for one; use a slug only when the
+author gives it. Drafts and Telegram posts must belong to the channel's
+persona: a mismatch is refused, never work around it.
 
 Call this **first in every session**, no exceptions.
 

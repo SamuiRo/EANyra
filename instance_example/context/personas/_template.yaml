@@ -17,6 +17,19 @@ topics:
 # "platform/username" from accounts.json (filled by the web UI).
 accounts: []
 
+# How the persona speaks: person | brand | fan | faceless.
+type: "person"
+
+# How it is connected to your other personas:
+#   public   - listed everywhere (default)
+#   linked   - mentions only the personas in linked_to; a taboo on the rest
+#              is added automatically
+#   isolated - an agent sees it only by its exact slug; tools called without
+#              a persona never return its posts, signals or drafts
+disclosure: "public"
+# Persona slugs a linked persona may mention, e.g. ["example-builder"].
+linked_to: []
+
 # How this persona writes.
 voice:
   tone: "Technical but not snobbish. Practical, not theoretical."
@@ -58,6 +71,6 @@ platforms:
       - "short"
     posting_frequency: "weekly"
 
-# Project slugs this persona talks about. Omit to use all active projects;
-# [] means this persona never posts about the projects.
+# Project slugs this persona talks about, e.g. ["example-project"].
+# Omitted or [] means none: a persona knows only the projects listed here.
 projects: []

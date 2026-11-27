@@ -1,6 +1,6 @@
 import { query } from '../db.js';
 import { MCP, SUPPORTED_PLATFORMS } from '../../../config/app.config.js';
-import { personaAccountCondition, personaIndex, personaProperty } from '../personas.js';
+import { personaScopeCondition, personaIndex, personaProperty, hiddenScope } from '../personas.js';
 
 /**
  * src/core/mcp/tools/posts.js
@@ -126,7 +126,7 @@ export const postTools = [
       include_replies = false,
       include_reposts = false,
       unused_only     = false,
-    } = {}) {
+    } = {}, scope) {
       const cap    = Math.min(Number(limit), MCP.queryMaxRecords);
       const conds  = ['1=1'];
       const params = [];
@@ -149,8 +149,8 @@ export const postTools = [
         conds.push(`LOWER(a.username) IN (${usernames.map(() => '?').join(', ')})`);
         params.push(...usernames);
       }
-      if (persona) {
-        const filter = await personaAccountCondition(persona);
+      const filter = await personaScopeCondition({ persona, scope });
+      if (filter) {
         conds.push(filter.sql);
         params.push(...filter.params);
       }
@@ -265,7 +265,7 @@ export const postTools = [
         },
       },
     },
-    async handler({ query: searchQuery, platform, account, persona, limit = MCP.defaultPostLimit, since_days }) {
+    async handler({ query: searchQuery, platform, account, persona, limit = MCP.defaultPostLimit, since_days }, scope) {
       const cap    = Math.min(Number(limit), MCP.queryMaxRecords);
       const conds  = ['LOWER(p.text) LIKE LOWER(?)'];
       const params = [`%${searchQuery}%`];
@@ -278,8 +278,8 @@ export const postTools = [
         conds.push('LOWER(a.username) = LOWER(?)');
         params.push(account.replace(/^@/, ''));
       }
-      if (persona) {
-        const filter = await personaAccountCondition(persona);
+      const filter = await personaScopeCondition({ persona, scope });
+      if (filter) {
         conds.push(filter.sql);
         params.push(...filter.params);
       }
@@ -337,7 +337,7 @@ export const postTools = [
         },
       },
     },
-    async handler({ platform, account, persona, days = MCP.defaultStatsDays } = {}) {
+    async handler({ platform, account, persona, days = MCP.defaultStatsDays } = {}, scope) {
       const conds  = ['1=1'];
       const params = [];
 
@@ -354,8 +354,8 @@ export const postTools = [
         params.push(account.replace(/^@/, ''));
       }
 
-      if (persona) {
-        const filter = await personaAccountCondition(persona);
+      const filter = await personaScopeCondition({ persona, scope });
+      if (filter) {
         conds.push(filter.sql);
         params.push(...filter.params);
       }
@@ -417,7 +417,7 @@ export const postTools = [
         persona: personaProperty,
       },
     },
-    async handler({ platform, active_only = true, persona } = {}) {
+    async handler({ platform, active_only = true, persona } = {}, scope) {
       const conds  = ['1=1'];
       const params = [];
 
@@ -429,8 +429,8 @@ export const postTools = [
         conds.push('a.is_active = 1');
       }
 
-      if (persona) {
-        const filter = await personaAccountCondition(persona);
+      const filter = await personaScopeCondition({ persona, scope });
+      if (filter) {
         conds.push(filter.sql);
         params.push(...filter.params);
       }
@@ -453,9 +453,13 @@ export const postTools = [
       `, params);
 
       const personas = await personaIndex();
+      const hidden = new Set((await hiddenScope(scope)).slugs);
       return {
         count:    rows.length,
-        accounts: rows.map(row => ({ ...row, persona: personas.get(`${row.platform}/${row.username}`) ?? null })),
+        accounts: rows.map(row => {
+          const slug = personas.get(`${row.platform}/${row.username}`) ?? null;
+          return { ...row, persona: hidden.has(slug) && slug !== persona ? null : slug };
+        }),
       };
     },
   },
