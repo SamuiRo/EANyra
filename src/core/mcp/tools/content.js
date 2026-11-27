@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 
 import { PATHS } from '../../../config/app.config.js';
 import { validateAccounts } from '../../../config/accountConfig.js';
-import { PLATFORM_CATALOG } from '../../../platforms/catalog.js';
+import { PLATFORM_CATALOG, MANUAL_METRICS_PLATFORMS } from '../../../platforms/catalog.js';
 import * as mcpDb from '../db.js';
 import { loadPersonas } from '../personas.js';
 import { loadGlobalContext } from '../context.js';
@@ -163,6 +163,33 @@ export function buildContentTools({ publications, content = createContentService
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       handler: ({ id: draftId, url }) => content.markPublished(draftId, { url: url ?? null }),
+    },
+    {
+      name: 'post_metrics_record',
+      description:
+        'Enter the numbers of a published post on a platform EANyra cannot collect yet (Threads). Give the ' +
+        'account, the post URL and the counts the author reads in the app (likes, reposts, replies, views); ' +
+        'recording the same URL again updates them. With draft_id the draft is marked published and linked, ' +
+        'so content_performance_get and content_plan_get count the post. Only enter numbers the author gave or ' +
+        'confirmed; never estimate them.',
+      inputSchema: {
+        type: 'object', required: ['platform', 'account', 'url'],
+        properties: {
+          platform: { type: 'string', enum: MANUAL_METRICS_PLATFORMS },
+          account: { type: 'string', minLength: 1, description: 'Configured account, e.g. "threads/example_handle".' },
+          persona: { type: 'string', minLength: 1, description: 'Optional; must be the account\'s persona.' },
+          url: { type: 'string', minLength: 1, description: 'Public URL of the post.' },
+          draft_id: { type: 'integer', minimum: 1, description: 'The draft this post was published from.' },
+          text: { type: 'string', maxLength: 20000, description: 'Post text when there is no draft.' },
+          posted_at: { type: 'string', description: 'When it was published (ISO date); default the draft\'s publish time or now.' },
+          likes: { type: 'integer', minimum: 0 },
+          reposts: { type: 'integer', minimum: 0 },
+          replies: { type: 'integer', minimum: 0 },
+          views: { type: 'integer', minimum: 0 },
+        },
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      handler: args => content.recordPostMetrics(args),
     },
     {
       name: 'draft_prepare_telegram',

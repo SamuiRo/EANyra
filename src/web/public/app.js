@@ -347,7 +347,7 @@ const VIEWS = {
     const filters = h('div', { class: 'filters' },
       selectField('Показати', [['active', 'Чекають рішення'], ['published', 'Опубліковані'], ['discarded', 'Відхилені'], ['all', 'Усі']], state.show, v => { state.show = v; loadDrafts(); }),
       selectField('Персона', [['', 'Усі'], ...personas.personas.map(p => [p.slug, p.name])], state.persona, v => { state.persona = v; loadDrafts(); }),
-      selectField('Платформа', [['', 'Усі'], ['twitter', 'X'], ['telegram', 'Telegram'], ['linkedin', 'LinkedIn']], state.platform, v => { state.platform = v; loadDrafts(); }),
+      selectField('Платформа', [['', 'Усі'], ['twitter', 'X'], ['telegram', 'Telegram'], ['linkedin', 'LinkedIn'], ['threads', 'Threads']], state.platform, v => { state.platform = v; loadDrafts(); }),
     );
     loadDrafts();
     return [
@@ -768,7 +768,7 @@ const VIEWS = {
 
     const filters = h('form', { class: 'filters', onsubmit: event => { event.preventDefault(); load(); } },
       selectField('Персона', [['', 'Усі'], ...personas.personas.map(p => [p.slug, p.name])], state.persona, v => { state.persona = v; load(); }),
-      selectField('Платформа', [['', 'Усі'], ['twitter', 'X'], ['telegram', 'Telegram'], ['linkedin', 'LinkedIn']], state.platform, v => { state.platform = v; load(); }),
+      selectField('Платформа', [['', 'Усі'], ['twitter', 'X'], ['telegram', 'Telegram'], ['linkedin', 'LinkedIn'], ['threads', 'Threads']], state.platform, v => { state.platform = v; load(); }),
       selectField('Відбір', [['recent', 'Нові'], ['top_engagement', 'Найпопулярніші'], ['sample', 'Мікс для стилю']], state.type, v => { state.type = v; load(); }),
       h('label', {}, 'Пошук', h('input', { type: 'search', value: state.search, placeholder: 'текст…', oninput: e => { state.search = e.target.value; } })),
       h('button', { type: 'submit' }, 'Знайти'),
@@ -1354,8 +1354,8 @@ const PLAN = { overdue: 'прострочено', due: 'час публікув�
 const PLAN_KIND = { overdue: 'error', due: 'stale', on_track: 'ok', no_target: 'skipped' };
 const DRAFT = { draft: 'чернетка', approved: 'схвалено', published: 'опубліковано', discarded: 'відхилено' };
 const DRAFT_KIND = { draft: 'draft', approved: 'running', published: 'success', discarded: 'skipped' };
-const PLATFORM_LABEL = { twitter: 'X', telegram: 'Telegram', linkedin: 'LinkedIn' };
-const LIMIT = { twitter: 280, linkedin: 3000, telegram: 4096 };
+const PLATFORM_LABEL = { twitter: 'X', telegram: 'Telegram', linkedin: 'LinkedIn', threads: 'Threads' };
+const LIMIT = { twitter: 280, linkedin: 3000, telegram: 4096, threads: 500 };
 
 async function copyText(text, message = 'Скопійовано') {
   try {
@@ -1397,6 +1397,7 @@ function aiRequest(persona, item) {
 function composeUrl(platform, text) {
   if (platform === 'twitter') return `https://x.com/intent/post?text=${encodeURIComponent(text)}`;
   if (platform === 'linkedin') return `https://www.linkedin.com/feed/?shareActive=true&text=${encodeURIComponent(text)}`;
+  if (platform === 'threads') return `https://www.threads.net/intent/post?text=${encodeURIComponent(text)}`;
   return null;
 }
 

@@ -1,6 +1,7 @@
 import { TELEGRAM } from '../../config/app.config.js';
 import { print } from '../../shared/utils.js';
 import { TelegramClient } from './TelegramClient.js';
+import { readChannelStats } from './TelegramChannelStats.js';
 import {
   isTelegramContentMessage,
   normalizeTelegramChannel,
@@ -101,6 +102,15 @@ export class TelegramScraper {
       print(`[Telegram] ${formatChannel(channel)}: older messages before #${pending.before_id} remain; they will be read on the next run.`, 'warning');
     }
     return { posts, complete: !pending, backfill: pending };
+  }
+
+  /**
+   * Subscriber count and invite-link joins of a channel (see TelegramChannelStats.js).
+   * @param {string} username
+   */
+  async channelStats(username) {
+    const channel = normalizeTelegramChannel(username);
+    return readChannelStats(await this.connect(), channel);
   }
 
   /**

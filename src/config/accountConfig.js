@@ -15,7 +15,8 @@ export function normalizeAccount(username, platform) {
     ? normalizeTelegramChannel(username)
     : username.trim().replace(/^@/, '').toLowerCase();
   if (!/^[a-z0-9_][a-z0-9_-]{0,127}$/.test(value) &&
-      !(platform === 'telegram' && /^-100\d+$/.test(value))) {
+      !(platform === 'telegram' && /^-100\d+$/.test(value)) &&
+      !(platform === 'threads' && /^[a-z0-9_][a-z0-9_.]{0,29}$/.test(value))) {
     throw new Error(`Invalid ${platform} username: ${username}`);
   }
   return value;

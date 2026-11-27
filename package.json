@@ -1,6 +1,6 @@
 {
   "name": "eanyra",
-  "version": "5.0.0",
+  "version": "5.1.0",
   "description": "Local AI-assisted social media workspace: collects your own accounts (X, Telegram, LinkedIn, GitHub) into SQLite, plans and drafts posts with personas, and serves it all through MCP and a local web UI.",
   "main": "src/core/cli/index.js",
   "bin": {
@@ -22,6 +22,7 @@
     "scrape:linkedin": "node src/core/cli/index.js scrape linkedin",
     "scrape:telegram": "node src/core/cli/index.js scrape telegram",
     "context:sync": "node src/core/cli/index.js context sync",
+    "sources": "node src/core/cli/index.js sources collect",
     "export": "node src/core/cli/index.js export",
     "export:dry": "node src/core/cli/index.js export --no-mark",
     "login": "node src/core/cli/login.js",

@@ -172,6 +172,30 @@ const migrations = [
       await addIndexIfMissing(queryInterface, 'linkedin_imports', 'linkedin_imports_account_id', ['account_id'], transaction);
     },
   },
+  {
+    name: '20261127_channel_stats',
+    async up({ queryInterface, transaction }) {
+      // One snapshot per channel and UTC day; a later run that day replaces it.
+      await createTableIfMissing(queryInterface, 'channel_stats', {
+        account_id:  { type: DataTypes.INTEGER, allowNull: false, primaryKey: true, references: { model: 'accounts', key: 'id' }, onDelete: 'CASCADE' },
+        day:         { type: DataTypes.STRING(10), allowNull: false, primaryKey: true },
+        subscribers: { type: DataTypes.INTEGER, allowNull: true },
+        captured_at: { type: DataTypes.DATE, allowNull: false },
+      }, transaction);
+      // Joins per named invite link, one row per link and day.
+      await createTableIfMissing(queryInterface, 'invite_link_stats', {
+        account_id:  { type: DataTypes.INTEGER, allowNull: false, primaryKey: true, references: { model: 'accounts', key: 'id' }, onDelete: 'CASCADE' },
+        day:         { type: DataTypes.STRING(10), allowNull: false, primaryKey: true },
+        link:        { type: DataTypes.STRING(255), allowNull: false, primaryKey: true },
+        title:       { type: DataTypes.STRING(255), allowNull: true },
+        joins:       { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+        requested:   { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+        revoked:     { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+        created_at:  { type: DataTypes.DATE, allowNull: true },
+        captured_at: { type: DataTypes.DATE, allowNull: false },
+      }, transaction);
+    },
+  },
 ];
 
 export class SchemaMigrator {

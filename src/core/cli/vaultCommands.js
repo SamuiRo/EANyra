@@ -133,7 +133,7 @@ export function registerVaultCommands(program) {
   const secrets = program.command('secrets').description('Manage tokens and API keys in the vault');
 
   secrets.command('set <kind> [name]')
-    .description(`Store a token. Kinds: github, telegram-bot, discord-bot, telegram-api. X and Telegram user logins: use npm run login / login:telegram`)
+    .description(`Store a token. Kinds: github, telegram-bot, discord-bot, telegram-api, reddit-app. X and Telegram user logins: use npm run login / login:telegram`)
     .action(async (kind, name = DEFAULT_SESSION) => {
       assertSessionName(name);
       const store = await requireVault();
@@ -147,6 +147,11 @@ export function registerVaultCommands(program) {
         const apiHash = (await askSecret('Telegram api_hash: ')).trim();
         if (!/^[a-f0-9]{32}$/i.test(apiHash)) throw new Error('api_hash must be 32 hexadecimal characters.');
         await store.set(kind, name, { api_id: apiId, api_hash: apiHash });
+      } else if (kind === 'reddit-app') {
+        const clientId = (await askText('Reddit app client id (reddit.com/prefs/apps, type "script"): ')).trim();
+        const clientSecret = (await askSecret('Reddit app secret: ')).trim();
+        if (!clientId || !clientSecret) throw new Error('Client id and secret cannot be empty.');
+        await store.set(kind, name, { client_id: clientId, client_secret: clientSecret });
       } else if (kind === 'twitter') {
         throw new Error(`Use \`npm run login -- --session ${name}\` or \`npm run import-cookies -- --session ${name}\`.`);
       } else if (kind === 'telegram') {

@@ -9,6 +9,7 @@
  *   session      secret kind that holds this platform's login, or null
  *   collection   short description of how data is obtained
  *   publishing   'auto' (agent may publish after approval), 'manual' (drafts only)
+ *   metrics      'manual' when post numbers are entered by hand (post_metrics_record)
  */
 
 export const PLATFORM_CATALOG = Object.freeze({
@@ -28,6 +29,11 @@ export const PLATFORM_CATALOG = Object.freeze({
     id: 'telegram', displayName: 'Telegram', output: 'posts', session: 'telegram',
     collection: 'MTProto polling with a user session', publishing: 'auto',
   }),
+  threads: Object.freeze({
+    id: 'threads', displayName: 'Threads', output: 'posts', session: null,
+    collection: 'No collector yet: post numbers are entered by hand (post_metrics_record)', publishing: 'manual',
+    metrics: 'manual',
+  }),
   discord: Object.freeze({
     id: 'discord', displayName: 'Discord', output: 'signals', session: 'discord-bot',
     collection: 'Bot reads configured channels over REST (questions and feedback)', publishing: null,
@@ -38,6 +44,9 @@ export const PLATFORM_IDS = Object.freeze(Object.keys(PLATFORM_CATALOG));
 
 /** Platforms whose collection needs a stored login ("session" in accounts.json). */
 export const SESSION_PLATFORMS = Object.freeze(PLATFORM_IDS.filter(id => PLATFORM_CATALOG[id].session));
+
+/** Platforms whose post numbers are entered by hand. */
+export const MANUAL_METRICS_PLATFORMS = Object.freeze(PLATFORM_IDS.filter(id => PLATFORM_CATALOG[id].metrics === 'manual'));
 
 export function platformInfo(id) {
   const info = PLATFORM_CATALOG[id];

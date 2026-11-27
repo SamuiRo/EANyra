@@ -1,5 +1,6 @@
 import { parseAccountRef, accountKey } from './accountConfig.js';
 import { validateVoice, validateBio, validatePlatforms, ContextValidationError } from './contextSchema.js';
+import { parseSources } from './sourceConfig.js';
 
 /** Run a file validator on a persona section, naming fields "<section>.<field>". */
 function prefixed(section, validate) {
@@ -24,7 +25,7 @@ function prefixed(section, validate) {
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const OBJECT_FIELDS = ['voice', 'bio', 'platforms'];
 const KNOWN = ['slug', 'name', 'description', 'topics', 'accounts', 'voice', 'bio', 'platforms', 'projects',
-  'type', 'disclosure', 'linked_to'];
+  'type', 'disclosure', 'linked_to', 'sources'];
 
 /** How the persona speaks. */
 export const PERSONA_TYPES = {
@@ -105,6 +106,9 @@ export function parsePersona(data, fileSlug, configured) {
   if (disclosure !== 'linked' && linkedTo.length) {
     warnings.push(`linked_to is used only with disclosure: linked and is ignored for ${disclosure}`);
   }
+  // Where EANyra looks for new material (sourceConfig.js).
+  const { sources, warnings: sourceWarnings } = parseSources(data.sources);
+  warnings.push(...sourceWarnings);
   return {
     slug,
     name: data.name ?? slug,
@@ -119,6 +123,7 @@ export function parsePersona(data, fileSlug, configured) {
     type: data.type ?? null,
     disclosure,
     linked_to: disclosure === 'linked' ? linkedTo : [],
+    sources,
     warnings,
   };
 }
