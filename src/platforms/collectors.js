@@ -117,6 +117,14 @@ export const COLLECTORS = Object.freeze({
     },
   },
 
+  // Nothing to read yet; numbers come from post_metrics_record. The freshness
+  // watermark stays, so nothing claims the account was collected.
+  threads: {
+    async collect() {
+      return { records: [], keepWatermark: true };
+    },
+  },
+
   discord: {
     async collect({ account, entry, session, runtime, repos, fetchImpl }) {
       const token = runtime.credentials.discordBotToken(session);

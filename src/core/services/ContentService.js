@@ -18,7 +18,7 @@ import { PLATFORM_CATALOG } from '../../platforms/catalog.js';
 import { mergePersonaContext, isIsolated } from '../../config/personaConfig.js';
 import { normalizeAccount } from '../../config/accountConfig.js';
 import { parseJson } from './sql.js';
-import { linkPublishedDrafts } from './draftLinks.js';
+import { linkPublishedDrafts, platformIdFromUrl } from './draftLinks.js';
 import { parseFrequency } from '../../shared/frequency.js';
 
 export { parseFrequency };
@@ -26,7 +26,8 @@ export { parseFrequency };
 export const DRAFT_STATUSES = ['draft', 'approved', 'published', 'discarded'];
 /** Soft limits shown as warnings; Telegram's is enforced by its API. */
 const LENGTH_LIMITS = { twitter: 280, linkedin: 3000, telegram: 4096 };
-const HARD_LIMITS = { telegram: 4096 };
+const HARD_LIMITS = { telegram: 4096, threads: 500 };
+const COUNTS = ['likes', 'reposts', 'replies', 'views'];
 const MAX_TEXT = 20_000;
 const DAY = 864e5;
 
@@ -143,6 +144,79 @@ export class ContentService {
     );
     await this.#markSignalsUsed(draft.signal_ids, ts);
     return this.getDraft(draft.id);
+  }
+
+  /**
+   * Numbers of a post on a platform without a collector (catalog
+   * metrics: 'manual', e.g. Threads), entered by the author or the agent.
+   * The post is stored like a collected one, so content_plan_get,
+   * content_performance_get and posts_* count it. Recording the same URL
+   * again updates its numbers. With draft_id the draft is marked published
+   * with this URL (if it was not) and linked to the post.
+   */
+  async recordPostMetrics({ platform, account, persona, url, text = null, posted_at = null, draft_id = null, ...counts }) {
+    if (PLATFORM_CATALOG[platform]?.metrics !== 'manual') {
+      const manual = Object.values(PLATFORM_CATALOG).filter(p => p.metrics === 'manual').map(p => p.id).join(', ');
+      throw new Error(`Numbers of ${platform} posts are collected automatically; manual entry is for: ${manual}.`);
+    }
+    if (!account) throw new Error('account is required.');
+    const target = await this.#resolveTarget({ platform, account, persona });
+    assertUrl(url);
+    const platformId = platformIdFromUrl(platform, url);
+    if (!platformId) throw new Error(`${url} is not a ${PLATFORM_CATALOG[platform].displayName} post URL.`);
+    const values = {};
+    for (const key of COUNTS) {
+      const value = counts[key];
+      if (value === undefined || value === null) continue;
+      if (!Number.isInteger(value) || value < 0) throw new Error(`${key} must be a whole number of at least 0.`);
+      values[key] = value;
+    }
+    let postedAt = null;
+    if (posted_at !== null) {
+      postedAt = new Date(posted_at);
+      if (Number.isNaN(postedAt.getTime())) throw new Error('posted_at must be a date, e.g. 2026-11-27T18:00:00Z.');
+    }
+    let draft = null;
+    if (draft_id !== null) {
+      draft = await this.getDraft(draft_id);
+      if (draft.platform !== platform || (draft.account && draft.account !== target.account)) {
+        throw new Error(`Draft ${draft.id} is for ${draft.platform}/${draft.account ?? '(no account)'}, not ${platform}/${target.account}.`);
+      }
+      if (draft.status !== 'published') draft = await this.markPublished(draft.id, { url });
+    }
+    if (text !== null) assertText(text, platform);
+    const ts = this.#ts();
+
+    let accountRow = await this.db.get('SELECT id FROM accounts WHERE platform = ? AND username = ?', [platform, target.account]);
+    if (!accountRow) {
+      await this.db.run(
+        'INSERT INTO accounts (username, platform, is_active, is_archived, created_at, updated_at) VALUES (?, ?, 1, 0, ?, ?)',
+        [target.account, platform, ts, ts]);
+      accountRow = await this.db.get('SELECT id FROM accounts WHERE platform = ? AND username = ?', [platform, target.account]);
+    }
+    const existing = await this.db.get('SELECT id, account_id FROM posts WHERE platform = ? AND platform_id = ?', [platform, platformId]);
+    if (existing && existing.account_id !== accountRow.id) throw new Error(`${url} is already recorded for another account.`);
+    const body = text ?? draft?.text ?? null;
+    if (existing) {
+      const sets = Object.keys(values).map(key => `${key} = ?`);
+      const params = Object.values(values);
+      if (body !== null) { sets.push('text = ?'); params.push(body); }
+      if (postedAt) { sets.push('posted_at = ?'); params.push(postedAt.toISOString()); }
+      await this.db.run(`UPDATE posts SET ${[...sets, 'scraped_at = ?', 'updated_at = ?'].join(', ')} WHERE id = ?`, [...params, ts, ts, existing.id]);
+    } else {
+      await this.db.run(
+        `INSERT INTO posts (platform, platform_id, account_id, text, posted_at, raw_url, likes, reposts, replies, views,
+           is_repost, is_reply, scraped_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)`,
+        [platform, platformId, accountRow.id, body ?? '', (postedAt ?? new Date(draft?.published_at ?? ts)).toISOString(), url,
+          values.likes ?? 0, values.reposts ?? 0, values.replies ?? 0, values.views ?? null, ts, ts, ts]);
+    }
+    await linkPublishedDrafts(this.db);
+    const post = await this.db.get(
+      `SELECT id, platform, platform_id, text, posted_at, raw_url AS url, likes, reposts, replies, views, scraped_at AS recorded_at
+       FROM posts WHERE platform = ? AND platform_id = ?`, [platform, platformId]);
+    const linked = await this.db.get('SELECT id, status FROM drafts WHERE post_id = ? ORDER BY id LIMIT 1', [post.id]);
+    return { account: `${platform}/${target.account}`, post, draft: linked ?? null, updated: Boolean(existing) };
   }
 
   /**
@@ -366,7 +440,9 @@ export class ContentService {
           posts_last_7_days: Number(stats?.last_7_days ?? 0),
           posts_last_30_days: Number(stats?.last_30_days ?? 0),
           drafts_waiting: Number(waiting?.n ?? 0),
-          ...(dataAge === null || dataAge > 36 ? { data_warning: 'Collected data is older than 36 hours or missing; recent posts may not be counted. Run scraper_run first.' } : {}),
+          ...(PLATFORM_CATALOG[entry.platform].metrics === 'manual'
+            ? { data_warning: 'Posts are counted only once recorded: after publishing, enter each post with post_metrics_record (URL and numbers).' }
+            : dataAge === null || dataAge > 36 ? { data_warning: 'Collected data is older than 36 hours or missing; recent posts may not be counted. Run scraper_run first.' } : {}),
         });
       }
       items.sort((a, b) => URGENCY[a.status] - URGENCY[b.status] || (b.days_since_last_post ?? 1e9) - (a.days_since_last_post ?? 1e9));

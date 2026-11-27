@@ -7,6 +7,7 @@
  *   telegram  https://t.me/<channel>/<id>                → <channel>:<id>
  *             https://t.me/c/<internal>/<id>             → -100<internal>:<id>
  *   linkedin  …urn:li:share:<id> / urn:li:ugcPost:<id>   → <id>
+ *   threads   https://www.threads.net/@<user>/post/<code> → <code> (threads.com too)
  */
 
 /** @returns {string|null} */
@@ -26,6 +27,9 @@ export function platformIdFromUrl(platform, url) {
     if (internal) return `-100${internal[1]}:${internal[2]}`;
     const open = decoded.match(/t\.me\/(?:s\/)?([A-Za-z0-9_]{4,})\/(\d+)/i);
     return open ? `${open[1].toLowerCase()}:${open[2]}` : null;
+  }
+  if (platform === 'threads') {
+    return decoded.match(/threads\.(?:net|com)\/@[^/]+\/post\/([A-Za-z0-9_-]+)/i)?.[1] ?? null;
   }
   if (platform === 'linkedin') {
     // Activity URNs differ from the share ids in LinkedIn exports; only
